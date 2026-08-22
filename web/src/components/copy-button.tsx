@@ -38,6 +38,11 @@ interface CopyButtonProps {
   size?: 'default' | 'sm' | 'lg' | 'icon'
   tooltip?: string
   successTooltip?: string
+  /**
+   * Also raise a global toast on copy. The inline check mark is easy to miss on
+   * a dense page, so rows whose value is the point of the page opt in.
+   */
+  notify?: boolean
   'aria-label'?: string
 }
 
@@ -50,10 +55,11 @@ export function CopyButton({
   size = 'icon',
   tooltip,
   successTooltip,
+  notify = false,
   'aria-label': ariaLabel,
 }: CopyButtonProps) {
   const { t } = useTranslation()
-  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify })
   const isCopied = copiedText === value
   const resolvedTooltip = tooltip ?? t('Copy to clipboard')
   const resolvedSuccessTooltip = successTooltip ?? t('Copied!')

@@ -90,6 +90,37 @@ export const textColorMap = {
   yellow: 'text-warning',
 } as const
 
+/**
+ * Background tints for `filled` badges, paired with `textColorMap`.
+ *
+ * Opt-in: the default badge is colored text only, which disappears against a
+ * card surface. Dense grids (pricing cards) need the pill to be scannable, so
+ * they pass `filled` to get a tinted background behind the same text color.
+ */
+export const bgColorMap = {
+  success: 'bg-success/12',
+  warning: 'bg-warning/12',
+  danger: 'bg-destructive/12',
+  info: 'bg-info/12',
+  neutral: 'bg-muted',
+  purple: 'bg-chart-4/12',
+  amber: 'bg-warning/12',
+  blue: 'bg-chart-1/12',
+  cyan: 'bg-chart-2/12',
+  green: 'bg-success/12',
+  grey: 'bg-muted',
+  indigo: 'bg-chart-1/12',
+  'light-blue': 'bg-info/12',
+  'light-green': 'bg-emerald-400/12',
+  lime: 'bg-chart-3/12',
+  orange: 'bg-warning/12',
+  pink: 'bg-chart-5/12',
+  red: 'bg-destructive/12',
+  teal: 'bg-chart-2/12',
+  violet: 'bg-chart-4/12',
+  yellow: 'bg-warning/12',
+} as const
+
 export type StatusVariant = keyof typeof dotColorMap
 
 /** Controls the visual style of the badge.
@@ -133,6 +164,8 @@ export interface StatusBadgeProps extends Omit<
   autoColor?: string
   /** Visual style. Defaults to 'badge'. Can be overridden via StatusBadgeTypeContext. */
   type?: StatusBadgeType
+  /** Adds a tinted background from `bgColorMap`. Only applies to `badge` type. */
+  filled?: boolean
 }
 
 export function StatusBadge({
@@ -147,6 +180,7 @@ export function StatusBadge({
   copyText,
   autoColor,
   type: typeProp,
+  filled = false,
   className,
   onClick,
   ...props
@@ -184,7 +218,11 @@ export function StatusBadge({
       className={cn(
         'inline-flex w-fit max-w-full min-w-0 shrink items-center font-medium tracking-normal whitespace-nowrap transition-colors',
         isBadge
-          ? cn('rounded-4xl', sizeMap[size ?? 'sm'])
+          ? cn(
+              'rounded-4xl',
+              sizeMap[size ?? 'sm'],
+              filled && bgColorMap[computedVariant]
+            )
           : cn(
               textSizeMap[size ?? 'sm'],
               type === 'underline' && 'border-b border-current pb-px'
