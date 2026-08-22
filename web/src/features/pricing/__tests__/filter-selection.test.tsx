@@ -21,6 +21,8 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 
+import type { PricingModel, PricingVendor } from '../types'
+
 // The vendor mark is decorative here and `@lobehub/icons` transitively loads
 // `@lobehub/ui` -> `@emoji-mart/data`, a JSON module the test loader cannot
 // resolve. Stubbed at that boundary so the chips still render a mark.
@@ -35,7 +37,6 @@ import {
   type PricingSidebarProps,
 } from '../components/pricing-sidebar'
 import { ENDPOINT_TYPES, FILTER_ALL, QUOTA_TYPES } from '../constants'
-import type { PricingModel, PricingVendor } from '../types'
 
 const VENDORS: PricingVendor[] = [
   { id: 1, name: 'Anthropic' },
