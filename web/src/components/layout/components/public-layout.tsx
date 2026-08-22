@@ -17,12 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TopNavLink } from '../types'
-import { PublicHeader, type PublicHeaderProps } from './public-header'
+import {
+  PublicHeader,
+  type PublicHeaderProps,
+  type PublicHeaderTone,
+} from './public-header'
 
 type PublicLayoutProps = {
   children: React.ReactNode
   showMainContainer?: boolean
   navContent?: React.ReactNode
+  headerTone?: PublicHeaderTone
   headerProps?: Omit<PublicHeaderProps, 'navContent'>
   navLinks?: TopNavLink[]
   showThemeSwitch?: boolean
@@ -33,10 +38,14 @@ type PublicLayoutProps = {
 }
 
 export function PublicLayout(props: PublicLayoutProps) {
+  // `bg-canvas`, not `bg-background`: this is a page shell, so it sits one step
+  // below the card surfaces it hosts. `--background` stays reserved for
+  // surfaces *inside* cards (detail tiles, code blocks, table rows).
   return (
-    <div className='bg-background text-foreground relative min-h-svh overflow-x-clip'>
+    <div className='bg-canvas text-foreground relative min-h-svh overflow-x-clip'>
       <PublicHeader
         navContent={props.navContent}
+        tone={props.headerTone}
         navLinks={props.navLinks}
         showThemeSwitch={props.showThemeSwitch}
         showAuthButtons={props.showAuthButtons}

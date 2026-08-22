@@ -23,7 +23,11 @@ import { useTranslation } from 'react-i18next'
 import { PublicLayout } from '@/components/layout'
 import { RichContent } from '@/components/rich-content'
 import { Skeleton } from '@/components/ui/skeleton'
-import { isHttpUrl, isLikelyHtml } from '@/lib/content-format'
+import {
+  isHttpUrl,
+  isLikelyHtml,
+  requestsInvertedNav,
+} from '@/lib/content-format'
 
 import { getAboutContent } from './api'
 
@@ -160,7 +164,10 @@ export function About() {
 
   if (contentIsHtml) {
     return (
-      <PublicLayout showMainContainer={false}>
+      <PublicLayout
+        showMainContainer={false}
+        headerTone={requestsInvertedNav(rawContent) ? 'invert' : 'auto'}
+      >
         <RichContent
           mode='html'
           htmlVariant='isolated'

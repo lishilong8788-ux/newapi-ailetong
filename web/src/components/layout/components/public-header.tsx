@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
+import { motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -44,10 +45,53 @@ type AuthPromptTarget = {
   href: string
 }
 
+/**
+ * Active nav marker. Absolutely positioned inside its link so it tracks the
+ * item through the header's own collapse transition for free, while the shared
+ * `layoutId` magic-moves it between items on navigation.
+ */
+function NavActiveIndicator({ reduce }: { reduce: boolean }) {
+  return (
+    <motion.span
+      aria-hidden
+      layoutId='public-nav-active'
+      transition={
+        reduce
+          ? { duration: 0 }
+          : { type: 'spring', stiffness: 420, damping: 34, mass: 0.7 }
+      }
+      className='absolute inset-0 rounded-[10px]'
+    >
+      {/* Solid fill. Tints were unreadable on the glass pill at any alpha, so
+          contrast now comes from primary/primary-foreground, which every theme
+          preset guarantees. */}
+      {/* Halo first so the fill paints over it. */}
+      <span className='bg-primary/45 absolute -inset-x-1 -bottom-1.5 h-3 rounded-full blur-lg' />
+      <span className='bg-primary absolute inset-0 rounded-[10px]' />
+      {/* Depth, so it reads as a lit chip rather than a flat swatch: bright top
+          bevel over a darkened base. */}
+      <span className='absolute inset-0 rounded-[10px] bg-gradient-to-b from-white/25 via-transparent to-black/15' />
+      <span className='absolute inset-x-1.5 top-px h-px bg-gradient-to-r from-transparent via-white/50 to-transparent' />
+    </motion.span>
+  )
+}
+
+/**
+ * Colour treatment for the floating header.
+ *
+ * 'auto'   — follow the application theme (default; used by every page whose
+ *            content starts on a `bg-background` surface).
+ * 'invert' — force light-on-dark. Required when the page renders its own
+ *            dark hero underneath the transparent header, where theme-derived
+ *            foreground colours would be unreadable.
+ */
+export type PublicHeaderTone = 'auto' | 'invert'
+
 export interface PublicHeaderProps {
   navLinks?: TopNavLink[]
   mobileLinks?: TopNavLink[]
   navContent?: React.ReactNode
+  tone?: PublicHeaderTone
   showThemeSwitch?: boolean
   showLanguageSwitcher?: boolean
   logo?: React.ReactNode
@@ -71,6 +115,7 @@ export function PublicHeader(props: PublicHeaderProps) {
     homeUrl = '/',
     showAuthButtons = true,
     showNotifications = true,
+    tone = 'auto',
   } = props
 
   const { t } = useTranslation()
@@ -92,6 +137,7 @@ export function PublicHeader(props: PublicHeaderProps) {
   const notifications = useNotifications()
   const routerState = useRouterState()
   const pathname = routerState.location.pathname
+  const shouldReduce = useReducedMotion()
 
   const user = auth.user
   const isAuthenticated = !!user
@@ -179,15 +225,21 @@ export function PublicHeader(props: PublicHeaderProps) {
         <div
           className={cn(
             'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-[52rem] px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
+            'px-3 pt-3',
+            scrolled ? 'max-w-[52rem]' : 'max-w-7xl md:px-6'
           )}
         >
           <nav
+            data-header-tone={tone === 'invert' ? 'invert' : undefined}
             className={cn(
-              'flex items-center justify-between transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-              scrolled
-                ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
-                : 'h-16 px-2'
+              // The glass pill is the resting state, not a scroll artefact, so
+              // every public page reads the same against its own hero. Only the
+              // size collapses on scroll.
+              'bg-background/60 ring-border/50 flex items-center justify-between rounded-2xl shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]',
+              // Symmetric inline padding. The trailing item is a solid-filled
+              // button, so an inset smaller than the logo's read as cramped
+              // against the pill edge — both sides now get the same gutter.
+              scrolled ? 'h-12 px-4' : 'h-16 px-5'
             )}
           >
             {/* Logo */}
@@ -229,7 +281,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                       tabIndex={link.disabled ? -1 : undefined}
                       onClick={(event) => handleNavLinkClick(event, link)}
                       className={cn(
-                        'text-muted-foreground hover:text-foreground rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200',
+                        'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200',
                         link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
@@ -244,14 +296,15 @@ export function PublicHeader(props: PublicHeaderProps) {
                     disabled={link.disabled}
                     onClick={(event) => handleNavLinkClick(event, link)}
                     className={cn(
-                      'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200',
+                      'relative rounded-lg px-3 py-1.5 text-sm transition-colors duration-200',
                       isActive
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
+                        ? 'text-primary-foreground font-semibold'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] font-medium',
                       link.disabled && 'pointer-events-none opacity-50'
                     )}
                   >
-                    {t(link.title)}
+                    {isActive && <NavActiveIndicator reduce={!!shouldReduce} />}
+                    <span className='relative z-10'>{t(link.title)}</span>
                   </Link>
                 )
               })}
@@ -351,11 +404,15 @@ export function PublicHeader(props: PublicHeaderProps) {
             {links.map((link, i) => {
               const isActive = pathname === link.href
               const linkClassName = cn(
-                'flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                'relative flex items-center gap-3 py-3 pl-4 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
                 mobileOpen
                   ? 'translate-y-0 opacity-100'
                   : 'translate-y-4 opacity-0',
-                isActive ? 'text-foreground' : 'text-muted-foreground',
+                // Vertical beam instead of the desktop pill: a full-width pill
+                // on a stacked list reads as a button, not a location marker.
+                isActive
+                  ? 'text-primary before:bg-primary before:shadow-primary/50 font-semibold before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:shadow-[0_0_10px_1px] before:content-[""]'
+                  : 'text-muted-foreground',
                 link.disabled && 'pointer-events-none opacity-50'
               )
               const transitionStyle = {

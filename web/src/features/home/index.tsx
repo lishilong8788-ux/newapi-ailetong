@@ -23,7 +23,7 @@ import { PublicLayout } from '@/components/layout'
 import { Footer } from '@/components/layout/components/footer'
 import { RichContent } from '@/components/rich-content'
 import { useTheme } from '@/context/theme-provider'
-import { isLikelyHtml } from '@/lib/content-format'
+import { isLikelyHtml, requestsInvertedNav } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { CTA, Features, Hero, HowItWorks, Stats } from './components'
@@ -96,7 +96,10 @@ export function Home() {
 
     if (contentIsHtml) {
       return (
-        <PublicLayout showMainContainer={false}>
+        <PublicLayout
+          showMainContainer={false}
+          headerTone={requestsInvertedNav(content) ? 'invert' : 'auto'}
+        >
           <RichContent
             mode='html'
             htmlVariant='isolated'
