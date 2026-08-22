@@ -94,7 +94,13 @@ export type PricingData = {
   data: PricingModel[]
   vendors: PricingVendor[]
   group_ratio: Record<string, number>
-  usable_group: Record<string, { desc: string; ratio: number }>
+  /**
+   * Group key -> group description, as returned by `service.GetUserUsableGroups`
+   * (a Go `map[string]string`). The value IS the description string; it is not
+   * an object. The `{ desc, ratio }` shape belongs to `/api/user/self/groups`,
+   * which is a different endpoint. Read ratios from `group_ratio` instead.
+   */
+  usable_group: Record<string, string>
   supported_endpoint: Record<string, string>
   auto_groups: string[]
 }

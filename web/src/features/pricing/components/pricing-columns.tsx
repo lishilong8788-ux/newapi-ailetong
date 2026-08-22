@@ -42,6 +42,7 @@ import {
 } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
+import { ModelTagBadge } from './model-tag-badge'
 
 // ----------------------------------------------------------------------------
 // Pricing Table Columns
@@ -53,6 +54,8 @@ export interface PricingColumnsOptions {
   usdExchangeRate?: number
   showRechargePrice?: boolean
   selectedGroup?: string
+  /** Group key -> description, used to prefix group badges. */
+  usableGroup?: Record<string, string>
 }
 
 export function usePricingColumns(
@@ -65,6 +68,7 @@ export function usePricingColumns(
     usdExchangeRate = 1,
     showRechargePrice = false,
     selectedGroup,
+    usableGroup,
   } = options
 
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
@@ -352,13 +356,7 @@ export function usePricingColumns(
         return (
           <BadgeListCell
             items={tags.map((tag) => (
-              <StatusBadge
-                key={tag}
-                label={tag}
-                autoColor={tag}
-                size='sm'
-                copyable={false}
-              />
+              <ModelTagBadge key={tag} tag={tag} />
             ))}
           />
         )
@@ -400,7 +398,12 @@ export function usePricingColumns(
         return (
           <BadgeListCell
             items={groups.map((group) => (
-              <GroupBadge key={group} group={group} size='sm' />
+              <GroupBadge
+                key={group}
+                group={group}
+                desc={usableGroup?.[group]}
+                size='sm'
+              />
             ))}
             tooltipClassName='max-w-[280px] p-2'
           />

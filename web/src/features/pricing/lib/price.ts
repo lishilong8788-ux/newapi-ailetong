@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { formatCurrencyFromUSD } from '@/lib/currency'
+import { formatDiscount } from '@/lib/format'
 
 import { QUOTA_TYPE_VALUES, TOKEN_UNIT_DIVISORS } from '../constants'
 import type { PricingModel, TokenUnit, PriceType } from '../types'
@@ -25,6 +26,21 @@ import { getConfiguredGroupRatio, getDisplayGroupRatio } from './model-helpers'
 // ----------------------------------------------------------------------------
 // Price Calculation Utilities
 // ----------------------------------------------------------------------------
+
+/**
+ * Render a group ratio for customer-facing surfaces. Below 1 it reads as a
+ * discount; at or above 1 there is no discount to express, so the raw
+ * multiplier is kept.
+ */
+export function formatGroupRatio(
+  ratio: number,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) {
+    return `${ratio}x`
+  }
+  return formatDiscount(ratio, t)
+}
 
 /**
  * Strip trailing zeros from formatted price string while preserving currency symbols

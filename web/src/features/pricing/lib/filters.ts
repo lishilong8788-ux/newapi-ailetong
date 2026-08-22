@@ -169,21 +169,29 @@ export function parseTags(tagsString?: string): string[] {
 }
 
 /**
- * Extract all unique tags from models
+ * Extract all unique tags from models.
+ *
+ * Deduplication is case-insensitive, but the first spelling encountered is kept
+ * for display so the sidebar shows "Hot" rather than "hot". Callers that match
+ * against these values (`filterByTag`, sidebar counts) lowercase both sides, so
+ * preserving case here is display-only and does not affect filtering.
  */
 export function extractAllTags(models: PricingModel[]): string[] {
-  const tagSet = new Set<string>()
+  const tagsByLowercase = new Map<string, string>()
 
   models.forEach((model) => {
     if (model.tags) {
       const tags = parseTags(model.tags)
       tags.forEach((tag) => {
-        tagSet.add(tag.toLowerCase())
+        const key = tag.toLowerCase()
+        if (!tagsByLowercase.has(key)) {
+          tagsByLowercase.set(key, tag)
+        }
       })
     }
   })
 
-  return Array.from(tagSet).sort((a, b) => a.localeCompare(b))
+  return [...tagsByLowercase.values()].sort((a, b) => a.localeCompare(b))
 }
 
 /**

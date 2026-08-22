@@ -161,7 +161,10 @@ function average(
   )
 }
 
-export function ModelDetailsPerformance(props: { model: PricingModel }) {
+export function ModelDetailsPerformance(props: {
+  model: PricingModel
+  usableGroup?: Record<string, string>
+}) {
   const { t } = useTranslation()
   const metricsQuery = useQuery({
     queryKey: ['perf-metrics', props.model.model_name],
@@ -194,8 +197,10 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
   }, [groups])
 
   if (metricsQuery.isLoading || performances.length === 0) {
+    // Card level, because it stands in for the whole stat grid, whose tiles are
+    // card surfaces too.
     return (
-      <div className='text-muted-foreground rounded-lg border p-6 text-center text-sm'>
+      <div className='text-muted-foreground bg-card rounded-lg border p-6 text-center text-sm'>
         {t('Performance data is not yet available for this model.')}
       </div>
     )
@@ -266,7 +271,13 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
               header: t('Group'),
               className: tableStyles.compactHeaderCell,
               cellClassName: tableStyles.compactCell,
-              cell: (perf) => <GroupBadge group={perf.group} size='sm' />,
+              cell: (perf) => (
+                <GroupBadge
+                  group={perf.group}
+                  desc={props.usableGroup?.[perf.group]}
+                  size='sm'
+                />
+              ),
             },
             {
               id: 'tps',

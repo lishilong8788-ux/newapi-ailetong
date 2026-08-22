@@ -33,7 +33,6 @@ export function LoadingSkeleton(props: LoadingSkeletonProps) {
         <Skeleton className='h-8 w-40' />
         <Skeleton className='h-4 w-52' />
       </div>
-      <Skeleton className='h-10 w-full rounded-lg' />
       <FilterBarSkeleton />
       {viewMode === VIEW_MODES.TABLE ? (
         <TableContentSkeleton />

@@ -16,41 +16,39 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useTranslation } from 'react-i18next'
+import { memo } from 'react'
 
-import { StatusBadge, type StatusVariant } from '@/components/status-badge'
+import { StatusBadge } from '@/components/status-badge'
+import { cn } from '@/lib/utils'
 
-import { isDynamicPricingModel } from '../lib/dynamic-price'
-import { isTokenBasedModel } from '../lib/model-helpers'
-import type { PricingModel } from '../types'
+import { DEFAULT_TAG_VARIANT, TAG_VARIANTS } from '../constants'
 
-interface ModelBillingModeBadgeProps {
-  model: PricingModel
+export interface ModelTagBadgeProps {
+  tag: string
+  size?: 'sm' | 'md' | 'lg'
   filled?: boolean
   className?: string
 }
 
-export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
-  const { t } = useTranslation()
-  let label = t('Per Request')
-  let variant: StatusVariant = 'purple'
-
-  if (isDynamicPricingModel(props.model)) {
-    label = t('Dynamic Pricing')
-    variant = 'warning'
-  } else if (isTokenBasedModel(props.model)) {
-    label = t('Token-based')
-    variant = 'info'
-  }
+/**
+ * Renders one operational tag from `models.tags`.
+ *
+ * Known tags get a color from `TAG_VARIANTS`; unknown ones stay neutral so that
+ * operators can introduce new tags without a frontend change.
+ */
+export const ModelTagBadge = memo(function ModelTagBadge(
+  props: ModelTagBadgeProps
+) {
+  const variant = TAG_VARIANTS[props.tag.toLowerCase()] ?? DEFAULT_TAG_VARIANT
 
   return (
     <StatusBadge
-      label={label}
+      label={props.tag}
       variant={variant}
+      size={props.size ?? 'sm'}
       copyable={false}
-      size='sm'
       filled={props.filled}
-      className={props.className}
+      className={cn('shrink-0', props.className)}
     />
   )
-}
+})

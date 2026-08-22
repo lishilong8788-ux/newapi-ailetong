@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { type TFunction } from 'i18next'
 
+import type { StatusVariant } from '@/components/status-badge'
+
 import type { TokenUnit } from './types'
 
 // ----------------------------------------------------------------------------
@@ -109,11 +111,116 @@ export const FILTER_SECTIONS = {
 /** Maximum number of tags to display in model row */
 export const MAX_TAGS_DISPLAY = 5
 
+/**
+ * Colors for well-known operational tags (from the `models.tags` column).
+ *
+ * Keys are matched case-insensitively against the parsed tag. Tags absent from
+ * this map fall back to `DEFAULT_TAG_VARIANT`, so operators can add arbitrary
+ * tags without a code change — they just render in the neutral style.
+ */
+export const TAG_VARIANTS: Record<string, StatusVariant> = {
+  // Promotion / attention
+  热门: 'red',
+  hot: 'red',
+  popular: 'red',
+  推荐: 'orange',
+  recommended: 'orange',
+  新: 'success',
+  新品: 'success',
+  new: 'success',
+  限时: 'pink',
+  // Capability
+  推理: 'violet',
+  reasoning: 'violet',
+  视觉: 'cyan',
+  vision: 'cyan',
+  多模态: 'cyan',
+  multimodal: 'cyan',
+  长文本: 'blue',
+  'long-context': 'blue',
+  联网: 'teal',
+  // Lifecycle
+  免费: 'success',
+  free: 'success',
+  测试: 'warning',
+  beta: 'warning',
+  实验性: 'warning',
+  即将下线: 'danger',
+  deprecated: 'danger',
+}
+
+/** Style used for tags with no explicit entry in `TAG_VARIANTS`. */
+export const DEFAULT_TAG_VARIANT: StatusVariant = 'neutral'
+
+/**
+ * Tags that describe a commercial offer rather than a capability. These are the
+ * ones a buyer scans for, so the model card renders them with a travelling
+ * highlight and floats them ahead of the capability tags.
+ *
+ * Capability tags (`推理`, `视觉`, `长文本`) are deliberately excluded: they are
+ * useful, but animating them would spend the card's one attention-grabbing
+ * device on something nobody is hunting for.
+ */
+export const PROMO_TAGS = new Set([
+  '热门',
+  'hot',
+  'popular',
+  '推荐',
+  'recommended',
+  '限时',
+  '新',
+  '新品',
+  'new',
+  '免费',
+  'free',
+])
+
+/** Maximum operational tags shown on a model card before collapsing to "+N". */
+export const MAX_CARD_TAGS = 3
+
 /** Maximum number of filter items to display before showing "More..." */
 export const MAX_FILTER_ITEMS = 5
 
-/** Sidebar width */
-export const SIDEBAR_WIDTH = 'w-64'
+/**
+ * Column template for the pricing shell: filter rail + fluid content.
+ *
+ * The rail widens with the viewport rather than sitting at one narrow fixed
+ * width, because vendor chips carry an icon, a name and a count and wrapped one
+ * per row when the rail was 240px. Deliberately has no `max-w-*` cap — the page
+ * runs edge to edge and only its horizontal padding holds content off the
+ * viewport edge.
+ */
+export const PRICING_SHELL_COLUMNS_CLASS =
+  'xl:grid-cols-[272px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)]'
+
+/**
+ * Column ladder for the model card grid. The fifth column is keyed to the
+ * viewport rather than a named breakpoint: on a 1920px display four columns give
+ * each card ~370px, well past the width the card's type scale is tuned for.
+ */
+export const PRICING_CARD_GRID_COLUMNS_CLASS =
+  'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 min-[1900px]:grid-cols-5'
+
+/**
+ * Type and icon scale for the filter rail.
+ *
+ * One step above the app's default chip metrics on purpose. The rail is the
+ * page's primary navigation, so at `text-xs`/14px icons it read as fine print
+ * next to the card grid it drives — vendor marks in particular were too small
+ * to identify at a glance, which is the whole point of showing them.
+ */
+export const PRICING_FILTER_SCALE = {
+  /** Panel heading ("Filter"). */
+  panelTitle: 'text-base',
+  /** Per-section headings ("Groups", "Model Tags", ...). */
+  sectionTitle: 'text-[15px]',
+  /** Chip label. */
+  chipLabel: 'text-[13px]',
+  /** Count/ratio badge inside a chip. Stays below the label. */
+  chipBadge: 'text-[12px]',
+  /** Vendor mark rendered inside a chip, in px. */
+  chipIconSize: 16,
+} as const
 
 /** Excluded groups */
 export const EXCLUDED_GROUPS = ['', 'auto']

@@ -33,11 +33,13 @@ import { cn } from '@/lib/utils'
 import {
   ENDPOINT_TYPES,
   FILTER_ALL,
+  PRICING_FILTER_SCALE,
   QUOTA_TYPES,
   getEndpointTypeLabels,
   getQuotaTypeLabels,
 } from '../constants'
 import { parseTags } from '../lib/filters'
+import { formatGroupRatio } from '../lib/price'
 import type { PricingModel, PricingVendor } from '../types'
 
 type FilterOption = {
@@ -83,14 +85,6 @@ function countBy(
   return models.reduce((count, model) => count + (predicate(model) ? 1 : 0), 0)
 }
 
-function formatGroupRatio(ratio: number | undefined): string | undefined {
-  if (ratio == null) return undefined
-  const formatted = Number.isInteger(ratio)
-    ? ratio.toString()
-    : ratio.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
-  return `x${formatted}`
-}
-
 function FilterChip(props: {
   option: FilterOption
   active: boolean
@@ -100,11 +94,27 @@ function FilterChip(props: {
     <button
       type='button'
       onClick={props.onClick}
+      // The chips in a section are a single-select set, and selection was
+      // conveyed by fill alone. Mirrors the toolbar's segmented control.
+      aria-pressed={props.active}
       className={cn(
-        'group inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-all',
+        // gap-1.5, not gap-2: two chips per row is the density the rail is sized
+        // for, and at 16px icons plus a count badge the extra 2px per gap is
+        // enough to push a name like "DeepSeek" onto a row of its own.
+        'group inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border px-2.5 font-medium transition-all',
+        // Same focus treatment as `Button`: these are bare buttons, so without
+        // it they fall back to the UA ring and look foreign next to Reset.
+        'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+        PRICING_FILTER_SCALE.chipLabel,
+        // Selection reads as brand blue, not a darker grey. `accent` +
+        // `accent-foreground` is a paired token (primary-tinted surface,
+        // guaranteed-contrast text) in both themes, so this stays AA at 13px —
+        // `text-primary` on white would not, `--primary` sits at L=0.692. The
+        // blue border carries the signal so selection survives greyscale and
+        // does not lean on hue alone.
         props.active
-          ? 'border-foreground/30 bg-foreground/5 text-foreground shadow-sm'
-          : 'border-border/70 bg-background text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground'
+          ? 'border-primary/45 bg-accent text-accent-foreground font-semibold shadow-sm'
+          : 'border-border/70 bg-canvas text-muted-foreground hover:border-primary/30 hover:bg-accent/50 hover:text-foreground'
       )}
       title={props.option.label}
     >
@@ -115,10 +125,15 @@ function FilterChip(props: {
       {(props.option.suffix || props.option.count != null) && (
         <span
           className={cn(
-            'rounded-md px-1.5 py-0.5 text-[12px]',
+            'rounded-md px-1.5 py-0.5',
+            PRICING_FILTER_SCALE.chipBadge,
+            // Solid primary on a selected chip: the count is the one element
+            // that can take a saturated fill without competing with the label,
+            // and it gives selection a second, non-hue cue. Unselected stays
+            // translucent — `bg-muted` is too close to the canvas well to read.
             props.active
-              ? 'bg-background text-foreground'
-              : 'bg-muted text-muted-foreground'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-foreground/8 text-muted-foreground'
           )}
         >
           {props.option.suffix ?? props.option.count}
@@ -132,16 +147,28 @@ function FilterSection(props: FilterSectionProps) {
   return (
     <Collapsible
       defaultOpen
-      className='border-border/70 border-b pb-3 last:border-b-0'
+      className='border-border/70 border-b pb-4 last:border-b-0 last:pb-0'
     >
-      <CollapsibleTrigger className='group flex w-full items-center justify-between py-2.5 text-left'>
-        <span className='text-foreground text-sm font-semibold'>
+      <CollapsibleTrigger className='group flex w-full items-center justify-between py-3 text-left'>
+        <span
+          className={cn(
+            'text-foreground font-semibold',
+            PRICING_FILTER_SCALE.sectionTitle
+          )}
+        >
           {props.title}
         </span>
         <ChevronDown className='text-muted-foreground size-4 transition-transform group-data-[panel-open]:rotate-180' />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className='flex flex-wrap gap-1.5'>
+        {/* Each section is one single-select set, so it gets a name of its own.
+            Without it a screen reader hears a flat run of toggle buttons with
+            no clue which facet any of them belongs to. */}
+        <div
+          role='group'
+          aria-label={props.title}
+          className='flex flex-wrap gap-2'
+        >
           {props.options.map((option) => (
             <FilterChip
               key={option.value}
@@ -175,7 +202,9 @@ export function PricingSidebar(props: PricingSidebarProps) {
           props.models,
           (model) => model.vendor_name === vendor.name
         ),
-        icon: vendor.icon ? getLobeIcon(vendor.icon, 14) : undefined,
+        icon: vendor.icon
+          ? getLobeIcon(vendor.icon, PRICING_FILTER_SCALE.chipIconSize)
+          : undefined,
       }))
       .filter((vendor) => vendor.count > 0),
   ]
@@ -188,7 +217,10 @@ export function PricingSidebar(props: PricingSidebarProps) {
     ...props.groups.map((group) => ({
       value: group,
       label: group,
-      suffix: formatGroupRatio(props.groupRatios?.[group]),
+      suffix:
+        props.groupRatios?.[group] == null
+          ? undefined
+          : formatGroupRatio(props.groupRatios[group], t),
     })),
   ]
 
@@ -245,35 +277,46 @@ export function PricingSidebar(props: PricingSidebarProps) {
       })),
   ]
 
+  // `bg-card`: the panel had a card's shape (border + radius) but no surface,
+  // so on the tinted canvas it would read as an outline drawn on the page
+  // rather than a panel sitting on it.
   return (
-    <aside className={cn('rounded-xl border p-3', props.className)}>
-      <div className='mb-2.5 flex items-center justify-between gap-2'>
-        <div>
-          <h2 className='text-foreground text-sm font-bold'>{t('Filter')}</h2>
-          <p className='text-muted-foreground mt-1 text-xs'>
-            {t('Refine models by provider, group, type, and tags.')}
-          </p>
-        </div>
+    <aside className={cn('bg-card rounded-xl border p-4', props.className)}>
+      {/* Title and Reset on one row, the description on its own line below: the
+          description is a full sentence and sharing a row with the button left
+          it two or three words wide. */}
+      <div className='flex items-center justify-between gap-2'>
+        <h2
+          className={cn(
+            'text-foreground font-bold',
+            PRICING_FILTER_SCALE.panelTitle
+          )}
+        >
+          {t('Filter')}
+        </h2>
         <Button
           type='button'
           variant='ghost'
           size='sm'
           onClick={props.onClearFilters}
           disabled={!props.hasActiveFilters}
-          className='h-7 gap-1.5 px-2 text-xs'
+          className='-mr-1 h-7 shrink-0 gap-1.5 px-2 text-xs'
         >
           <RotateCcw className='size-3.5' />
           {t('Reset')}
         </Button>
       </div>
+      <p className='text-muted-foreground mt-1 text-xs leading-relaxed'>
+        {t('Refine models by provider, group, type, and tags.')}
+      </p>
 
       {props.hasActiveFilters && (
-        <Badge variant='secondary' className='mb-3'>
+        <Badge variant='secondary' className='mt-3'>
           {t('Filters active')}
         </Badge>
       )}
 
-      <div className='space-y-1'>
+      <div className='mt-1'>
         <FilterSection
           title={t('Groups')}
           value={props.groupFilter}

@@ -55,6 +55,7 @@ import {
 } from '../constants'
 import type { PricingModel, PricingVendor, TokenUnit } from '../types'
 import { PricingSidebar } from './pricing-sidebar'
+import { SearchBar } from './search-bar'
 
 type SegmentOption = {
   value: string
@@ -66,6 +67,9 @@ type SegmentOption = {
 export interface PricingToolbarProps {
   filteredCount: number
   totalCount?: number
+  searchValue: string
+  onSearchChange: (value: string) => void
+  onSearchClear: () => void
   sortBy: string
   onSortChange: (value: string) => void
   tokenUnit: TokenUnit
@@ -104,7 +108,7 @@ function SegmentedControl(props: {
     <div
       role='group'
       aria-label={props.ariaLabel}
-      className='bg-muted/60 inline-flex h-8 items-center rounded-lg border p-0.5'
+      className='bg-muted/60 inline-flex h-9 items-center rounded-lg border p-0.5'
     >
       {props.options.map((option) => {
         const Icon = option.icon
@@ -117,7 +121,7 @@ function SegmentedControl(props: {
             aria-pressed={isActive}
             className={cn(
               'inline-flex h-full items-center justify-center rounded-md text-xs font-medium transition-all',
-              Icon && !option.label ? 'w-7' : 'gap-1.5 px-3',
+              Icon && !option.label ? 'w-8' : 'gap-1.5 px-3.5',
               isActive
                 ? 'bg-primary text-primary-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
@@ -166,13 +170,13 @@ export function PricingToolbar(props: PricingToolbarProps) {
   )
 
   return (
-    <div className='rounded-xl border p-3'>
-      <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
-        <div className='flex items-center gap-2'>
+    <div className='rounded-xl border p-3.5'>
+      <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4'>
+        <div className='flex shrink-0 items-center gap-2.5'>
           <Button
             type='button'
             variant='outline'
-            size='sm'
+            size='lg'
             onClick={() => setMobileFiltersOpen(true)}
             className='gap-1.5 xl:hidden'
           >
@@ -198,8 +202,16 @@ export function PricingToolbar(props: PricingToolbarProps) {
           </div>
         </div>
 
-        <div className='flex flex-wrap items-center gap-2'>
-          <div className='hidden items-center gap-2 sm:flex'>
+        <SearchBar
+          value={props.searchValue}
+          onChange={props.onSearchChange}
+          onClear={props.onSearchClear}
+          placeholder={t('Search model name, provider, endpoint, or tag...')}
+          className='min-w-0 lg:mr-auto lg:max-w-md lg:flex-1'
+        />
+
+        <div className='flex shrink-0 flex-wrap items-center gap-2.5'>
+          <div className='hidden items-center gap-2.5 sm:flex'>
             <SegmentedControl
               options={[
                 { value: 'standard', label: t('Standard') },
@@ -226,8 +238,8 @@ export function PricingToolbar(props: PricingToolbarProps) {
                 <Button
                   type='button'
                   variant='outline'
-                  size='sm'
-                  className='h-8 gap-1.5 px-3 text-xs'
+                  size='lg'
+                  className='gap-1.5 px-3.5 text-xs'
                 />
               }
             >
