@@ -122,6 +122,11 @@ func Query(params QueryParams) (QueryResult, error) {
 	return buildQueryResult(params.Model, merged), nil
 }
 
+// recentSuccessRateBuckets is how many trailing buckets the model square shows
+// as status bars. The wall-clock span each bar covers is governed by
+// perf_metrics_setting.bucket_time, so this is a count, not a duration.
+const recentSuccessRateBuckets = 5
+
 func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 	if hours <= 0 {
 		hours = 24
@@ -187,7 +192,7 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 			AvgLatencyMs:       avgLatency,
 			SuccessRate:        math.Round(successRate*100) / 100,
 			AvgTps:             math.Round(avgTps*100) / 100,
-			RecentSuccessRates: recentSuccessRates(modelBuckets[name], 3),
+			RecentSuccessRates: recentSuccessRates(modelBuckets[name], recentSuccessRateBuckets),
 			RequestCount:       total.requestCount,
 		})
 	}
