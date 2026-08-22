@@ -5,11 +5,14 @@
 upload
 *.exe
 *.db
+*.db.bak-*
 build
 *.db-journal
 logs
 web/dist
 web/node_modules
+# Vitest writes its cache to a bare node_modules/.vite at the repo root.
+/node_modules
 .env
 one-api
 new-api
