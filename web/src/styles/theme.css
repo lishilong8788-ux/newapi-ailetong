@@ -41,6 +41,7 @@ For commercial licensing, please contact support@quantumnous.com
     'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
 
   --color-background: var(--background);
+  --color-canvas: var(--canvas);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -84,6 +85,14 @@ For commercial licensing, please contact support@quantumnous.com
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* Elevation. Two layers per level — a tight contact shadow that anchors the
+   * surface plus a wide ambient one that gives it depth. A single-layer shadow
+   * is what makes a card look printed on the page instead of resting above it.
+   * Tinted toward the canvas hue rather than pure black, which goes muddy on a
+   * tinted canvas. Light/dark values are swapped via the vars below. */
+  --shadow-raised: var(--elevation-raised);
+  --shadow-raised-lg: var(--elevation-raised-lg);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -104,6 +113,37 @@ For commercial licensing, please contact support@quantumnous.com
    * identical when no font preference is set. */
   --font-body: var(--font-sans);
   --background: oklch(1 0 0);
+  /* Page canvas — one step below `--card` so card surfaces read as raised
+   * rather than as outlined regions of the same white. `--background` is left
+   * at card-white deliberately: ~70 call sites use it for surfaces *inside*
+   * cards (detail tiles, code blocks, table rows via `--table-row`), and those
+   * must not pick up the canvas tint. Only page shells should use `bg-canvas`.
+   *
+   * The tint is mixed from `--primary` rather than hard-coded blue so each
+   * palette gets a canvas in its own hue. Note that presets are applied to
+   * `<body>` while this block targets `<html>`: custom properties are
+   * substituted where they are *declared*, so this formula always resolves
+   * against the default primary. The preset bridge in theme-presets.css
+   * redeclares it at body level to pick up the active palette.
+   *
+   * The base is 0.984 rather than the target lightness: mixing in 4% of a
+   * mid-dark primary pulls the result down, landing the default palette on
+   * ~0.972 — a ~2.8% step below card white, which is the intended depth. 4% is
+   * also under the threshold where the hue becomes nameable, so it reads as
+   * "not flat white" rather than "blue page".
+   *
+   * Dark mode aliases this to `--background`: its ladder
+   * (0.235 → 0.285 → 0.305) already separates canvas from card.
+   *
+   * Fallback chain, as lowered by Lightning CSS: bare `var(--primary)` at the
+   * base, a static near-white under `@supports (color: lab(...))`, then the real
+   * mix under `@supports (color-mix(...))`. Only a browser supporting neither
+   * `lab()` nor `color-mix()` lands on the primary — those cannot render the
+   * oklch palette this theme is built on either, and every other derived token
+   * here (`--accent`, `--sidebar`, `--table-header`) degrades the same way. A
+   * hand-written fallback declaration does not help: the bundler folds
+   * same-selector rules together and the generated base wins regardless. */
+  --canvas: color-mix(in oklch, var(--primary) 4%, oklch(0.984 0 0));
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -148,6 +188,14 @@ For commercial licensing, please contact support@quantumnous.com
   --sidebar-ring: oklch(0.58 0.2 250);
   --skeleton-base: oklch(0.97 0 0);
   --skeleton-highlight: oklch(0.985 0 0);
+  /* Cool-tinted rather than neutral black: on the tinted canvas a pure-black
+   * shadow reads as grey haze instead of depth. */
+  --elevation-raised:
+    0 1px 2px -1px oklch(0.45 0.05 255 / 0.1),
+    0 4px 12px -6px oklch(0.45 0.06 255 / 0.14);
+  --elevation-raised-lg:
+    0 1px 2px -1px oklch(0.45 0.05 255 / 0.12),
+    0 10px 28px -10px oklch(0.45 0.07 255 / 0.2);
   --table-row: var(--background);
   --table-header: color-mix(
     in oklch,
@@ -181,6 +229,9 @@ For commercial licensing, please contact support@quantumnous.com
 .dark {
   /* OpenAI-like dark mode with a crisp charcoal canvas. */
   --background: oklch(0.235 0 0);
+  /* Dark mode already separates canvas from card, so the alias keeps
+   * `bg-canvas` honest without adding a fourth grey. */
+  --canvas: var(--background);
   --foreground: oklch(0.965 0 0);
   --card: oklch(0.285 0 0);
   --card-foreground: oklch(0.965 0 0);
@@ -222,6 +273,12 @@ For commercial licensing, please contact support@quantumnous.com
   --sidebar-ring: oklch(0.7 0.17 250);
   --skeleton-base: oklch(0.335 0 0);
   --skeleton-highlight: oklch(0.44 0 0);
+  /* Dark surfaces need near-black and more spread: the surrounding canvas is
+   * already dark, so a tinted shadow would not separate the layers. */
+  --elevation-raised:
+    0 1px 2px -1px oklch(0 0 0 / 0.5), 0 4px 14px -6px oklch(0 0 0 / 0.55);
+  --elevation-raised-lg:
+    0 1px 2px -1px oklch(0 0 0 / 0.55), 0 12px 32px -12px oklch(0 0 0 / 0.65);
   --table-row: var(--background);
   --table-header: color-mix(in oklch, var(--foreground) 6%, var(--background));
   --table-header-hover: color-mix(

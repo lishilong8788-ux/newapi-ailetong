@@ -30,3 +30,15 @@ export function isLikelyHtml(value: string): boolean {
     value
   )
 }
+
+/**
+ * Admin-authored HTML (custom home page, about page) renders in a shadow root
+ * beneath the transparent floating header and cannot style it across the shadow
+ * boundary. Opting in with `data-nav-tone="invert"` anywhere in the markup lets
+ * such content declare that its top region is dark, so the header can switch to
+ * a light-on-dark treatment instead of forcing the page to fade its hero to a
+ * light band just to keep the nav legible.
+ */
+export function requestsInvertedNav(value: string): boolean {
+  return /data-nav-tone\s*=\s*["']?invert/i.test(value)
+}

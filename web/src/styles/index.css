@@ -718,3 +718,83 @@ For commercial licensing, please contact support@quantumnous.com
     display: none;
   }
 }
+
+/* ── Generic flowing border ── */
+/* Same border-only technique as the auto-group effect above, but the accent is
+ * supplied by the call site through `--flow-border-color`, so one class can
+ * light up a discount pill in amber and a "hot" tag in red. Its own angle
+ * property keeps the two animations independent. */
+@property --flow-border-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes flow-border-travel {
+  to {
+    --flow-border-angle: 360deg;
+  }
+}
+
+/* The lit arc is long and tapers into a comet tail. A short bright segment
+ * looks wrong on a pill: the rounded caps consume most of the angular sweep,
+ * so a narrow arc parks on one end and reads as a stray bracket rather than a
+ * highlight travelling around a ring. The call site pairs this with a complete
+ * static border underneath, so the outline never appears broken mid-sweep. */
+.flow-border {
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--flow-border-angle),
+    transparent 0deg,
+    transparent 150deg,
+    color-mix(in oklch, var(--flow-border-color) 22%, transparent) 240deg,
+    color-mix(in oklch, var(--flow-border-color) 70%, transparent) 305deg,
+    var(--flow-border-color) 336deg,
+    color-mix(in oklch, var(--flow-border-color) 45%, transparent) 351deg,
+    transparent 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: flow-border-travel 2.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-border {
+    display: none;
+  }
+}
+
+/* Inverted public header — light-on-dark treatment for pages that render their
+   own dark hero beneath the transparent floating header (e.g. a custom home
+   page). Theme tokens are redefined on the nav itself rather than restyling
+   each child, so descendants that don't accept a className (ThemeSwitch,
+   LanguageSwitcher, NotificationPopover) follow along automatically. Applies
+   identically in light and dark app themes, since the hero underneath is dark
+   in both. */
+[data-header-tone='invert'] {
+  --foreground: oklch(1 0 0);
+  --muted-foreground: oklch(0.88 0.015 250);
+  --muted: oklch(1 0 0 / 14%);
+  --accent: oklch(1 0 0 / 14%);
+  --accent-foreground: oklch(1 0 0);
+  --border: oklch(1 0 0 / 22%);
+  --ring: oklch(0.85 0.06 250);
+  color: var(--foreground);
+}
+
+/* Scrolled pill: the light `bg-background/60` glass reads as a bright slab on a
+   dark hero, so darken it and swap the shadow for a hairline ring. */
+[data-header-tone='invert'].bg-background\/60 {
+  background-color: oklch(0.22 0.03 250 / 62%);
+  box-shadow: 0 2px 20px -8px oklch(0 0 0 / 55%);
+}
+
+/* Dropdown surfaces (theme/language menus, notifications, profile) are portalled
+   outside the nav, so they keep the app theme and need no overrides here. */

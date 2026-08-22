@@ -284,6 +284,31 @@ export function parseTimestampFromInput(value: string): number {
 }
 
 // ============================================================================
+// Discounts
+// ============================================================================
+
+/**
+ * Render a billing ratio (0 < ratio < 1) as a localized discount.
+ *
+ * Discount conventions differ by locale and are not a translation of a single
+ * number: Chinese 折 states the fraction still paid (0.79 → 7.9折), while
+ * "% off" states the fraction saved (0.79 → 21% off). Both values are passed to
+ * i18next so each locale's string uses whichever it needs; unused interpolation
+ * values are ignored.
+ *
+ * `toFixed` trims binary float artifacts (0.79 * 10 → 7.900000000000001).
+ */
+export function formatDiscount(
+  ratio: number,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  return t('{{percent}}% off', {
+    percent: Number(((1 - ratio) * 100).toFixed(2)),
+    tenths: Number((ratio * 10).toFixed(2)),
+  })
+}
+
+// ============================================================================
 // Color Generation
 // ============================================================================
 
