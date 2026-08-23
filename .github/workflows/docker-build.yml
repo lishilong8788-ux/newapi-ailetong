@@ -5,6 +5,8 @@ on:
     tags:
       - '*'
       - '!nightly*'
+      # fork 自用 tag 走 docker-ghcr.yml，这条需要 DOCKERHUB_* secret，会失败
+      - '!kbs-v*'
   workflow_dispatch:
     inputs:
       tag:
