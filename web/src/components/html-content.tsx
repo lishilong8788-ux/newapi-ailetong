@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import DOMPurify, { type Config } from 'dompurify'
-import { useEffect, useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -118,22 +118,126 @@ function hardenIsolatedHtml(html: string): string {
   return template.innerHTML
 }
 
+// Admin-authored pages are large and change rarely, while navigating away and
+// back remounts this component and would re-sanitize the identical markup. A
+// couple of entries is enough to cover switching between home and about.
+const SANITIZE_CACHE_LIMIT = 4
+const sanitizeCache = new Map<string, string>()
+
+// Parsing the markup is the other half of the mount cost, and `innerHTML` pays
+// it again on every visit. A `<template>` holds an inert parsed copy we can
+// clone instead — cloning a node tree is far cheaper than re-parsing the source.
+const templateCache = new Map<string, HTMLTemplateElement>()
+
+function parsedHtmlFragment(html: string): DocumentFragment {
+  let template = templateCache.get(html)
+  if (!template) {
+    template = document.createElement('template')
+    template.innerHTML = html
+    if (templateCache.size >= SANITIZE_CACHE_LIMIT) {
+      const oldest = templateCache.keys().next().value
+      if (oldest !== undefined) templateCache.delete(oldest)
+    }
+    templateCache.set(html, template)
+  }
+  return template.content.cloneNode(true) as DocumentFragment
+}
+
 function sanitizeHtmlContent(
   content: string,
   variant: HtmlContentVariant
 ): string {
-  if (variant === 'isolated') {
-    const html = DOMPurify.sanitize(content, isolatedSanitizeOptions)
+  const cacheKey = `${variant}:${content}`
+  const cached = sanitizeCache.get(cacheKey)
+  if (cached !== undefined) return cached
 
-    return hardenIsolatedHtml(html)
+  const html =
+    variant === 'isolated'
+      ? hardenIsolatedHtml(DOMPurify.sanitize(content, isolatedSanitizeOptions))
+      : DOMPurify.sanitize(content)
+
+  if (sanitizeCache.size >= SANITIZE_CACHE_LIMIT) {
+    const oldest = sanitizeCache.keys().next().value
+    if (oldest !== undefined) sanitizeCache.delete(oldest)
   }
+  sanitizeCache.set(cacheKey, html)
 
-  return DOMPurify.sanitize(content)
+  return html
 }
 
 function syncDarkClass(wrapper: HTMLElement): void {
   const isDark = document.documentElement.classList.contains('dark')
   wrapper.classList.toggle('dark', isDark)
+}
+
+/**
+ * Application styles, as constructable sheets that every isolated shadow root
+ * adopts by reference.
+ *
+ * Cloning `<style>`/`<link>` nodes into the shadow root instead makes the
+ * browser re-parse the whole application stylesheet (hundreds of KB of Tailwind)
+ * on every mount — paid again each time the user navigates back to a page with
+ * admin-authored HTML. Adopted sheets are parsed once per document.
+ */
+let adoptedSheetsCache: {
+  sources: StyleSource[]
+  sheets: CSSStyleSheet[]
+} | null = null
+
+type StyleSource = HTMLStyleElement | HTMLLinkElement
+
+function collectStyleSources(): StyleSource[] {
+  return [
+    ...document.head.querySelectorAll<StyleSource>(
+      'style, link[rel="stylesheet"]'
+    ),
+  ]
+}
+
+function sameSources(a: StyleSource[], b: StyleSource[]): boolean {
+  return a.length === b.length && a.every((node, i) => node === b[i])
+}
+
+function buildAdoptedSheets(sources: StyleSource[]): CSSStyleSheet[] | null {
+  if (typeof CSSStyleSheet === 'undefined') return null
+  if (!('adoptedStyleSheets' in Document.prototype)) return null
+
+  const sheets: CSSStyleSheet[] = []
+  for (const source of sources) {
+    const sheet = source.sheet
+    // A `<link>` that has not finished loading, or any cross-origin sheet, hides
+    // its rules. Fall back to node cloning rather than shipping a partial theme.
+    if (!sheet) return null
+
+    let text: string
+    try {
+      text = [...sheet.cssRules].map((rule) => rule.cssText).join('\n')
+    } catch {
+      return null
+    }
+
+    const constructed = new CSSStyleSheet()
+    constructed.replaceSync(text)
+    sheets.push(constructed)
+  }
+
+  return sheets
+}
+
+function getAdoptedSheets(): CSSStyleSheet[] | null {
+  const sources = collectStyleSources()
+  if (adoptedSheetsCache && sameSources(adoptedSheetsCache.sources, sources)) {
+    return adoptedSheetsCache.sheets
+  }
+
+  const sheets = buildAdoptedSheets(sources)
+  if (!sheets) {
+    adoptedSheetsCache = null
+    return null
+  }
+
+  adoptedSheetsCache = { sources, sheets }
+  return sheets
 }
 
 function IsolatedHtmlContent(props: {
@@ -142,7 +246,12 @@ function IsolatedHtmlContent(props: {
 }): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
+  // Layout effect, not a passive one: with `useEffect` React committed an empty
+  // shadow host, the browser painted that blank frame, and only then did the
+  // markup get injected — a visible flash every time the user navigated to a
+  // page built from admin-authored HTML. Injecting before paint means the first
+  // frame of the new page is already the finished page.
+  useLayoutEffect(() => {
     const container = containerRef.current
     if (!container) {
       return
@@ -150,24 +259,26 @@ function IsolatedHtmlContent(props: {
 
     const shadowRoot =
       container.shadowRoot ?? container.attachShadow({ mode: 'open' })
-    const applicationStyleNodes = [
-      ...document.head.querySelectorAll<HTMLLinkElement | HTMLStyleElement>(
-        'style, link[rel="stylesheet"]'
-      ),
-    ].map((node) => node.cloneNode(true))
 
     const wrapper = document.createElement('div')
     syncDarkClass(wrapper)
-    wrapper.innerHTML = props.html
+    wrapper.append(parsedHtmlFragment(props.html))
 
     const contentTemplate = document.createElement('template')
     contentTemplate.innerHTML = isolatedContentBaseStyles
 
-    shadowRoot.replaceChildren(
-      ...applicationStyleNodes,
-      contentTemplate.content,
-      wrapper
-    )
+    const adopted = getAdoptedSheets()
+    if (adopted) {
+      shadowRoot.adoptedStyleSheets = adopted
+      shadowRoot.replaceChildren(contentTemplate.content, wrapper)
+    } else {
+      shadowRoot.adoptedStyleSheets = []
+      shadowRoot.replaceChildren(
+        ...collectStyleSources().map((node) => node.cloneNode(true)),
+        contentTemplate.content,
+        wrapper
+      )
+    }
 
     const observer = new MutationObserver(() => syncDarkClass(wrapper))
     observer.observe(document.documentElement, {

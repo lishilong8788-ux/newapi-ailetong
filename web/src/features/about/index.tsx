@@ -121,6 +121,10 @@ export function About() {
   const { data, isLoading } = useQuery({
     queryKey: ['about-content'],
     queryFn: getAboutContent,
+    // Without this the document refetched on every mount and the page fell back
+    // to its skeleton each time the user navigated here.
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   })
 
   const rawContent = data?.data?.trim() ?? ''
