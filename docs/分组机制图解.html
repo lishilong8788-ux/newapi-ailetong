@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分组机制图解 · new-api</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+background:#f4f6f9;color:#1e293b;line-height:1.7;padding:32px 20px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:30px;margin-bottom:8px;letter-spacing:-.5px}
+.sub{color:#64748b;font-size:15px;margin-bottom:36px}
+h2{font-size:21px;margin:44px 0 6px;display:flex;align-items:center;gap:10px}
+h2 .n{background:#2563eb;color:#fff;width:28px;height:28px;border-radius:8px;
+font-size:15px;display:grid;place-items:center;flex:none}
+.h2sub{color:#64748b;font-size:14px;margin-bottom:20px;padding-left:38px}
+.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big{background:#fff;border-left:5px solid #2563eb;border-radius:12px;padding:20px 24px;
+font-size:17px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big b{color:#2563eb}
+code{background:#eef2f7;padding:2px 7px;border-radius:5px;font-size:13px;
+font-family:ui-monospace,Consolas,monospace}
+.muted{color:#64748b;font-size:13px}
+/* 类比图 */
+.analogy{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+.acol{background:#fff;border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.acol h4{font-size:15px;margin-bottom:12px;color:#334155}
+.arow{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px}
+.tag{padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+.t-def{background:#e2e8f0;color:#475569}
+.t-vip{background:#fef3c7;color:#92400e}
+.t-svip{background:#f3e8ff;color:#6b21a8}
+.t-cheap{background:#dcfce7;color:#166534}
+/* 控制面板 */
+.panel{background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.ctrls{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:6px}
+.ctrl label{display:block;font-size:13px;font-weight:600;color:#475569;margin-bottom:8px}
+.ctrl label .hint{font-weight:400;color:#94a3b8;font-size:12px}
+.opts{display:flex;flex-direction:column;gap:7px}
+.opt{display:flex;align-items:center;gap:9px;padding:10px 13px;border:2px solid #e2e8f0;
+border-radius:9px;cursor:pointer;font-size:14px;transition:.15s;background:#fff}
+.opt:hover{border-color:#cbd5e1;background:#f8fafc}
+.opt.on{border-color:#2563eb;background:#eff6ff}
+.opt input{accent-color:#2563eb;cursor:pointer}
+.runbtn{width:100%;margin-top:22px;padding:14px;background:#2563eb;color:#fff;border:none;
+border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;transition:.15s}
+.runbtn:hover{background:#1d4ed8}
+/* 流程 */
+.flow{margin-top:22px;display:none}
+.flow.show{display:block}
+.step{background:#fff;border-radius:11px;padding:16px 19px;margin-bottom:11px;
+border-left:5px solid #cbd5e1;box-shadow:0 1px 3px rgba(15,23,42,.06);
+opacity:0;transform:translateY(10px);animation:in .38s forwards}
+@keyframes in{to{opacity:1;transform:none}}
+.step.ok{border-left-color:#16a34a}
+.step.bad{border-left-color:#dc2626;background:#fef2f2}
+.step.info{border-left-color:#2563eb}
+.sh{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;margin-bottom:5px}
+.ic{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+font-size:13px;color:#fff;flex:none}
+.ic.ok{background:#16a34a}.ic.bad{background:#dc2626}.ic.info{background:#2563eb}
+.sb{font-size:14px;color:#475569;padding-left:31px}
+.sb b{color:#1e293b}
+.final{margin-top:16px;padding:20px 24px;border-radius:12px;font-size:16px}
+.final.ok{background:#f0fdf4;border:2px solid #16a34a}
+.final.bad{background:#fef2f2;border:2px solid #dc2626}
+.final .ft{font-weight:700;font-size:18px;margin-bottom:10px}
+.final.ok .ft{color:#15803d}.final.bad .ft{color:#b91c1c}
+.calc{font-family:ui-monospace,Consolas,monospace;font-size:14px;background:#fff;
+padding:13px 16px;border-radius:8px;margin-top:11px;line-height:2}
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;
+border-radius:11px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+th{background:#f1f5f9;padding:12px 15px;text-align:left;font-size:13px;color:#475569}
+td{padding:12px 15px;border-top:1px solid #f1f5f9;vertical-align:top}
+tr:hover td{background:#fafbfc}
+/* 菜单路径 */
+.path{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;
+background:#f8fafc;padding:9px 13px;border-radius:8px;margin-top:8px;
+font-family:ui-monospace,Consolas,monospace;color:#334155}
+.path .arw{color:#94a3b8}
+/* 提示 */
+.warn{background:#fffbeb;border-left:5px solid #f59e0b;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.warn b{color:#92400e}
+.tip{background:#eff6ff;border-left:5px solid #2563eb;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.tip b{color:#1d4ed8}
+.chk{background:#fff;border-radius:12px;padding:20px 24px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.chk div{padding:8px 0;font-size:14px;border-bottom:1px solid #f8fafc}
+.chk div:last-child{border:none}
+@media(max-width:760px){.analogy,.ctrls{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>分组机制图解</h1>
+<div class="sub">先看类比 → 自己动手点 → 再看配置位置。别按顺序死读，直接玩第 2 节那个模拟器最快。</div>
+
+<h2><span class="n">1</span>一句话理解</h2>
+<div class="h2sub">分组不是两种东西，是同一个标签贴在三个地方</div>
+<div class="big">
+分组就是<b>套餐标签</b>。<br>
+贴在<b>渠道</b>上 = 这条线路服务哪些套餐；贴在<b>用户</b>上 = 他买的是哪个套餐；
+贴在<b>令牌</b>上 = 这把钥匙<b>强制</b>走哪个套餐（不填就跟随用户）。
+</div>
+
+<div class="analogy">
+<div class="acol">
+<h4>🏭 供给侧：渠道打标签</h4>
+<div class="arow"><span class="tag t-def">default</span><span class="tag t-vip">vip</span> → 廉价中转（便宜、偶尔抽风）</div>
+<div class="arow"><span class="tag t-vip">vip</span><span class="tag t-svip">svip</span> → 官方直连（贵、稳定）</div>
+<div class="arow"><span class="tag t-cheap">经济组</span> → 超廉价池（很便宜、慢）</div>
+<div class="muted" style="margin-top:10px">含义：这条线路<b>愿意</b>服务哪些套餐的人</div>
+</div>
+<div class="acol">
+<h4>👤 需求侧：用户和令牌</h4>
+<div class="arow">用户张三 <span class="tag t-vip">vip</span> ← 他的身份档位</div>
+<div class="arow" style="padding-left:22px">├ 令牌A <span class="tag t-def" style="background:#f1f5f9;color:#94a3b8">留空</span> → 跟随 vip</div>
+<div class="arow" style="padding-left:22px">├ 令牌B <span class="tag t-cheap">经济组</span> → 强制走经济组</div>
+<div class="arow" style="padding-left:22px">└ 令牌C <span class="tag t-svip">svip</span> → ❌ 无权，403</div>
+<div class="muted" style="margin-top:10px">含义：令牌<b>覆盖</b>用户，但不能越权</div>
+</div>
+</div>
+
+<div class="tip"><b>只记这一条公式：</b>
+最终分组 = 令牌分组填了就用它，没填就用用户分组。<br>
+其他所有复杂度，都是围绕这一行加的<b>安全检查</b>和<b>价格计算</b>。</div>
+
+<h2><span class="n">2</span>自己动手：点一下看会发生什么</h2>
+<div class="h2sub">左边选身份，右边选钥匙，点按钮看请求怎么走。多试几种组合，尤其是被拦下的那些</div>
+
+<div class="panel">
+<div class="ctrls">
+<div class="ctrl">
+<label>① 用户分组 <span class="hint">（管理员给他定的身份）</span></label>
+<div class="opts" id="ug"></div>
+</div>
+<div class="ctrl">
+<label>② 令牌分组 <span class="hint">（这把 API Key 上填的）</span></label>
+<div class="opts" id="tg"></div>
+</div>
+</div>
+<button class="runbtn" onclick="run()">▶ 发起一次 gpt-4o 请求</button>
+<div class="flow" id="flow"></div>
+</div>
+
+<h2><span class="n">3</span>为什么要两层？</h2>
+<div class="h2sub">如果只有用户分组，下面这些都做不到</div>
+<table>
+<tr><th style="width:190px">场景</th><th>怎么配</th><th style="width:130px">价值</th></tr>
+<tr><td><b>企业多项目隔离</b><br><span class="muted">最主流用法</span></td>
+<td>令牌分组<b>全部留空</b>，靠<b>令牌独立额度</b>隔离：客服机器人 500 元、内容生成 2000 元、测试 50 元</td>
+<td>一个项目跑飞不会烧光公司余额</td></tr>
+<tr><td><b>同客户分质量档</b></td>
+<td>生产环境令牌留空（走 vip 优质池），测试环境令牌填 <code>经济组</code></td>
+<td>测试省钱，生产保稳</td></tr>
+<tr><td><b>你自己内测新渠道</b></td>
+<td>新渠道只打 <code>内测组</code> 标签，给自己发个 <code>内测组</code> 令牌</td>
+<td>不影响任何真实客户</td></tr>
+<tr><td><b>给客户灰度</b></td>
+<td>不动用户分组，只发一个新组的令牌给他试；出问题停用这个令牌即可</td>
+<td>令牌是可抛弃的实验单元</td></tr>
+</table>
+
+<div class="warn"><b>纠正一个常见误解：</b>令牌分组<b>不是必填项，留空才是常态</b>。
+大部分令牌都该留空。填了之后你就多了一处要同步维护的地方 —— 用户升级到 vip 了，
+但那个写死 <code>default</code> 的老令牌还在走 default，客户会来投诉「我充了钱怎么没变快」。</div>
+
+<h2><span class="n">4</span>后台在哪配：五个位置</h2>
+<div class="h2sub">顺序很重要，反了会报错。按 1→5 配</div>
+<div class="card">
+<div style="font-weight:600;margin-bottom:4px">1. 先建倍率（不然后面全报「分组已弃用」）</div>
+<div class="path">系统设置 <span class="arw">→</span> 分组与模型定价 <span class="arw">→</span> 分组倍率</div>
+<div class="muted" style="margin-top:6px">填 <code>{"default":1.0, "vip":0.9, "经济组":0.5}</code>　有可视化编辑器，不用手写 JSON</div>
+
+<div style="font-weight:600;margin:20px 0 4px">2. 给渠道打标签（不然报「无可用渠道」）</div>
+<div class="path">渠道 <span class="arw">→</span> 编辑某渠道 <span class="arw">→</span> 分组 字段</div>
+<div class="muted" style="margin-top:6px">多选。含义是「这条线路向哪些分组开放」</div>
+
+<div style="font-weight:600;margin:20px 0 4px">3. 放进用户可选名单（不然用户在下拉框里选不到）</div>
+<div class="path">系统设置 <span class="arw">→</span> 分组与模型定价 <span class="arw">→</span> 用户可选分组</div>
+<div class="muted" style="margin-top:6px">填 <code>{"经济组":"经济模式（较慢）"}</code>　<b>右边的描述是给终端客户看的</b>，别写内部术语</div>
+
+<div style="font-weight:600;margin:20px 0 4px">4. 分配用户档位</div>
+<div class="path">用户 <span class="arw">→</span> 编辑某用户 <span class="arw">→</span> 分组 字段</div>
+<div class="muted" style="margin-top:6px">支持筛选后批量改，不用一个个点</div>
+
+<div style="font-weight:600;margin:20px 0 4px">5.（可选）需要覆盖时才填令牌分组</div>
+<div class="path">令牌 <span class="arw">→</span> 编辑 <span class="arw">→</span> 分组　｜　客户自己：个人面板 <span class="arw">→</span> API 令牌</div>
+<div class="muted" style="margin-top:6px">客户能选到的选项 = 第 3 步那份名单</div>
+</div>
+
+<div class="warn"><b>两个高危操作：</b><br>
+① <b>删掉某分组的倍率 = 立刻停用该分组</b>，所有绑定它的令牌马上 403。下线套餐前先确认没有活跃令牌在用。<br>
+② <b>分组名不要改名</b>。它是当字符串在渠道、用户、令牌、三张倍率表里到处引用的，改名不会级联更新，等于同时废掉一批配置。要换名字：新建 → 迁移 → 再删旧的。</div>
+
+<h2><span class="n">5</span>auto 分组：自动降本</h2>
+<div class="h2sub">特殊分组名，行为和普通分组完全不同</div>
+<div class="card">
+<div style="font-size:15px;margin-bottom:12px">普通分组 = 锁定<b>一个</b>渠道池。<code>auto</code> = 按你排的顺序<b>依次尝试多个</b>分组。</div>
+<div class="calc" style="background:#f8fafc">令牌分组 = auto，顺序 = [经济组, default, 直连组]
+
+请求来 → 先在「经济组」找 → 有 → 用它，<b>按经济组 0.5 倍收费</b>
+         经济组全挂 → 试「default」 → 有 → <b>按 1.0 倍收费</b>
+         还不行 → 试「直连组」 → <b>按 1.5 倍收费</b></div>
+<div style="margin-top:14px;font-size:14px">产品含义：<b>自动省钱 + 自动容灾</b>。平时走最便宜的，挂了自动升级，客户无感。</div>
+</div>
+<div class="warn"><b>计费按实际命中的组算</b>，所以同一个令牌的单价会浮动。
+<b>如果客户是按固定单价谈的合同，别给他 auto 令牌</b>，否则对不上账。<br>
+另：默认一个令牌最多配 5 个 auto 分组，可在系统设置里调。限制是防止一个请求把十几个组全试一遍，把响应时间拖到几十秒。</div>
+
+<h2><span class="n">6</span>出问题怎么查</h2>
+<div class="h2sub">四种报错各自对应哪一边没配好</div>
+<table>
+<tr><th style="width:300px">报错 / 症状</th><th>缺哪一边</th><th style="width:210px">去哪修</th></tr>
+<tr><td><code>当前分组下没有可用渠道</code></td><td><b>供给侧缺失</b>：没有任何渠道打了这个分组标签，或打了但没启用该模型</td><td>渠道 → 分组字段</td></tr>
+<tr><td><code>无权访问 xxx 分组</code></td><td><b>权限闸门拦下</b>：这个分组不在该用户的可选名单里</td><td>系统设置 → 用户可选分组</td></tr>
+<tr><td><code>分组 xxx 已被弃用</code></td><td><b>倍率没配</b>：分组倍率表里查不到这个分组</td><td>系统设置 → 分组倍率</td></tr>
+<tr><td>能用但<b>价格不对</b></td><td>倍率配错，或被「用户分组专属倍率」覆盖了</td><td>查消费日志的倍率列</td></tr>
+<tr><td>改了配置<b>没生效</b></td><td>不是 bug：配置同步周期最多 60 秒</td><td>等一分钟再复测</td></tr>
+</table>
+
+<div class="tip"><b>唯一可信的验证方式是看消费日志。</b>
+日志里记录了本次请求<b>实际使用</b>的分组和各项倍率 —— 比你在配置页上看到的更真实，
+因为它反映了完整的解析结果（含令牌覆盖、auto 降级）。</div>
+
+<h2><span class="n">7</span>上线前必测</h2>
+<div class="h2sub">第 3 条是安全测试，别跳过</div>
+<div class="chk">
+<div>☐ <b>普通令牌</b>（分组留空）能调通 → 日志里分组 = 用户分组</div>
+<div>☐ <b>指定分组的令牌</b>能调通 → 日志里分组 = 令牌分组，倍率正确</div>
+<div>☐ <b>越权测试</b>：令牌填一个该用户无权访问的分组 → <b>必须 403</b>，不能放行</div>
+<div>☐ 删掉某分组倍率 → 绑定它的令牌立刻报「已弃用」（确认停用机制有效）</div>
+</div>
+<div class="warn"><b>第 3 条失效意味着客户能自己白嫖低价分组。</b>
+他只要猜到你的低价分组名，填进自己的令牌就能用 —— 这道闸门是拦这个的。</div>
+
+<div style="margin-top:44px;padding:20px 24px;background:#fff;border-radius:12px;
+box-shadow:0 1px 3px rgba(15,23,42,.07)">
+<div style="font-weight:700;margin-bottom:10px">🎯 如果只记三件事</div>
+<div style="font-size:15px;line-height:2.1">
+1. <b>令牌分组默认留空</b>，只在「同一客户要多档位」时才填<br>
+2. <b>三边要对齐</b>：渠道打了标签 + 分组配了倍率 + 用户名单里有它<br>
+3. <b>分组总数控制在 5 个以内</b>，超过就该考虑用别的机制（令牌额度、模型重定向）解决
+</div>
+</div>
+<script>
+// 渠道池：分组 -> 可用渠道（优先级）
+const CH={
+  'default':[{n:'廉价中转',p:5}],
+  'vip':[{n:'廉价中转',p:5},{n:'官方直连',p:10}],
+  'svip':[{n:'官方直连',p:10}],
+  '经济组':[{n:'超廉价池',p:5}]
+};
+const RATIO={'default':1.0,'vip':0.9,'svip':0.8,'经济组':0.5};
+// 各用户分组能选的分组名单
+// 注意：幽灵组刻意放进名单，好让它走到「闸门②倍率检查」失败，
+// 否则会被闸门①拦掉，演示不出「分组已弃用」这个错误
+const USABLE={
+  'default':['default','幽灵组'],
+  'vip':['default','vip','经济组','幽灵组'],
+  'svip':['default','vip','svip','经济组','幽灵组']
+};
+const UG=['default','vip','svip'];
+const TG=[{v:'',l:'留空（跟随用户）',d:'最常见'},{v:'default',l:'default'},
+  {v:'vip',l:'vip'},{v:'svip',l:'svip'},{v:'经济组',l:'经济组'},
+  {v:'幽灵组',l:'幽灵组',d:'没配倍率的组'}];
+let ug='vip',tg='';
+
+function paint(){
+  document.getElementById('ug').innerHTML=UG.map(g=>
+    `<label class="opt ${ug===g?'on':''}"><input type="radio" name="ug" ${ug===g?'checked':''}
+     onchange="ug='${g}';paint()"><span class="tag t-${g}">${g}</span>
+     <span class="muted">可选：${USABLE[g].filter(x=>x!=='幽灵组').join(' / ')}</span></label>`).join('');
+  document.getElementById('tg').innerHTML=TG.map(o=>
+    `<label class="opt ${tg===o.v?'on':''}"><input type="radio" name="tg" ${tg===o.v?'checked':''}
+     onchange="tg='${o.v}';paint()">${o.l}
+     ${o.d?`<span class="muted">${o.d}</span>`:''}</label>`).join('');
+}
+
+function run(){
+  const F=document.getElementById('flow');F.className='flow show';F.innerHTML='';
+  let i=0;
+  const add=(cls,ic,t,b)=>{F.innerHTML+=`<div class="step ${cls}" style="animation-delay:${i*.13}s">
+    <div class="sh"><span class="ic ${cls}">${ic}</span>${t}</div>
+    <div class="sb">${b}</div></div>`;i++;};
+  const fin=(cls,t,b)=>{F.innerHTML+=`<div class="final ${cls}" style="animation:in .4s ${i*.13}s both">
+    <div class="ft">${t}</div>${b}</div>`;};
+
+  add('info','1',`令牌带着请求进来`,
+    `用户分组 = <b>${ug}</b>　｜　令牌分组 = <b>${tg||'（留空）'}</b>`);
+
+  // 决定使用哪个组
+  let use,why;
+  if(tg===''){use=ug;why=`令牌没填分组 → <b>跟随用户分组 ${ug}</b>`;}
+  else{use=tg;why=`令牌填了 <b>${tg}</b> → <b>覆盖</b>用户的 ${ug}`;}
+  add('info','2','决定用哪个分组',why);
+
+  // 闸门1：权限
+  if(tg!==''){
+    if(!USABLE[ug].includes(tg)){
+      add('bad','✕','闸门① 权限检查 —— 不通过',
+        `<b>${ug}</b> 用户可选的分组是：${USABLE[ug].join(' / ')}<br>
+         里面<b>没有 ${tg}</b> → 拒绝，防止用户自己提权白嫖`);
+      fin('bad','❌ 403 无权访问 '+tg+' 分组',
+        `<div class="muted">这道闸门就是防止客户猜到你的低价分组名后自己填上去。<br>
+         要放行 → 系统设置 → 分组与模型定价 → <b>用户可选分组</b> 里加上它，
+         或用「分组特殊可用分组」给 ${ug} 单独加 <code>+:${tg}</code></div>`);
+      return;
+    }
+    add('ok','✓','闸门① 权限检查 —— 通过',
+      `<b>${tg}</b> 在 ${ug} 的可选名单里`);
+  }
+
+  // 闸门2：倍率
+  if(RATIO[use]===undefined){
+    add('bad','✕','闸门② 倍率检查 —— 不通过',
+      `分组倍率表里<b>查不到 ${use}</b> → 视为已下线的分组`);
+    fin('bad','❌ 403 分组 '+use+' 已被弃用',
+      `<div class="muted">删掉某分组的倍率 = 停用该分组。这是<b>下线套餐的正规手段</b>，
+       但误删会让一批客户瞬间全部报错。<br>
+       修复 → 系统设置 → 分组与模型定价 → <b>分组倍率</b> 里补上 <code>"${use}": 1.0</code></div>`);
+    return;
+  }
+  add('ok','✓','闸门② 倍率检查 —— 通过',
+    `<b>${use}</b> 的倍率 = <b>${RATIO[use]}</b>`);
+
+  // 选渠道
+  const pool=CH[use]||[];
+  if(pool.length===0){
+    add('bad','✕','选渠道 —— 失败',`没有任何渠道打了 <b>${use}</b> 标签`);
+    fin('bad','❌ 503 当前分组下没有可用渠道',
+      `<div class="muted">这是<b>供给侧</b>没配。倍率和权限都对了，但没线路能干这活。<br>
+       修复 → 渠道 → 编辑某渠道 → <b>分组</b> 字段里加上 ${use}</div>`);
+    return;
+  }
+  const maxp=Math.max(...pool.map(c=>c.p));
+  const top=pool.filter(c=>c.p===maxp);
+  const win=top[0];
+  add('ok','✓','选渠道 —— 成功',
+    `<b>${use}</b> 池里有：${pool.map(c=>`${c.n}(优先级${c.p})`).join('、')}<br>
+     只在<b>最高优先级 ${maxp}</b> 里挑 → 选中 <b>${win.n}</b>
+     ${pool.length>top.length?`<br><span class="muted">优先级低的 ${pool.filter(c=>c.p!==maxp).map(c=>c.n).join('、')} 平时轮不到，只在高优先级全挂时才降级启用</span>`:''}`);
+
+  // 算钱
+  const r=RATIO[use],base=7500,q=Math.round(base*r);
+  add('info','3','计费',`按<b>实际使用的分组 ${use}</b> 的倍率算，不是按用户分组`);
+  fin('ok','✅ 请求成功　走 '+win.n+'　按 '+use+' 计价',
+    `<div class="calc">基础额度（1000输入 + 500输出）　= ${base}
+分组倍率（<b>${use}</b>）　　　　　　　× ${r}
+────────────────────────────
+实际扣费　　　　　　　　　　　= <b>${q}</b> 额度 ≈ $${(q/500000).toFixed(4)}</div>
+     <div class="muted" style="margin-top:10px">
+     ${tg===''?`令牌留空 → 跟随用户分组，<b>用户升级档位时这把令牌自动享受新价格</b>，无需改令牌`:
+       `令牌写死 ${tg} → <b>用户升级档位也不会变</b>，需要手动改令牌。这是留空 vs 填写的核心差异`}</div>`);
+}
+paint();
+</script>
+</div></body>
+</html>

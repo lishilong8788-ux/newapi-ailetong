@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>优先级 vs 权重 图解 · new-api</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+background:#f4f6f9;color:#1e293b;line-height:1.7;padding:32px 20px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:30px;margin-bottom:8px;letter-spacing:-.5px}
+.sub{color:#64748b;font-size:15px;margin-bottom:36px}
+h2{font-size:21px;margin:44px 0 6px;display:flex;align-items:center;gap:10px}
+h2 .n{background:#c2410c;color:#fff;width:28px;height:28px;border-radius:8px;
+font-size:15px;display:grid;place-items:center;flex:none}
+.h2sub{color:#64748b;font-size:14px;margin-bottom:20px;padding-left:38px}
+.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big{background:#fff;border-left:5px solid #c2410c;border-radius:12px;padding:20px 24px;
+font-size:17px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big b{color:#c2410c}
+code{background:#eef2f7;padding:2px 7px;border-radius:5px;font-size:13px;
+font-family:ui-monospace,Consolas,monospace}
+.muted{color:#64748b;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;
+border-radius:11px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+th{background:#f1f5f9;padding:12px 15px;text-align:left;font-size:13px;color:#475569}
+td{padding:12px 15px;border-top:1px solid #f1f5f9;vertical-align:top}
+tr:hover td{background:#fafbfc}
+.warn{background:#fffbeb;border-left:5px solid #f59e0b;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.warn b{color:#92400e}
+.tip{background:#fff7ed;border-left:5px solid #c2410c;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.tip b{color:#9a3412}
+.danger{background:#fef2f2;border-left:5px solid #dc2626;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.danger b{color:#b91c1c}
+.path{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;
+background:#f8fafc;padding:9px 13px;border-radius:8px;margin-top:8px;
+font-family:ui-monospace,Consolas,monospace;color:#334155}
+.path .arw{color:#94a3b8}
+/* 两旋钮对比 */
+.knobs{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+.knob{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.07);
+border-top:4px solid #c2410c}
+.knob.w{border-top-color:#2563eb}
+.knob h4{font-size:16px;margin-bottom:3px}
+.knob .who{font-size:12px;color:#94a3b8;margin-bottom:13px}
+.knob .say{font-size:15px;font-weight:600;padding:11px 13px;border-radius:8px;
+background:#fff7ed;color:#9a3412;margin-bottom:11px}
+.knob.w .say{background:#eff6ff;color:#1d4ed8}
+/* 分层图 */
+.tier{background:#fff;border-radius:11px;padding:16px 19px;margin-bottom:10px;
+box-shadow:0 1px 3px rgba(15,23,42,.06);border-left:5px solid #e2e8f0}
+.tier.live{border-left-color:#16a34a;background:#f0fdf4}
+.tier.idle{border-left-color:#cbd5e1;opacity:.62}
+.th{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;margin-bottom:7px}
+.badge{padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.b-live{background:#dcfce7;color:#166534}
+.b-idle{background:#f1f5f9;color:#64748b}
+.chs{display:flex;flex-direction:column;gap:6px;padding-left:4px}
+.ch{display:flex;align-items:center;gap:10px;font-size:13px}
+.ch .nm{width:110px;flex:none;font-weight:600}
+.ch .bar{flex:1;height:22px;background:#f1f5f9;border-radius:5px;overflow:hidden}
+.ch .fl{height:100%;background:linear-gradient(90deg,#22c55e,#16a34a);
+display:flex;align-items:center;justify-content:flex-end;padding-right:7px;
+color:#fff;font-size:11px;font-weight:700;transition:width .5s cubic-bezier(.4,0,.2,1)}
+.ch .fl.zero{background:#e2e8f0}
+.ch .pc{width:60px;flex:none;text-align:right;font-family:ui-monospace,Consolas,monospace;
+font-size:13px;font-weight:700}
+.ch .pc.zero{color:#dc2626}
+/* 模拟器 */
+.panel{background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.rows{display:flex;flex-direction:column;gap:13px;margin-bottom:18px}
+.row{display:grid;grid-template-columns:118px 1fr 1fr;gap:13px;align-items:center;
+padding:13px;background:#f8fafc;border-radius:10px}
+.row .rn{font-weight:600;font-size:14px}
+.row label{display:block;font-size:11px;color:#64748b;margin-bottom:4px}
+.row input{width:100%;padding:8px 10px;border:2px solid #e2e8f0;border-radius:7px;
+font-size:14px;font-family:ui-monospace,Consolas,monospace}
+.row input:focus{outline:none;border-color:#c2410c}
+.presets{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:18px}
+.pbtn{padding:9px 15px;background:#f1f5f9;border:2px solid #e2e8f0;border-radius:8px;
+font-size:13px;cursor:pointer;transition:.15s;font-family:inherit}
+.pbtn:hover{border-color:#c2410c;background:#fff7ed}
+.res{margin-top:20px}
+.calc{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#f8fafc;
+padding:13px 16px;border-radius:8px;margin-top:11px;line-height:1.95}
+@media(max-width:760px){.knobs{grid-template-columns:1fr}
+.row{grid-template-columns:1fr;gap:8px}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>优先级 vs 权重</h1>
+<div class="sub">配渠道时最常被搞反的两个旋钮。选错的后果：你以为在灰度放量，其实是全量切换。</div>
+
+<h2><span class="n">1</span>一句话区分</h2>
+<div class="h2sub">两个旋钮解决完全不同的问题，不能互换</div>
+<div class="knobs">
+<div class="knob">
+<h4>🔢 优先级 Priority</h4>
+<div class="who">硬性分层 · 高的活着，低的永远轮不到</div>
+<div class="say">= 主备关系（容灾）</div>
+<div style="font-size:14px">系统<b>只在最高优先级那一层里挑</b>。<br>
+优先级 10 的渠道还活着 → 优先级 5 的<b>一次都不会用</b>。<br>
+只有高层全部失败重试时，才降级到下一层。</div>
+<div class="tip" style="margin-top:12px">官方直连设 10，中转设 5<br>
+→ 平时全走官方，官方挂了自动降级</div>
+</div>
+<div class="knob w">
+<h4>⚖️ 权重 Weight</h4>
+<div class="who">同层内加权随机 · 按比例分流量</div>
+<div class="say">= 流量分配（放量）</div>
+<div style="font-size:14px">在<b>同一优先级</b>的渠道之间，按权重比例随机。<br>
+三个渠道权重 100/50/50 → 大约 50% / 25% / 25%。<br>
+每个请求独立随机，不是轮询。</div>
+<div class="tip" style="margin-top:12px" >想让新渠道试水 10% 流量<br>
+→ 调<b>权重</b>，不是优先级</div>
+</div>
+</div>
+
+<div class="danger"><b>最常见的错误：</b>想做灰度（10% 流量导到新渠道试水），
+结果去调优先级 —— 那不是放量，那是<b>全量切换</b>。<br>
+新渠道优先级设高一点，老渠道就<b>一个请求都收不到了</b>。<br>
+<b>放量用权重，容灾用优先级。</b></div>
+
+<h2><span class="n">2</span>先看分层：优先级怎么工作</h2>
+<div class="h2sub">这是「只在最高层挑」的直观呈现</div>
+<div class="card">
+<div class="tier live">
+<div class="th"><span class="badge b-live">正在服务</span>优先级 10</div>
+<div class="chs">
+<div class="ch"><span class="nm">官方直连A</span>
+<span class="bar"><span class="fl" style="width:60%">60%</span></span><span class="pc">60%</span></div>
+<div class="ch"><span class="nm">官方直连B</span>
+<span class="bar"><span class="fl" style="width:40%">40%</span></span><span class="pc">40%</span></div>
+</div>
+</div>
+<div class="tier idle">
+<div class="th"><span class="badge b-idle">闲置</span>优先级 5</div>
+<div class="chs">
+<div class="ch"><span class="nm">中转甲</span>
+<span class="bar"><span class="fl zero" style="width:0%"></span></span><span class="pc zero">0%</span></div>
+<div class="ch"><span class="nm">中转乙</span>
+<span class="bar"><span class="fl zero" style="width:0%"></span></span><span class="pc zero">0%</span></div>
+</div>
+</div>
+<div class="muted" style="margin-top:12px">
+优先级 5 那一层<b>一个请求都收不到</b>，哪怕它权重设得再高。<br>
+只有优先级 10 全部失败、进入重试时，才会降级到这一层 —— 这就是「主备」。</div>
+</div>
+
+<h2><span class="n">3</span>自己动手：改权重看流量分配</h2>
+<div class="h2sub">重点试预设里的「权重 1 和 0」，那个结果会让你意外</div>
+
+<div class="panel">
+<div class="presets">
+<button class="pbtn" onclick="set([[10,100],[10,50],[10,50]])">100 / 50 / 50</button>
+<button class="pbtn" onclick="set([[10,0],[10,0],[10,0]])">全部 0</button>
+<button class="pbtn" onclick="set([[10,1],[10,0]])">⚠ 权重 1 和 0</button>
+<button class="pbtn" onclick="set([[10,5],[10,3],[10,2]])">5 / 3 / 2</button>
+<button class="pbtn" onclick="set([[10,90],[5,100]])">跨优先级</button>
+<button class="pbtn" onclick="set([[10,90],[10,10],[5,100]])">混合</button>
+</div>
+<div class="rows" id="rows"></div>
+<div class="res" id="res"></div>
+</div>
+
+<h2><span class="n">4</span>权重的隐藏规则（生产环境实际算法）</h2>
+<div class="h2sub">这块有坑，而且开不开内存缓存算法不一样</div>
+<div class="card">
+<div style="font-size:14px;margin-bottom:12px">
+生产环境默认开内存缓存（<code>MEMORY_CACHE_ENABLED=true</code>），走的是<b>带平滑的算法</b>：
+</div>
+<div class="calc" style="background:#fff;font-size:13px">情况① <b>所有渠道权重都是 0</b>
+　　→ 每个渠道有效权重都算 100 → <b>完全均分</b>
+
+情况② <b>平均权重 &lt; 10</b>（比如 5/3/2）
+　　→ 所有权重 ×100 放大 → 比例不变，但<b>不做补偿</b>
+
+情况③ <b>平均权重 ≥ 10</b>（比如 100/50/50）
+　　→ 直接按权重比例分配</div>
+
+<div class="danger" style="margin-top:14px"><b>致命细节：情况② 里权重 0 的渠道会拿到 0% 流量，彻底饿死。</b><br>
+例：两个渠道权重 <code>1</code> 和 <code>0</code> → 平均 0.5 &lt; 10 → 走情况②<br>
+→ 有效权重变成 <b>100 和 0</b> → 权重 0 那个渠道<b>永远收不到请求</b>。<br><br>
+但如果<b>两个都是 0</b>，反而走情况①，变成各 50%。<br>
+<b>所以「全 0」和「1 和 0」的结果完全相反 —— 这是最反直觉的一点。</b></div>
+
+<div class="warn"><b>实操建议：要么全都不填权重（均分），要么全都填上且都 ≥ 10。</b><br>
+最忌讳的是「只给一部分渠道填权重，剩下的留 0」—— 留 0 的那些会静默饿死，
+你会以为它们在分担流量，实际一个请求都没走。</div>
+
+<h2><span class="n">5</span>降级是怎么触发的</h2>
+<div class="h2sub">优先级分层要真正起作用，得靠重试机制</div>
+<div class="card">
+<div class="calc" style="background:#fff;font-size:14px">第 1 次尝试 → 在<b>最高</b>优先级层里按权重挑一个
+　　失败（429 / 5xx / 超时）↓
+第 2 次尝试 → 降到<b>次高</b>优先级层
+　　还失败 ↓
+第 3 次尝试 → 再降一层……
+
+重试次数用完 → 返回错误给客户</div>
+<div style="margin-top:14px;font-size:14px">
+所以<b>优先级层数不宜超过 3 层</b> —— 层数比重试次数还多的话，最底层永远轮不到。</div>
+</div>
+<div class="warn"><b>哪些错误会触发降级：</b>
+429 限流、5xx 上游故障、307 重定向、连接超时。<br>
+<b>哪些不会（直接返回客户）：</b>
+400 参数错误（客户请求本身有问题，换渠道也一样错）、408 超时、余额不足等本地错误。</div>
+
+<h2><span class="n">6</span>后台在哪配</h2>
+<div class="h2sub">两个字段在同一个页面</div>
+<div class="card">
+<div class="path">渠道 <span class="arw">→</span> 编辑某渠道 <span class="arw">→</span> 优先级　/　权重</div>
+<div class="muted" style="margin-top:10px">
+两个都是数字输入框，默认都是 <b>0</b>。<br>
+全部渠道都用默认值 0 时 → 同一层 + 完全均分，这是最简单也最安全的起点。</div>
+<div class="tip" style="margin-top:14px"><b>改完记得等配置同步（最多 60 秒）。</b>
+优先级和权重存在渠道路由表里，改动要等缓存刷新才对所有节点生效。<br>
+改完立刻测发现没变，先等一分钟。</div>
+</div>
+
+<h2><span class="n">7</span>四个典型配置</h2>
+<table>
+<tr><th style="width:150px">目标</th><th>怎么配</th><th style="width:190px">为什么</th></tr>
+<tr><td><b>最简起步</b></td>
+<td>所有渠道优先级和权重<b>都留 0</b></td>
+<td>同层均分，不用想太多</td></tr>
+<tr><td><b>主备容灾</b></td>
+<td>官方直连 优先级 <b>10</b>　中转 优先级 <b>5</b><br>权重都留 0</td>
+<td>平时只走官方，挂了自动降级到中转</td></tr>
+<tr><td><b>灰度放量</b></td>
+<td>优先级<b>都设同一个值</b>（如都 10）<br>老渠道权重 <b>90</b>，新渠道权重 <b>10</b></td>
+<td>新渠道拿 10% 流量试水；观察没问题再逐步调高</td></tr>
+<tr><td><b>按容量分流</b></td>
+<td>优先级都相同<br>权重按各家能承受的 QPS 比例填，<b>都 ≥ 10</b></td>
+<td>大容量的多接活，避免小渠道被打爆</td></tr>
+</table>
+
+<div class="warn"><b>灰度放量的正确节奏：</b>
+10% → 观察一天 → 30% → 观察 → 50% → 全量。<br>
+每次只调权重，<b>优先级始终保持相同</b>。一旦发现新渠道有问题，把权重调回 0 就行（但记得此时另一个渠道权重要 ≥ 10，否则触发前面说的饿死规则会导致比例异常）。</div>
+
+<h2><span class="n">8</span>怎么验证真的生效了</h2>
+<div class="card">
+<div style="font-size:14px">配完别靠猜，<b>用日志验证</b>：</div>
+<div class="path" style="margin-top:10px">日志 <span class="arw">→</span> 消费日志 <span class="arw">→</span> 看「渠道」列的分布</div>
+<div style="margin-top:12px;font-size:14px">
+发 20~50 个请求，统计各渠道出现的次数，和你配的权重比例对一下。<br>
+<b>样本要够</b>：权重是每次独立随机的，发 5 个请求可能全落在同一个渠道，那是正常的随机波动，不是配置没生效。</div>
+</div>
+
+<div style="margin-top:44px;padding:20px 24px;background:#fff;border-radius:12px;
+box-shadow:0 1px 3px rgba(15,23,42,.07)">
+<div style="font-weight:700;margin-bottom:10px">🎯 如果只记三件事</div>
+<div style="font-size:15px;line-height:2.1">
+1. <b>优先级 = 主备容灾</b>（高的活低的死）　<b>权重 = 灰度放量</b>（同层按比例）<br>
+2. 灰度放量要<b>把优先级设成相同值</b>，再调权重。调优先级 = 全量切换<br>
+3. <b>要么权重全留 0，要么全填且都 ≥ 10</b>。混着填会让留 0 的渠道静默饿死
+</div>
+</div>
+<script>
+const NAMES=['渠道A','渠道B','渠道C','渠道D'];
+let chs=[[10,100],[10,50],[10,50]];
+
+function set(v){chs=v.map(x=>[...x]);paint();}
+
+function paint(){
+  document.getElementById('rows').innerHTML=chs.map((c,i)=>
+    `<div class="row"><div class="rn">${NAMES[i]}</div>
+     <div><label>优先级</label><input type="number" value="${c[0]}"
+       onchange="chs[${i}][0]=+this.value||0;paint()"></div>
+     <div><label>权重</label><input type="number" value="${c[1]}"
+       onchange="chs[${i}][1]=+this.value||0;paint()"></div></div>`).join('');
+  calc();
+}
+
+function calc(){
+  const R=document.getElementById('res');
+  // 1) 找最高优先级
+  const maxP=Math.max(...chs.map(c=>c[0]));
+  const idx=chs.map((c,i)=>i).filter(i=>chs[i][0]===maxP);
+  const idle=chs.map((c,i)=>i).filter(i=>chs[i][0]!==maxP);
+
+  // 2) 内存缓存算法（生产路径）
+  const ws=idx.map(i=>chs[i][1]);
+  const n=ws.length; let s=ws.reduce((a,b)=>a+b,0);
+  let sf=1,sa=0,note='';
+  if(s===0){s=n*100;sa=100;note='情况① 全部权重为 0 → 每个算 100 → <b>完全均分</b>';}
+  else if(Math.floor(s/n)<10){sf=100;note='情况② 平均权重 &lt; 10 → 全部 ×100 放大（<b>不补偿，权重 0 的会饿死</b>）';}
+  else{note='情况③ 平均权重 ≥ 10 → 直接按比例';}
+  const total=s*sf;
+  const eff=idx.map(i=>chs[i][1]*sf+sa);
+  const pct=eff.map(e=>total>0?e/total*100:0);
+
+  let starved=[];
+  idx.forEach((ci,k)=>{if(pct[k]===0)starved.push(NAMES[ci]);});
+
+  let html=`<div class="tier live"><div class="th">
+    <span class="badge b-live">正在服务</span>优先级 ${maxP}
+    <span class="muted" style="font-weight:400">${idx.length} 个渠道参与分流</span></div><div class="chs">`;
+  idx.forEach((ci,k)=>{
+    const p=pct[k];
+    html+=`<div class="ch"><span class="nm">${NAMES[ci]}</span>
+      <span class="muted" style="width:62px;flex:none">权重 ${chs[ci][1]}</span>
+      <span class="bar"><span class="fl ${p===0?'zero':''}" style="width:${p}%">
+      ${p>=12?p.toFixed(1)+'%':''}</span></span>
+      <span class="pc ${p===0?'zero':''}">${p.toFixed(1)}%</span></div>`;
+  });
+  html+='</div></div>';
+
+  // 闲置层
+  if(idle.length){
+    const byP={};idle.forEach(i=>{(byP[chs[i][0]]=byP[chs[i][0]]||[]).push(i)});
+    Object.keys(byP).sort((a,b)=>b-a).forEach(p=>{
+      html+=`<div class="tier idle"><div class="th">
+        <span class="badge b-idle">闲置</span>优先级 ${p}</div><div class="chs">`;
+      byP[p].forEach(ci=>{
+        html+=`<div class="ch"><span class="nm">${NAMES[ci]}</span>
+          <span class="muted" style="width:62px;flex:none">权重 ${chs[ci][1]}</span>
+          <span class="bar"><span class="fl zero" style="width:0%"></span></span>
+          <span class="pc zero">0%</span></div>`;
+      });
+      html+='</div></div>';
+    });
+  }
+
+  html+=`<div class="calc">生效算法：${note}
+有效权重　${eff.join(' / ')}　　总计 ${total}</div>`;
+
+  if(idle.length){
+    html+=`<div class="warn" style="margin-top:12px"><b>注意：</b>
+      优先级低于 ${maxP} 的 ${idle.length} 个渠道<b>拿不到任何流量</b>，
+      只在最高层全部失败重试时才降级启用。<br>
+      <b>如果你想让它们分担流量 → 把优先级改成和 ${maxP} 相同。</b></div>`;
+  }
+  if(starved.length){
+    html+=`<div class="danger" style="margin-top:12px"><b>⚠ 饿死警告：${starved.join('、')} 拿到 0% 流量！</b><br>
+      因为平均权重 &lt; 10 触发了「情况②」：全部权重 ×100 放大但<b>不做补偿</b>，
+      权重 0 的渠道有效权重仍是 0。<br>
+      <b>反直觉对比：如果所有渠道权重都改成 0，反而会走「情况①」变成完全均分。</b><br>
+      修复 → 要么把权重都填成 ≥ 10 的数，要么全部留 0。</div>`;
+  }
+  R.innerHTML=html;
+}
+paint();
+</script>
+</div></body>
+</html>

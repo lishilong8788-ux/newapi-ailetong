@@ -1,0 +1,128 @@
+<!--
+  康贝斯算力云 · 关于页自定义内容（适配 New API 顶部悬浮导航）
+  用法：系统设置 → 站点设置 → 关于内容，整段粘贴替换原内容。
+
+  这是 LEGACY 版本：适用于尚未重新编译的旧二进制（导航不支持反色）。
+  Hero 顶部保留 64px 浅色带 + 发丝线，保证深字导航可读。
+  重新 go build 之后请换用 kbs-about.html。
+-->
+<style>
+  .kbs-about {
+    --kbs-nav-h: 64px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #1f2430; width: 100%; overflow-x: hidden;
+  }
+  .kbs-about * { box-sizing: border-box; }
+  .kbs-about .wrap { max-width: 1120px; margin: 0 auto; padding: 0 40px; }
+
+  .kbs-about-hero {
+    position: relative; width: 100%; text-align: center; color: #eaf2ff; overflow: hidden;
+    padding: calc(var(--kbs-nav-h) + 48px) 20px 88px;
+    background: linear-gradient(180deg,
+      #eef4fd 0,
+      #e9f0fb var(--kbs-nav-h),
+      #2a527f calc(var(--kbs-nav-h) + 36px),
+      #1a3b68 calc(var(--kbs-nav-h) + 96px),
+      #0f2444 62%, #0a1a34 100%);
+  }
+  .kbs-about-hero::before {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+    top: calc(var(--kbs-nav-h) + 56px);
+    background-image: linear-gradient(rgba(88,166,255,.07) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(88,166,255,.07) 1px, transparent 1px);
+    background-size: 52px 52px;
+    -webkit-mask-image: radial-gradient(700px 420px at 50% 26%, #000 42%, transparent 80%);
+    mask-image: radial-gradient(700px 420px at 50% 26%, #000 42%, transparent 80%);
+  }
+  .kbs-about-hero > * { position: relative; z-index: 1; }
+  .kbs-about-navline {
+    position: absolute; left: 0; right: 0; top: var(--kbs-nav-h); height: 1px; z-index: 2;
+    background: linear-gradient(90deg, transparent, rgba(20,50,90,.10) 18%, rgba(20,50,90,.10) 82%, transparent);
+  }
+  .kbs-about-hero img { display: block; margin: 0 auto 6px; height: 58px; width: auto; max-width: 320px; object-fit: contain; }
+  .kbs-about-hero h1 { font-size: clamp(34px, 5vw, 56px); font-weight: 800; margin: 22px 0 12px; letter-spacing: 1px; }
+  .kbs-about-hero p { color: #b9c8e0; font-size: 19px; margin: 0; }
+</style>
+<style>
+  .kbs-about .band { width: 100%; padding: 88px 0; }
+  .kbs-about .band-light { background: #ffffff; }
+  .kbs-about .band-soft { background: linear-gradient(180deg, #f4f9ff, #eef5ff); }
+  .kbs-about h2 { font-size: clamp(26px, 3.4vw, 40px); font-weight: 800; color: #14213d; margin: 0 0 22px; text-align: center; }
+  .kbs-about .lead { color: #454b57; font-size: 19px; line-height: 2.1; margin: 0 auto 18px; max-width: 900px; text-align: center; }
+  .kbs-about .highlight { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; margin-top: 44px; }
+  .kbs-about .hl-card { padding: 40px 32px; border-radius: 20px; background: #fff; border: 1px solid #e7eef8; box-shadow: 0 10px 30px rgba(20,50,90,.06); transition: transform .2s, box-shadow .2s; }
+  .kbs-about .hl-card:hover { transform: translateY(-6px); box-shadow: 0 20px 44px rgba(20,50,90,.14); }
+  .kbs-about .hl-card h3 { margin: 0 0 12px; font-size: 22px; color: #1e4b8f; }
+  .kbs-about .hl-card p { margin: 0; font-size: 16px; line-height: 1.85; color: #5a6273; }
+  .kbs-about .contact-band { width: 100%; padding: 96px 0; background: linear-gradient(180deg, #0f1f3d, #16305a); color: #eaf2ff; text-align: center; }
+  .kbs-about .contact-band h2 { color: #fff; }
+  .kbs-about .contact-band p { color: #c3d2ea; font-size: 18px; line-height: 2; margin: 0 auto; max-width: 760px; }
+
+  /* ===== 深色主题适配 ===== */
+  .dark .kbs-about { color: #dbe4f2; }
+  .dark .kbs-about-hero {
+    background: linear-gradient(180deg,
+      #0d1830 0, #0d1830 var(--kbs-nav-h),
+      #14294a calc(var(--kbs-nav-h) + 36px),
+      #0f2444 calc(var(--kbs-nav-h) + 96px),
+      #0b1c36 62%, #080f20 100%);
+  }
+  .dark .kbs-about-navline { background: linear-gradient(90deg, transparent, rgba(146,190,255,.14) 18%, rgba(146,190,255,.14) 82%, transparent); }
+  .dark .kbs-about .band-light { background: #0a1020; }
+  .dark .kbs-about .band-soft { background: linear-gradient(180deg, #0c1426, #0a1020); }
+  .dark .kbs-about h2 { color: #eaf2ff; }
+  .dark .kbs-about .lead { color: #9fb0cc; }
+  .dark .kbs-about .hl-card { background: rgba(255,255,255,.04); border-color: rgba(146,190,255,.16); box-shadow: none; }
+  .dark .kbs-about .hl-card h3 { color: #9cd2ff; }
+  .dark .kbs-about .hl-card p { color: #9fb0cc; }
+  .dark .kbs-about .contact-band { background: linear-gradient(180deg, #0b1730, #102343); }
+
+  @media (max-width: 640px) {
+    .kbs-about { --kbs-nav-h: 56px; }
+    .kbs-about-hero { padding: calc(var(--kbs-nav-h) + 36px) 16px 68px; }
+    .kbs-about .wrap { padding: 0 20px; }
+    .kbs-about .band, .kbs-about .contact-band { padding: 60px 0; }
+  }
+</style>
+<div class="kbs-about">
+  <section class="kbs-about-hero">
+    <div class="kbs-about-navline" aria-hidden="true"></div>
+    <img src="https://34343375.s21i.faiusr.com/4/ABUIABAEGAAgs4ia0AYo6576zAEwzAg42QI.png" alt="昆山康贝斯" />
+    <h1>关于康贝斯算力云</h1>
+    <p>昆山康贝斯新能源科技有限公司 · AI 算力云开放平台</p>
+  </section>
+
+  <section class="band band-light">
+    <div class="wrap">
+      <h2>平台简介</h2>
+      <p class="lead">康贝斯算力云是昆山康贝斯新能源科技有限公司旗下的 AI 模型聚合与分发平台。平台统一聚合 OpenAI、Claude、Gemini、DeepSeek、豆包等主流大模型，兼容 OpenAI 接口标准，为企业应用、研发团队与创新业务提供稳定、安全、透明的 AI 能力底座。</p>
+      <p class="lead">我们希望把复杂的多模型接入、额度管理与调用监控简化为一个统一、易用的控制台，让每一次 AI 调用背后都有可靠的算力支撑。</p>
+    </div>
+  </section>
+
+  <section class="band band-soft">
+    <div class="wrap">
+      <h2>关于康贝斯</h2>
+      <p class="lead">昆山康贝斯新能源科技有限公司是一家集研发、设计、生产与销售于一体的高新技术企业。公司在长期的产业实践中积累了扎实的技术研发与工程落地能力，并拥有多项自主知识产权。公司注重技术创新，曾联合高校开展前沿技术研究与试验，持续以技术驱动业务发展。康贝斯算力云是公司在人工智能领域的前沿布局，依托公司的技术积累与产业实力，将先进的大模型能力以统一、安全、可控的方式开放给更多企业与开发者。</p>
+      <div class="highlight">
+        <div class="hl-card"><h3>多模型聚合</h3><p>主流大模型统一接入，一处管理，兼容 OpenAI 接口标准。</p></div>
+        <div class="hl-card"><h3>安全可控</h3><p>令牌分组、额度管控、调用日志齐全，企业级权限管理。</p></div>
+        <div class="hl-card"><h3>透明计费</h3><p>用量、余额、调用明细实时可查，随用随充，成本清晰。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band-light">
+    <div class="wrap">
+      <h2>我们的定位</h2>
+      <p class="lead">以稳定、安全、透明为核心，做企业可信赖的 AI 能力入口。无论是构建 AI 应用、支撑内部研发，还是探索创新业务，康贝斯算力云都致力于提供简单、可靠的接入体验。</p>
+    </div>
+  </section>
+
+  <section class="contact-band">
+    <div class="wrap">
+      <h2>联系我们</h2>
+      <p>如需了解平台接入、企业合作等信息，欢迎通过官方渠道与我们联系。<br/>昆山康贝斯新能源科技有限公司</p>
+    </div>
+  </section>
+</div>

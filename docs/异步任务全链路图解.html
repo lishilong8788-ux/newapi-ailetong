@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>异步任务全链路 · new-api</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+background:#f4f6f9;color:#1e293b;line-height:1.7;padding:32px 20px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:30px;margin-bottom:8px;letter-spacing:-.5px}
+.sub{color:#64748b;font-size:15px;margin-bottom:36px}
+h2{font-size:21px;margin:44px 0 6px;display:flex;align-items:center;gap:10px}
+h2 .n{background:#0369a1;color:#fff;width:28px;height:28px;border-radius:8px;
+font-size:15px;display:grid;place-items:center;flex:none}
+.h2sub{color:#64748b;font-size:14px;margin-bottom:20px;padding-left:38px}
+.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big{background:#fff;border-left:5px solid #0369a1;border-radius:12px;padding:20px 24px;
+font-size:17px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big b{color:#0369a1}
+code{background:#eef2f7;padding:2px 7px;border-radius:5px;font-size:13px;
+font-family:ui-monospace,Consolas,monospace}
+.muted{color:#64748b;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;
+border-radius:11px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+th{background:#f1f5f9;padding:12px 15px;text-align:left;font-size:13px;color:#475569}
+td{padding:12px 15px;border-top:1px solid #f1f5f9;vertical-align:top}
+tr:hover td{background:#fafbfc}
+.warn{background:#fffbeb;border-left:5px solid #f59e0b;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.warn b{color:#92400e}
+.tip{background:#f0f9ff;border-left:5px solid #0369a1;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.tip b{color:#075985}
+.danger{background:#fef2f2;border-left:5px solid #dc2626;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.danger b{color:#b91c1c}
+.path{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;
+background:#f8fafc;padding:9px 13px;border-radius:8px;margin-top:8px;
+font-family:ui-monospace,Consolas,monospace;color:#334155}
+.path .arw{color:#94a3b8}
+/* 对比 */
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+.vsc{background:#fff;border-radius:12px;padding:19px;box-shadow:0 1px 3px rgba(15,23,42,.07);
+border-top:4px solid #94a3b8}
+.vsc.hot{border-top-color:#0369a1}
+.vsc h4{font-size:15px;margin-bottom:11px}
+.vsc .ln{font-size:13px;padding:6px 0;display:flex;gap:8px}
+.vsc .ln b{flex:none;width:56px;color:#64748b;font-weight:600}
+/* 模拟器 */
+.panel{background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.setup{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}
+.f label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5px}
+.f label .q{color:#94a3b8;font-weight:400}
+.f input{width:100%;padding:9px 11px;border:2px solid #e2e8f0;border-radius:8px;
+font-size:14px;font-family:ui-monospace,Consolas,monospace}
+.f input:focus{outline:none;border-color:#0369a1}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.btn{flex:1;min-width:150px;padding:13px;border:none;border-radius:10px;
+font-size:15px;font-weight:600;cursor:pointer;transition:.15s;color:#fff;font-family:inherit}
+.btn.s{background:#16a34a}.btn.s:hover{background:#15803d}
+.btn.f{background:#dc2626}.btn.f:hover{background:#b91c1c}
+.btn.t{background:#f59e0b}.btn.t:hover{background:#d97706}
+/* 时间轴 */
+.tl{margin-top:22px;display:none}
+.tl.show{display:block}
+.tli{display:grid;grid-template-columns:96px 1fr;gap:14px;
+opacity:0;animation:in .4s forwards}
+@keyframes in{to{opacity:1}}
+.tlt{text-align:right;font-family:ui-monospace,Consolas,monospace;font-size:12px;
+color:#64748b;padding-top:15px;font-weight:600}
+.tlb{border-left:3px solid #e2e8f0;padding:0 0 16px 19px;position:relative}
+.tlb::before{content:'';position:absolute;left:-8px;top:15px;width:13px;height:13px;
+border-radius:50%;background:#cbd5e1;border:3px solid #f4f6f9}
+.tli.ok .tlb::before{background:#16a34a}
+.tli.bad .tlb::before{background:#dc2626}
+.tli.mny .tlb::before{background:#7c3aed}
+.tli.wait .tlb::before{background:#0ea5e9}
+.box{background:#fff;border-radius:10px;padding:14px 17px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.tli.ok .box{border-left:4px solid #16a34a}
+.tli.bad .box{border-left:4px solid #dc2626;background:#fef2f2}
+.tli.mny .box{border-left:4px solid #7c3aed;background:#faf5ff}
+.tli.wait .box{border-left:4px solid #0ea5e9}
+.bt{font-weight:600;font-size:14px;margin-bottom:4px}
+.bd{font-size:13px;color:#475569}
+.bd b{color:#1e293b}
+.led{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#f8fafc;
+padding:9px 12px;border-radius:7px;margin-top:8px;line-height:1.85}
+.fin{margin-top:8px;padding:18px 22px;border-radius:12px}
+.fin.ok{background:#f0fdf4;border:2px solid #16a34a}
+.fin.bad{background:#fef2f2;border:2px solid #dc2626}
+.fin .ft{font-weight:700;font-size:17px;margin-bottom:9px}
+.fin.ok .ft{color:#15803d}.fin.bad .ft{color:#b91c1c}
+@media(max-width:760px){.vs,.setup{grid-template-columns:1fr}
+.tli{grid-template-columns:70px 1fr;gap:9px}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>异步任务全链路</h1>
+<div class="sub">视频 / 音乐 / Midjourney 走的那条路。这是最容易出财务事故的地方 —— 请求早就返回了，钱还在后台动。</div>
+
+<h2><span class="n">1</span>为什么需要另一条路</h2>
+<div class="h2sub">同步和异步的根本差异：钱什么时候结清</div>
+<div class="vs">
+<div class="vsc">
+<h4>💬 同步（对话）</h4>
+<div class="ln"><b>耗时</b>几秒</div>
+<div class="ln"><b>流程</b>预扣 → 发上游 → 收响应 → 结算 → 返回客户</div>
+<div class="ln"><b>特点</b>客户拿到响应时，<b>钱已经结清</b></div>
+<div class="ln"><b>风险</b>低。算错了当场就能发现</div>
+</div>
+<div class="vsc hot">
+<h4>🎬 异步（视频）</h4>
+<div class="ln"><b>耗时</b>几分钟到几十分钟</div>
+<div class="ln"><b>流程</b>预扣 → 提交上游 → <b>立刻返回任务 ID</b><br>
+　　　…后台轮询…→ 完成 → 结算</div>
+<div class="ln"><b>特点</b>客户拿到响应时，<b>钱还冻结着</b></div>
+<div class="ln"><b>风险</b>高。结算发生在另一个进程、另一个时刻</div>
+</div>
+</div>
+
+<div class="big" style="margin-top:18px">
+核心风险：<b>预扣估少了，你自己兜。</b><br>
+任务已经提交给上游、钱已经花出去了。这时发现客户余额不够 —— 差额只能你承担。<br>
+所以异步任务的预扣必须<b>按最坏情况估</b>，并且<b>强制关闭「信任额度旁路」</b>。
+</div>
+
+<h2><span class="n">2</span>自己动手：走完整条链路</h2>
+<div class="h2sub">三个按钮 = 三种结局。重点看每一步「钱」怎么动</div>
+
+<div class="panel">
+<div class="setup">
+<div class="f"><label>请求时长 <span class="q">秒</span></label><input type="number" id="req" value="6"></div>
+<div class="f"><label>单价 <span class="q">元/秒</span></label><input type="number" id="pps" value="0.5" step="0.1"></div>
+<div class="f"><label>实际出片 <span class="q">秒（上游返回）</span></label><input type="number" id="act" value="6"></div>
+</div>
+<div class="btns">
+<button class="btn s" onclick="run('ok')">✓ 任务成功</button>
+<button class="btn f" onclick="run('fail')">✕ 上游失败</button>
+<button class="btn t" onclick="run('timeout')">⏱ 超时未返回</button>
+</div>
+<div class="tl" id="tl"></div>
+</div>
+
+<h2><span class="n">3</span>三段式计费</h2>
+<div class="h2sub">为什么不能一次扣完</div>
+<div class="card">
+<div style="font-weight:600;margin-bottom:4px">第一段 · 提交时预扣（按最坏情况估）</div>
+<div style="font-size:14px;margin-bottom:16px">
+客户说「6 秒 2K 视频，带一段参考视频」→ 系统按上限估：<b>6 秒 × 2K 单价 + 参考视频按 15 秒上限估</b>。<br>
+余额不够 → <b>直接拒绝，不提交上游</b>。这是你的成本防线。</div>
+
+<div style="font-weight:600;margin-bottom:4px">第二段 · 提交后微调（可选）</div>
+<div style="font-size:14px;margin-bottom:16px">
+上游返回时说「实际会生成 8 秒」→ 按 8 秒重算，补扣差额。<br>
+不是所有渠道都有这一段，取决于上游提交响应里给不给实参。</div>
+
+<div style="font-weight:600;margin-bottom:4px">第三段 · 完成时结算（多退少补）</div>
+<div style="font-size:14px">
+任务跑完，上游给出真实用量 → 按真实值重算 → 差额补扣或退还。<br>
+失败 / 取消 → <b>全额退还</b>。</div>
+</div>
+
+<div class="danger"><b>一个开关会让第三段失效：</b>
+如果这个模型配成了<b>按次固定价格</b>，系统会<b>跳过完成时结算</b>。<br>
+逻辑是「既然按次收固定价，实际用了多少秒就无关紧要」。<br>
+<b>所以想做「预扣后按实际用量多退少补」的模型，绝对不能配成按次计费</b> ——
+配了的话客户永远按预扣金额付，多退少补完全失效。</div>
+
+<h2><span class="n">4</span>为什么不会重复退款</h2>
+<div class="h2sub">这是真实存在过的 bug 类型，理解它能帮你验收代码</div>
+<div class="card">
+<div style="font-size:14px;margin-bottom:12px">
+一个任务失败了要退款。但<b>同时有三个东西可能发现它失败</b>：</div>
+<div class="led" style="background:#fff;font-size:13px">① 正常的轮询任务发现了
+② 超时清理任务发现了（任务卡太久）
+③ 多机部署时，<b>另一台服务器</b>的轮询也发现了
+
+三个都执行退款 → <b style="color:#dc2626">退了三次钱</b></div>
+<div style="margin-top:14px;font-size:14px">
+解决办法：更新状态时<b>带上「我认为它现在是什么状态」这个条件</b>。</div>
+<div class="led" style="background:#f0fdf4;font-size:13px;margin-top:10px">"把状态从『进行中』改成『失败』" ← 带条件的更新
+
+第一个执行的：条件成立 → 改成功 → <b>它负责退款</b>
+第二三个执行的：条件不成立（已经不是「进行中」了）→ 改失败 → <b>不退款</b></div>
+<div style="margin-top:12px;font-size:14px">数据库层面保证<b>只有一个赢家</b>。</div>
+</div>
+<div class="tip"><b>验收要点：</b>任何涉及「钱的状态变更」的新功能，
+你都要问开发一句 ——「<b>如果同时有两个进程干这事会怎样？</b>」<br>
+答不上来的，大概率有重复扣款/退款的风险。</div>
+
+<h2><span class="n">5</span>轮询配置（客户说进度慢，看这里）</h2>
+<table>
+<tr><th style="width:230px">配置项</th><th style="width:110px">默认值</th><th>含义 / 什么时候要改</th></tr>
+<tr><td><code>UPDATE_TASK</code></td><td><b>必须 true</b></td>
+<td><b>总开关</b>。关掉的话任务提交后没人轮询，<b>永远卡在「已提交」</b></td></tr>
+<tr><td>轮询周期</td><td><b>15 秒</b></td>
+<td>后台每 15 秒扫一次未完成任务。所以进度最多滞后 15 秒</td></tr>
+<tr><td><code>TASK_TIMEOUT_MINUTES</code></td><td><b>1440</b>（24 小时）</td>
+<td>超过就判失败并<b>全额退款</b>。设 0 = 禁用超时清理</td></tr>
+<tr><td><code>TASK_QUERY_LIMIT</code></td><td><b>1000</b></td>
+<td>单轮最多处理多少个任务。任务量大要调高，否则堆积</td></tr>
+<tr><td>同渠道任务间隔</td><td>1 秒</td>
+<td>防止把上游查询接口打爆。可在渠道设置里关闭</td></tr>
+</table>
+
+<div class="warn"><b>同渠道 1 秒间隔要注意：</b>
+某渠道有 100 个待查任务 → 一轮要走 100 秒，<b>比 15 秒的轮询周期长得多</b>。<br>
+任务量大时会自然错峰，这是设计如此。但如果你觉得进度更新太慢，
+可以在<b>渠道设置</b>里关掉这个间隔（前提是上游能扛住）。</div>
+
+<div class="tip"><b>Gemini / Vertex 有特殊优待：</b>支持<b>实时查询</b> ——
+客户查询时直接去上游拉最新状态，不用等轮询周期。<br>
+所以客户会反馈「为什么 veo 的进度更新比别的快」，原因在这。其他渠道只能等后台轮询。</div>
+
+<h2><span class="n">6</span>配置检查清单</h2>
+<div class="h2sub">视频渠道最容易配错，逐条核对</div>
+<div class="card">
+<div style="font-size:14px;line-height:2.3">
+☐ <b>渠道类型选对应的视频专用类型</b>（Kling 选 50、Vidu 选 52、Sora 选 55）<br>
+　　<span class="muted">不能用「OpenAI 兼容」凑 —— 视频走另一套分发逻辑，选错直接失败且报错不说原因</span><br>
+☐ <b>模型名和系统内置列表逐字一致</b>（大小写敏感）<br>
+☐ <b>定价只填一种</b>：按次填固定价格，按量填倍率，<b>两个别同时填</b><br>
+☐ <b><code>UPDATE_TASK=true</code></b> 必须开<br>
+☐ <b>别指望「渠道测试」按钮</b> —— 视频渠道不支持，提示 not supported 是正常的<br>
+☐ 上线前<b>完整走一遍五条路径</b>：提交 / 轮询中 / 成功结算 / 失败退款 / 超时退款
+</div>
+</div>
+<div class="danger"><b>最后一条是验收底线。</b>
+只测「提交成功」远远不够 —— 财务事故几乎都出在<b>失败退款</b>和<b>超时退款</b>这两条路径上，
+因为它们不常触发，容易漏测。<br>
+测法：故意提交一个会失败的任务（比如违规提示词），看钱有没有退回来。</div>
+
+<h2><span class="n">7</span>客户投诉对照表</h2>
+<table>
+<tr><th style="width:250px">客户说</th><th>真实原因</th><th style="width:190px">怎么处理</th></tr>
+<tr><td>「任务一直卡在已提交」</td><td><code>UPDATE_TASK</code> 没开，或轮询任务挂了</td>
+<td>检查环境变量；看系统任务运行历史</td></tr>
+<tr><td>「明明只做了一个视频，扣了两笔」</td><td>看到的是<b>预扣 + 结算差额</b>两条日志</td>
+<td>把两条加起来给他看，总额是对的</td></tr>
+<tr><td>「任务失败了钱没退」</td><td>退款走轮询有延迟；或他看的是预扣那条日志</td>
+<td>查日志里有没有<b>「退款」类型</b>的记录</td></tr>
+<tr><td>「视频生成好了但链接打不开」</td><td>多数渠道用<b>上游原始链接</b>，有时效性</td>
+<td>让他及时下载；或改走网关代理链接</td></tr>
+<tr><td>「为什么按 15 秒收费，我只要 5 秒」</td><td>带了参考视频，<b>预扣按 15 秒上限估</b></td>
+<td>解释终态会退差额；让他等结算完再看</td></tr>
+</table>
+
+<div style="margin-top:44px;padding:20px 24px;background:#fff;border-radius:12px;
+box-shadow:0 1px 3px rgba(15,23,42,.07)">
+<div style="font-weight:700;margin-bottom:10px">🎯 如果只记三件事</div>
+<div style="font-size:15px;line-height:2.1">
+1. <b>预扣按最坏情况估，终态多退少补</b> —— 所以客户会看到两条日志，总额才是实际<br>
+2. <b>配成按次固定价格会跳过终态结算</b>，多退少补失效<br>
+3. <b>必测失败退款和超时退款</b> —— 财务事故都出在这两条不常触发的路径上
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const V=id=>parseFloat($(id).value)||0;
+const y=n=>'¥'+n.toFixed(2);
+
+function run(kind){
+  const T=$('tl');T.className='tl show';T.innerHTML='';
+  const req=V('req'),pps=V('pps'),act=V('act');
+  const pre=req*pps;          // 预扣
+  const real=act*pps;         // 实际
+  const delta=real-pre;
+  let i=0;
+  const it=(t,cls,title,body)=>{
+    T.innerHTML+=`<div class="tli ${cls}" style="animation-delay:${i*.14}s">
+      <div class="tlt">${t}</div><div class="tlb"><div class="box">
+      <div class="bt">${title}</div><div class="bd">${body}</div></div></div></div>`;i++;
+  };
+  const fin=(cls,title,body)=>{
+    T.innerHTML+=`<div class="fin ${cls}" style="animation:in .4s ${i*.14}s both">
+      <div class="ft">${title}</div>${body}</div>`;
+  };
+
+  it('0 秒','ok','客户提交请求',
+    `<b>${req} 秒</b>视频，单价 <b>${y(pps)}/秒</b>`);
+
+  it('+10ms','ok','① 参数校验',
+    `时长必须在合法区间内 —— <b>用户可控的数字必须先钳制</b>，
+     否则会成为计费乘数被恶意放大`);
+
+  it('+50ms','mny','② 预扣费（按最坏情况估）',
+    `${req} 秒 × ${y(pps)} = <b>${y(pre)}</b><br>
+     <span class="muted">余额不够 → 直接拒绝，不提交上游。这是成本防线</span>
+     <div class="led">客户余额　　−${pre.toFixed(2)}　（<b>冻结</b>，未最终确认）
+令牌额度　　−${pre.toFixed(2)}
+任务记录　　quota = ${pre.toFixed(2)}　status = 已提交</div>`);
+
+  it('+300ms','ok','③ 提交给上游',
+    `拿到上游任务 ID → 存进任务记录的<b>私有数据</b>区<br>
+     <span class="muted">对客户只暴露网关自己的 task_ 前缀 ID，不泄露上游真实 ID</span>`);
+
+  it('+310ms','ok','④ 立刻返回客户',
+    `<b>{ "task_id": "task_abc123..." }</b><br>
+     <span class="muted">请求到此结束。但任务还在跑，钱还冻结着 —— 这就是异步的风险点</span>`);
+
+  it('+15 秒','wait','⑤ 后台轮询第 1 次',
+    `问上游「好了吗？」→ <b>running</b>，进度 50%<br>
+     <span class="muted">轮询周期 15 秒，所以客户看到的进度最多滞后 15 秒</span>`);
+
+  if(kind==='timeout'){
+    it('+24 小时','bad','⑥ 超时清理介入',
+      `超过 <code>TASK_TIMEOUT_MINUTES</code>（默认 <b>1440 分钟 = 24 小时</b>）仍未完成<br>
+       → 主动判为<b>失败</b>，触发全额退款`);
+    it('','mny','⑦ 全额退款',
+      `<div class="led">客户余额　　+${pre.toFixed(2)}　（<b>退回全部预扣</b>）
+令牌额度　　+${pre.toFixed(2)}
+任务记录　　quota = 0　status = 失败
+日志　　　　记一条「<b>退款</b>」类型</div>`);
+    fin('bad','⏱ 超时失败，已全额退款',
+      `<div class="led" style="background:#fff">预扣　　${y(pre)}
+退款　　−${y(pre)}
+────────────────
+客户实付　<b>¥0.00</b></div>
+      <div style="margin-top:11px;font-size:14px">
+      <b>注意：超时时间默认是 24 小时，不是几十分钟。</b>
+      长视频模型（如 2K 长片）确实可能跑很久，所以默认给得宽。<br>
+      但如果你的模型最长只要 10 分钟，<b>建议调小</b> —— 否则卡死的任务会占着客户额度整整一天。</div>`);
+    return;
+  }
+
+  if(kind==='fail'){
+    it('+2 分钟','bad','⑥ 轮询发现失败',
+      `上游返回 <b>failed</b>，原因如「内容风险检测未通过」<br>
+       <span class="muted">失败原因会写进任务记录，客户查询时能看到</span>`);
+    it('','ok','⑦ 状态变更（带条件的更新）',
+      `「把状态从<b>进行中</b>改成<b>失败</b>」← 带条件<br>
+       只有<b>第一个</b>改成功的进程负责退款，防止重复退`);
+    it('','mny','⑧ 全额退款',
+      `<div class="led">客户余额　　+${pre.toFixed(2)}　（<b>退回全部预扣</b>）
+令牌额度　　+${pre.toFixed(2)}
+任务记录　　quota = 0　status = 失败
+日志　　　　记一条「<b>退款</b>」类型</div>`);
+    fin('bad','✕ 任务失败，已全额退款',
+      `<div class="led" style="background:#fff">预扣　　${y(pre)}
+退款　　−${y(pre)}
+────────────────
+客户实付　<b>¥0.00</b></div>
+      <div style="margin-top:11px;font-size:14px">
+      <b>失败一律全额退，即使上游返回了非零用量。</b>
+      理由：客户没拿到成品，不该付钱。<br>
+      <b>这条路径必须测</b> —— 它不常触发，最容易漏，而漏了就是持续漏钱。</div>`);
+    return;
+  }
+
+  // 成功
+  it('+3 分钟','ok','⑥ 轮询发现成功',
+    `上游返回 <b>succeeded</b> + 视频链接 + 真实用量<br>
+     实际出片 <b>${act} 秒</b>${act!==req?`　<span style="color:#c2410c">（和请求的 ${req} 秒不同）</span>`:''}`);
+
+  it('','ok','⑦ 状态变更 + 存结果',
+    `状态改为<b>成功</b>，进度 100%，视频链接存进任务记录<br>
+     <span class="muted">多数渠道直接用上游原始链接（有时效性）；部分渠道会构造网关代理链接</span>`);
+
+  if(Math.abs(delta)<0.001){
+    it('','mny','⑧ 结算：预扣准确，无需调整',
+      `实际 ${y(real)} = 预扣 ${y(pre)}<br>
+       <span class="muted">不产生额外的资金变动，也不记新日志</span>`);
+    fin('ok','✅ 任务成功，预扣即实际',
+      `<div class="led" style="background:#fff">预扣　　${y(pre)}
+结算　　${y(real)}　（差额 0）
+────────────────
+客户实付　<b>${y(real)}</b></div>
+      <div style="margin-top:11px;font-size:14px">
+      请求时长和实际出片一致，所以只有一条扣费日志。<br>
+      <b>试试把「实际出片」改成 4 或 8 秒</b>，看多退少补怎么走。</div>`);
+  }else if(delta<0){
+    it('','mny','⑧ 结算：退还差额',
+      `实际 ${y(real)} &lt; 预扣 ${y(pre)} → 退 <b>${y(-delta)}</b>
+       <div class="led">客户余额　　+${(-delta).toFixed(2)}
+令牌额度　　+${(-delta).toFixed(2)}
+任务记录　　quota 改为 ${real.toFixed(2)}
+日志　　　　记一条「<b>退款</b>」类型，金额 ${(-delta).toFixed(2)}</div>`);
+    fin('ok','✅ 任务成功，已退还差额',
+      `<div class="led" style="background:#fff">预扣　　${y(pre)}　（按 ${req} 秒估）
+退还　　−${y(-delta)}
+────────────────
+客户实付　<b>${y(real)}</b>　（按实际 ${act} 秒）</div>
+      <div style="margin-top:11px;font-size:14px">
+      <b>客户会在日志里看到两条记录</b>：一条扣 ${y(pre)}，一条退 ${y(-delta)}。<br>
+      他可能来问「为什么扣两次」—— 把两条加起来就是实付。这是最高频的投诉之一。</div>`);
+  }else{
+    it('','mny','⑧ 结算：补扣差额',
+      `实际 ${y(real)} &gt; 预扣 ${y(pre)} → 补扣 <b>${y(delta)}</b>
+       <div class="led">客户余额　　−${delta.toFixed(2)}
+令牌额度　　−${delta.toFixed(2)}
+任务记录　　quota 改为 ${real.toFixed(2)}
+日志　　　　记一条「<b>消费</b>」类型，金额 ${delta.toFixed(2)}</div>`);
+    fin('ok','✅ 任务成功，已补扣差额',
+      `<div class="led" style="background:#fff">预扣　　${y(pre)}　（按 ${req} 秒估）
+补扣　　+${y(delta)}
+────────────────
+客户实付　<b>${y(real)}</b>　（按实际 ${act} 秒）</div>
+      <div style="margin-top:11px;font-size:14px">
+      <b>补扣是允许把余额扣成负数的</b>（钱包是软限制）。<br>
+      所以「预扣估少了」不会导致收不到钱，但会让客户欠费 ——
+      这就是为什么<b>预扣要按最坏情况估</b>，宁可多冻结后退还。</div>`);
+  }
+}
+</script>
+</div></body>
+</html>

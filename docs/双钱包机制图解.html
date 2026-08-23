@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>双钱包机制图解 · new-api</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+background:#f4f6f9;color:#1e293b;line-height:1.7;padding:32px 20px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:30px;margin-bottom:8px;letter-spacing:-.5px}
+.sub{color:#64748b;font-size:15px;margin-bottom:36px}
+h2{font-size:21px;margin:44px 0 6px;display:flex;align-items:center;gap:10px}
+h2 .n{background:#0d9488;color:#fff;width:28px;height:28px;border-radius:8px;
+font-size:15px;display:grid;place-items:center;flex:none}
+.h2sub{color:#64748b;font-size:14px;margin-bottom:20px;padding-left:38px}
+.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big{background:#fff;border-left:5px solid #0d9488;border-radius:12px;padding:20px 24px;
+font-size:17px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big b{color:#0d9488}
+code{background:#eef2f7;padding:2px 7px;border-radius:5px;font-size:13px;
+font-family:ui-monospace,Consolas,monospace}
+.muted{color:#64748b;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;
+border-radius:11px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+th{background:#f1f5f9;padding:12px 15px;text-align:left;font-size:13px;color:#475569}
+td{padding:12px 15px;border-top:1px solid #f1f5f9;vertical-align:top}
+tr:hover td{background:#fafbfc}
+.warn{background:#fffbeb;border-left:5px solid #f59e0b;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.warn b{color:#92400e}
+.tip{background:#f0fdfa;border-left:5px solid #0d9488;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.tip b{color:#0f766e}
+.danger{background:#fef2f2;border-left:5px solid #dc2626;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.danger b{color:#b91c1c}
+.path{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;
+background:#f8fafc;padding:9px 13px;border-radius:8px;margin-top:8px;
+font-family:ui-monospace,Consolas,monospace;color:#334155}
+.path .arw{color:#94a3b8}
+/* 钱包可视化 */
+.wallets{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+.wal{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.07);
+border-top:4px solid #0d9488}
+.wal.tk{border-top-color:#7c3aed}
+.wal h4{font-size:16px;margin-bottom:3px}
+.wal .who{font-size:12px;color:#94a3b8;margin-bottom:14px}
+.bar{height:26px;background:#f1f5f9;border-radius:6px;overflow:hidden;position:relative;margin:10px 0}
+.fill{height:100%;background:linear-gradient(90deg,#14b8a6,#0d9488);
+transition:width .55s cubic-bezier(.4,0,.2,1);display:flex;align-items:center;
+justify-content:flex-end;padding-right:8px;color:#fff;font-size:12px;font-weight:600}
+.wal.tk .fill{background:linear-gradient(90deg,#a78bfa,#7c3aed)}
+.fill.neg{background:linear-gradient(90deg,#f87171,#dc2626)}
+.amt{font-size:24px;font-weight:700;font-family:ui-monospace,Consolas,monospace}
+.amt.neg{color:#dc2626}
+.rule{font-size:12px;padding:8px 11px;border-radius:7px;margin-top:12px;line-height:1.6}
+.rule.hard{background:#f5f3ff;color:#5b21b6}
+.rule.soft{background:#f0fdfa;color:#0f766e}
+/* 模拟器 */
+.panel{background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.setup{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px}
+.fld label{display:block;font-size:13px;font-weight:600;color:#475569;margin-bottom:7px}
+.fld input,.fld select{width:100%;padding:10px 12px;border:2px solid #e2e8f0;
+border-radius:9px;font-size:14px;font-family:inherit}
+.fld input:focus,.fld select:focus{outline:none;border-color:#0d9488}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.btn{flex:1;min-width:130px;padding:13px;background:#0d9488;color:#fff;border:none;
+border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;transition:.15s}
+.btn:hover{background:#0f766e}
+.btn.g{background:#64748b}.btn.g:hover{background:#475569}
+.log{margin-top:20px;display:none}
+.log.show{display:block}
+.ev{background:#fff;border-radius:10px;padding:14px 17px;margin-bottom:9px;
+border-left:5px solid #cbd5e1;box-shadow:0 1px 3px rgba(15,23,42,.06);
+opacity:0;transform:translateY(8px);animation:in .35s forwards}
+@keyframes in{to{opacity:1;transform:none}}
+.ev.ok{border-left-color:#16a34a}
+.ev.bad{border-left-color:#dc2626;background:#fef2f2}
+.ev.info{border-left-color:#0d9488}
+.ev.roll{border-left-color:#f59e0b;background:#fffbeb}
+.eh{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px;margin-bottom:4px}
+.ic{width:21px;height:21px;border-radius:50%;display:grid;place-items:center;
+font-size:12px;color:#fff;flex:none}
+.ic.ok{background:#16a34a}.ic.bad{background:#dc2626}
+.ic.info{background:#0d9488}.ic.roll{background:#f59e0b}
+.eb{font-size:13px;color:#475569;padding-left:30px}
+.eb b{color:#1e293b}
+.calc{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#f8fafc;
+padding:12px 15px;border-radius:8px;margin-top:9px;line-height:1.95}
+@media(max-width:760px){.wallets,.setup{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>双钱包机制图解</h1>
+<div class="sub">用户额度 vs 令牌额度。和分组是<b>正交</b>的两套机制 —— 分组管「走哪条路、什么价」，钱包管「能花多少钱」。</div>
+
+<h2><span class="n">1</span>一句话理解</h2>
+<div class="h2sub">不是两个钱包各出一半，是同一笔钱被记两次账</div>
+<div class="big">
+一次消费<b>同时从两个地方扣同样的金额</b>：用户钱包（真钱）+ 令牌额度（这把钥匙的消费上限）。<br>
+<b>令牌额度是「限额器」，不是「余额」</b> —— 它不代表钱，只代表「这把钥匙最多还能花多少」。
+</div>
+
+<div class="tip"><b>类比：</b>公司给你一张<b>公司信用卡</b>（用户钱包，真钱在这），
+同时给这张卡设了<b>每张副卡的消费上限</b>（令牌额度）。<br>
+你刷 100 元 → 公司账上少 100，副卡的可用上限也少 100。
+<b>不是花了 200。</b></div>
+
+<h2><span class="n">2</span>两个钱包的关键差异</h2>
+<div class="h2sub">这张表是本页最重要的内容 —— 两者规则不对称，这是设计有意为之</div>
+<div class="wallets">
+<div class="wal">
+<h4>💰 用户额度（钱包）</h4>
+<div class="who">存在「用户」上 · 代表真实的钱</div>
+<div class="rule soft"><b>软限制 · 允许透支成负数</b><br>
+余额不足时<b>不中断请求</b>，欠费记为负余额。<br>
+理由：保证日志记的扣费额和余额变动<b>始终对得上账</b>，
+不会出现「日志说扣了但余额没动」的对账黑洞。</div>
+<div class="muted" style="margin-top:11px">充值、兑换码、邀请奖励都进这里</div>
+</div>
+<div class="wal tk">
+<h4>🔑 令牌额度（限额器）</h4>
+<div class="who">存在每把「令牌」上 · 不代表钱</div>
+<div class="rule hard"><b>硬限制 · 严格拦截</b><br>
+不够就<b>直接拒绝请求</b>，返回 403。<br>
+用的是<b>原子预留</b>（检查+扣减一步完成），
+所以并发请求不可能同时通过检查后超扣。</div>
+<div class="muted" style="margin-top:11px">可勾选「无限额度」跳过检查</div>
+</div>
+</div>
+
+<div class="danger"><b>这个不对称必须记住：</b>
+真正能拦住失控消费的是<b>令牌额度</b>，不是用户余额。<br>
+用户余额是允许透支的 —— 如果你以为「余额扣到 0 就自动停」，
+那是<b>错的</b>，它会继续跑成负数。<br>
+<b>要硬性封顶，必须给令牌设额度。</b></div>
+
+<h2><span class="n">3</span>自己动手：调数字看会发生什么</h2>
+<div class="h2sub">重点试「令牌不够」和「钱包不够」两种，看它们的结果完全不同</div>
+
+<div class="panel">
+<div class="setup">
+<div class="fld"><label>用户钱包余额（元）</label>
+<input type="number" id="uq" value="100" step="1"></div>
+<div class="fld"><label>令牌额度（元）</label>
+<input type="number" id="tq" value="20" step="1"></div>
+<div class="fld"><label>令牌类型</label>
+<select id="tu"><option value="0">普通（有额度限制）</option>
+<option value="1">无限额度</option></select></div>
+</div>
+<div class="btns">
+<button class="btn" onclick="go(5)">花 5 元</button>
+<button class="btn" onclick="go(30)">花 30 元</button>
+<button class="btn" onclick="go(150)">花 150 元</button>
+<button class="btn g" onclick="reset()">↺ 重置</button>
+</div>
+<div class="log" id="log"></div>
+</div>
+
+<h2><span class="n">4</span>扣款顺序：为什么先扣令牌</h2>
+<div class="h2sub">顺序不是随意的，反了会出财务问题</div>
+<div class="card">
+<div class="calc" style="background:#fff;font-size:14px">① 先扣<b>令牌</b>额度 ── 硬检查，不够就 403，<b>此时还没碰用户的钱</b>
+② 再扣<b>用户</b>钱包 ── 软扣减，允许负数
+
+如果 ② 失败（数据库错误）：
+   → <b>自动回滚 ①</b>，把令牌额度加回去
+   → 不会出现「令牌扣了但钱没扣」的错账</div>
+<div style="margin-top:14px;font-size:14px">
+<b>为什么先扣令牌？</b>因为令牌是硬拦截。先做<b>会失败的那一步</b>，
+失败了就干净退出，不用回滚。如果反过来先扣钱再检查令牌，
+每次令牌不足都要回滚一次真金白银的扣款 —— 回滚越多，出错概率越大。</div>
+</div>
+
+<div class="tip"><b>预扣费也走这套。</b>请求发出前先按「最坏情况」冻结一笔，
+用完后按真实用量结算，多退少补。所以你在日志里会看到
+「预扣费后补扣费」或「退还」的记录，这是正常的。</div>
+
+<h2><span class="n">5</span>一个重要例外：信任额度旁路</h2>
+<div class="h2sub">老客户余额充足时，系统会跳过预扣直接放行</div>
+<div class="card">
+<div style="font-size:14px">
+余额远超本次预估花费时，系统<b>不做预扣</b>，直接发请求，用完再一次性结算。<br>
+好处：省掉一次数据库写，高并发下明显降低压力。
+</div>
+<div class="warn" style="margin-top:14px"><b>但异步任务强制关闭这个优化。</b>
+因为视频/音乐任务返回后还在后台烧钱几分钟，必须<b>提前锁死全额</b>，
+否则客户余额只剩 5 元也能提交一个要花 50 元的任务，
+钱已经花在上游了，差额只能你自己承担。</div>
+</div>
+
+<h2><span class="n">6</span>后台在哪配</h2>
+<div class="h2sub">三个位置</div>
+<div class="card">
+<div style="font-weight:600;margin-bottom:4px">1. 改用户钱包余额</div>
+<div class="path">用户 <span class="arw">→</span> 编辑某用户 <span class="arw">→</span> 剩余额度</div>
+<div class="muted" style="margin-top:6px">或让用户自己充值 / 用兑换码。支持批量操作</div>
+
+<div style="font-weight:600;margin:20px 0 4px">2. 改令牌额度</div>
+<div class="path">令牌 <span class="arw">→</span> 编辑 <span class="arw">→</span> 额度　｜　勾选「设为无限额度」</div>
+<div class="muted" style="margin-top:6px">客户自己也能在 个人面板 <span class="arw">→</span> API 令牌 里设（不能超过自己余额）</div>
+
+<div style="font-weight:600;margin:20px 0 4px">3. 查实际扣了多少</div>
+<div class="path">日志 <span class="arw">→</span> 消费日志（可按用户/令牌/模型筛选）</div>
+<div class="muted" style="margin-top:6px">日志里同时记录预扣额、实际额、各项倍率。<b>这是唯一可信的对账依据</b></div>
+</div>
+
+<h2><span class="n">7</span>客户常见投诉对照表</h2>
+<div class="h2sub">大部分「扣费异常」的工单都在这张表里</div>
+<table>
+<tr><th style="width:270px">客户说</th><th>真实原因</th><th style="width:200px">怎么答</th></tr>
+<tr><td>「我还有余额，为什么报额度不足？」</td>
+<td><b>令牌额度用完了</b>，不是钱包。两者是独立的两个数</td>
+<td>让他看令牌那一栏的额度，或改成无限额度</td></tr>
+<tr><td>「余额怎么变成负数了？」</td>
+<td><b>正常行为</b>。钱包是软限制允许透支，用来保证对账一致</td>
+<td>解释这是设计如此；要硬性封顶请给令牌设额度</td></tr>
+<tr><td>「明明只调了一次，怎么扣了两笔？」</td>
+<td>看到的是<b>预扣 + 结算差额</b>两条记录，实际总额是对的</td>
+<td>把两条加起来给他看</td></tr>
+<tr><td>「充了钱怎么还是不能用？」</td>
+<td>钱进了<b>用户钱包</b>，但<b>令牌额度</b>没跟着涨</td>
+<td>令牌额度需要单独调高，或设为无限</td></tr>
+<tr><td>「任务失败了钱没退？」</td>
+<td>异步任务退款走轮询，有延迟；或已退但他看的是预扣那条日志</td>
+<td>查日志里有没有「退款」类型的记录</td></tr>
+</table>
+
+<div class="warn"><b>第一条和第四条是最高频的。</b>
+根因都是客户（和很多运维）把「令牌额度」当成了「余额的一部分」。<br>
+记住这个说法就够了：<b>钱包是钱，令牌额度是刷卡上限。上限不够，钱再多也刷不出去。</b></div>
+
+<h2><span class="n">8</span>怎么用好这套机制</h2>
+<div class="h2sub">三种典型配置</div>
+<table>
+<tr><th style="width:190px">场景</th><th>用户钱包</th><th>令牌额度</th><th style="width:180px">效果</th></tr>
+<tr><td><b>个人客户</b><br><span class="muted">最常见</span></td>
+<td>充多少是多少</td><td><b>无限额度</b></td>
+<td>简单，钱包一个数说明一切</td></tr>
+<tr><td><b>企业多项目</b></td>
+<td>公司总预算，如 10000 元</td>
+<td>每项目一把令牌<br>客服 500 / 生成 2000 / 测试 50</td>
+<td>单项目跑飞<b>不会烧光总预算</b></td></tr>
+<tr><td><b>给人试用</b></td>
+<td>不用给他充钱</td>
+<td>发一把 <b>10 元</b>额度的令牌</td>
+<td>硬性封顶，花完自动停</td></tr>
+</table>
+
+<div style="margin-top:44px;padding:20px 24px;background:#fff;border-radius:12px;
+box-shadow:0 1px 3px rgba(15,23,42,.07)">
+<div style="font-weight:700;margin-bottom:10px">🎯 如果只记三件事</div>
+<div style="font-size:15px;line-height:2.1">
+1. <b>同一笔钱扣两个地方</b>，不是花两倍<br>
+2. <b>令牌额度是硬拦截，用户余额允许透支成负数</b> —— 要封顶就设令牌额度<br>
+3. <b>先扣令牌再扣钱包</b>，钱包失败会自动回滚令牌
+</div>
+</div>
+<script>
+let U=100,T=20,U0=100,T0=20;
+const $=id=>document.getElementById(id);
+
+function reset(){
+  U0=U=parseFloat($('uq').value)||0;
+  T0=T=parseFloat($('tq').value)||0;
+  $('log').className='log';$('log').innerHTML='';
+}
+['uq','tq','tu'].forEach(id=>$(id).addEventListener('change',reset));
+
+function bars(){
+  const up=U0>0?Math.max(0,Math.min(100,U/U0*100)):0;
+  const tp=T0>0?Math.max(0,Math.min(100,T/T0*100)):0;
+  const un=U<0;
+  return `<div class="wallets" style="margin:16px 0">
+  <div class="wal"><h4>💰 用户钱包</h4><div class="who">真钱 · 允许负数</div>
+    <div class="amt ${un?'neg':''}">${U.toFixed(2)} 元</div>
+    <div class="bar"><div class="fill ${un?'neg':''}" style="width:${un?100:up}%">
+    ${un?'透支！':''}</div></div>
+    <div class="muted">原 ${U0.toFixed(2)} → 现 ${U.toFixed(2)}</div></div>
+  <div class="wal tk"><h4>🔑 令牌额度</h4><div class="who">刷卡上限 · 硬限制</div>
+    <div class="amt">${$('tu').value==='1'?'∞':T.toFixed(2)+' 元'}</div>
+    <div class="bar"><div class="fill" style="width:${$('tu').value==='1'?100:tp}%"></div></div>
+    <div class="muted">${$('tu').value==='1'?'无限额度，跳过检查':'原 '+T0.toFixed(2)+' → 现 '+T.toFixed(2)}</div></div>
+  </div>`;
+}
+
+function go(cost){
+  const L=$('log');L.className='log show';L.innerHTML='';
+  const unlimited=$('tu').value==='1';
+  let i=0;
+  const add=(c,ic,t,b)=>{L.innerHTML+=`<div class="ev ${c}" style="animation-delay:${i*.13}s">
+    <div class="eh"><span class="ic ${c}">${ic}</span>${t}</div><div class="eb">${b}</div></div>`;i++;};
+
+  add('info','1',`本次消费 ${cost} 元`,
+    `当前：钱包 <b>${U.toFixed(2)}</b> 元，令牌额度 <b>${unlimited?'无限':T.toFixed(2)+' 元'}</b>`);
+
+  // 第1步：令牌（硬）
+  if(unlimited){
+    add('ok','✓','① 令牌额度检查 —— 跳过',
+      `这把令牌勾了<b>无限额度</b>，不做余额检查（但仍会记录用量）`);
+  }else if(T<cost){
+    add('bad','✕','① 令牌额度检查 —— 不通过',
+      `需要 <b>${cost}</b> 元，令牌只剩 <b>${T.toFixed(2)}</b> 元<br>
+       <b>原子预留</b>：检查和扣减是同一个操作，所以并发请求不可能同时通过检查后超扣`);
+    L.innerHTML+=`<div class="ev bad" style="animation-delay:${i*.13}s">
+      <div class="eh"><span class="ic bad">!</span>❌ 403 令牌额度不足，请求被拒绝</div>
+      <div class="eb"><b>注意：此时用户钱包一分钱都没动</b>（${U.toFixed(2)} 元不变）。<br>
+      先做「会失败的那一步」，失败了干净退出，不需要回滚真金白银。<br><br>
+      <b>这就是令牌额度的价值 —— 它是唯一能硬性封顶的机制。</b></div></div>`;
+    L.innerHTML+=bars();
+    return;
+  }else{
+    T-=cost;
+    add('ok','✓','① 令牌额度扣减 —— 成功',
+      `${(T+cost).toFixed(2)} − ${cost} = <b>${T.toFixed(2)}</b> 元`);
+  }
+
+  // 第2步：钱包（软）
+  const before=U;U-=cost;
+  if(before<cost){
+    add('roll','⚠','② 用户钱包扣减 —— 余额不足但仍然扣',
+      `${before.toFixed(2)} − ${cost} = <b style="color:#dc2626">${U.toFixed(2)}</b> 元（<b>透支</b>）<br>
+       钱包是<b>软限制</b>：不足的部分记为负余额，<b>不中断请求</b>。<br>
+       理由 → 保证日志记的扣费额和余额变动始终对账一致，
+       不留「日志说扣了但余额没动」的黑洞`);
+    L.innerHTML+=`<div class="ev ok" style="animation-delay:${i*.13}s">
+      <div class="eh"><span class="ic ok">✓</span>✅ 请求成功（但用户已透支）</div>
+      <div class="eb"><div class="calc">令牌额度　${(T+cost).toFixed(2)} → <b>${T.toFixed(2)}</b>　（硬限制，够才放行）
+用户钱包　${before.toFixed(2)} → <b style="color:#dc2626">${U.toFixed(2)}</b>　（软限制，允许负数）</div>
+      <b style="color:#b91c1c">如果你以为「余额扣到 0 就自动停」—— 这里证明它不会停。</b><br>
+      要硬性封顶，只能靠令牌额度。</div></div>`;
+  }else{
+    add('ok','✓','② 用户钱包扣减 —— 成功',
+      `${before.toFixed(2)} − ${cost} = <b>${U.toFixed(2)}</b> 元`);
+    add('info','3','如果这一步失败了会怎样？',
+      `数据库出错导致钱包扣减失败 → <b>自动把令牌额度加回去</b><br>
+       绝不留下「令牌扣了但钱没扣」的错账`);
+    L.innerHTML+=`<div class="ev ok" style="animation-delay:${i*.13}s">
+      <div class="eh"><span class="ic ok">✓</span>✅ 请求成功</div>
+      <div class="eb"><div class="calc">同一笔 ${cost} 元，扣了两个地方：
+令牌额度　${(T+cost).toFixed(2)} → <b>${T.toFixed(2)}</b>
+用户钱包　${before.toFixed(2)} → <b>${U.toFixed(2)}</b></div>
+      <b>不是花了 ${cost*2} 元</b> —— 是同一笔钱记两次账：
+      钱包记「真花了多少」，令牌记「这把钥匙还剩多少可刷」。</div></div>`;
+  }
+  L.innerHTML+=bars();
+}
+</script>
+</div></body>
+</html>

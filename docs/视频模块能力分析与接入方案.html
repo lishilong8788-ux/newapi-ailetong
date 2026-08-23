@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>new-api 视频模块能力分析与接入方案</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --border:#30363d;
+  --fg:#e6edf3; --fg2:#9198a1; --fg3:#6e7681;
+  --blue:#58a6ff; --green:#3fb950; --yellow:#d29922; --red:#f85149;
+  --purple:#bc8cff; --cyan:#39c5cf;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  padding:0 0 80px;
+}
+code,pre,.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+header{
+  background:linear-gradient(160deg,#161b22 0%,#0d1117 100%);
+  border-bottom:1px solid var(--border); padding:44px 0 36px; margin-bottom:36px;
+}
+header h1{font-size:30px;font-weight:650;letter-spacing:-.4px}
+header .sub{color:var(--fg2);margin-top:10px;font-size:14px}
+header .meta{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
+.tag{
+  display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;
+  border:1px solid var(--border);background:var(--panel2);color:var(--fg2)
+}
+.tag.b{border-color:#1f6feb55;background:#1f6feb1a;color:var(--blue)}
+.tag.g{border-color:#3fb95055;background:#3fb9501a;color:var(--green)}
+.tag.y{border-color:#d2992255;background:#d299221a;color:var(--yellow)}
+.tag.r{border-color:#f8514955;background:#f851491a;color:var(--red)}
+h2{
+  font-size:22px;font-weight:620;margin:48px 0 6px;padding-top:18px;
+  border-top:1px solid var(--border);letter-spacing:-.2px
+}
+h2 .n{color:var(--fg3);font-weight:400;margin-right:10px}
+h2+.lead{color:var(--fg2);font-size:14px;margin-bottom:20px}
+h3{font-size:17px;font-weight:600;margin:30px 0 12px;color:var(--fg)}
+h4{font-size:15px;font-weight:600;margin:22px 0 10px;color:var(--fg2)}
+p{margin:12px 0}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{margin:12px 0 12px 24px}
+li{margin:6px 0}
+strong{font-weight:640;color:#fff}
+</style>
+</head>
+<body>
+<style>
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+th,td{border:1px solid var(--border);padding:9px 12px;text-align:left;vertical-align:top}
+th{background:var(--panel2);font-weight:600;color:var(--fg2);font-size:12.5px;
+  text-transform:uppercase;letter-spacing:.4px}
+td code{font-size:12.5px;background:#6e768133;padding:1px 5px;border-radius:4px;color:var(--cyan)}
+tr:hover td{background:#161b2288}
+.num{text-align:right;font-family:"SFMono-Regular",Consolas,monospace}
+pre{
+  background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  padding:14px 16px;overflow-x:auto;font-size:12.5px;line-height:1.65;margin:14px 0
+}
+pre .c{color:var(--fg3)}
+pre .k{color:var(--purple)}
+pre .s{color:#a5d6ff}
+pre .f{color:var(--blue)}
+p code,li code{background:#6e768133;padding:1.5px 6px;border-radius:5px;
+  font-size:13px;color:var(--cyan)}
+.card{background:var(--panel);border:1px solid var(--border);
+  border-radius:10px;padding:18px 20px;margin:16px 0}
+.card>h4:first-child{margin-top:0}
+.note{border-left:3px solid var(--blue);background:#1f6feb12;
+  border-radius:0 8px 8px 0;padding:14px 18px;margin:16px 0}
+.warn{border-left:3px solid var(--yellow);background:#d2992212;
+  border-radius:0 8px 8px 0;padding:14px 18px;margin:16px 0}
+.danger{border-left:3px solid var(--red);background:#f8514912;
+  border-radius:0 8px 8px 0;padding:14px 18px;margin:16px 0}
+.ok{border-left:3px solid var(--green);background:#3fb95012;
+  border-radius:0 8px 8px 0;padding:14px 18px;margin:16px 0}
+.note .t,.warn .t,.danger .t,.ok .t{
+  font-weight:640;font-size:13px;margin-bottom:6px;letter-spacing:.2px}
+.note .t{color:var(--blue)} .warn .t{color:var(--yellow)}
+.danger .t{color:var(--red)} .ok .t{color:var(--green)}
+.grid{display:grid;gap:14px;margin:16px 0}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.kpi{background:var(--panel);border:1px solid var(--border);
+  border-radius:10px;padding:16px 18px}
+.kpi .v{font-size:26px;font-weight:660;letter-spacing:-.5px}
+.kpi .l{color:var(--fg2);font-size:12.5px;margin-top:2px}
+.kpi.b .v{color:var(--blue)} .kpi.g .v{color:var(--green)}
+.kpi.y .v{color:var(--yellow)} .kpi.r .v{color:var(--red)}
+.bar{height:6px;background:#30363d;border-radius:3px;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;border-radius:3px}
+</style>
+<style>
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin:18px 0}
+.flow .step{
+  flex:1 1 130px;background:var(--panel);border:1px solid var(--border);
+  border-radius:8px;padding:11px 13px;position:relative;min-width:130px}
+.flow .step .i{font-size:11px;color:var(--fg3);font-weight:600}
+.flow .step .n{font-size:13px;font-weight:600;margin-top:3px}
+.flow .step .d{font-size:11.5px;color:var(--fg2);margin-top:4px;line-height:1.5}
+.flow .step.hot{border-color:#d2992266;background:#d299220f}
+.flow .arr{display:flex;align-items:center;color:var(--fg3);font-size:16px}
+.chk{list-style:none;margin-left:0}
+.chk li{padding-left:26px;position:relative;margin:8px 0}
+.chk li::before{position:absolute;left:0;top:0;font-size:13px}
+.chk li.d::before{content:"✓";color:var(--green)}
+.chk li.t::before{content:"○";color:var(--fg3)}
+.chk li.x::before{content:"✕";color:var(--red)}
+.chk li.w::before{content:"!";color:var(--yellow);font-weight:700}
+.toc{background:var(--panel);border:1px solid var(--border);
+  border-radius:10px;padding:18px 22px;margin-bottom:8px}
+.toc ol{margin:0 0 0 20px;columns:2;column-gap:32px}
+.toc li{margin:5px 0;font-size:13.5px;break-inside:avoid}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+@media(max-width:760px){.split,.toc ol{grid-template-columns:1fr;columns:1}}
+.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11.5px;
+  font-weight:600;letter-spacing:.2px}
+.pill.done{background:#3fb9501f;color:var(--green);border:1px solid #3fb95044}
+.pill.todo{background:#6e76811f;color:var(--fg2);border:1px solid var(--border)}
+.pill.miss{background:#f851491f;color:var(--red);border:1px solid #f8514944}
+.pill.risk{background:#d299221f;color:var(--yellow);border:1px solid #d2992244}
+footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--border);
+  color:var(--fg3);font-size:12.5px;text-align:center}
+</style>
+<header>
+<div class="wrap">
+<h1>new-api 视频模块：能力分析与接入方案</h1>
+<div class="sub">现状盘点 · 新模型快速接入 · 组件化改造 · 转售平台化前置条件</div>
+<div class="meta">
+<span class="tag b">new-api v1.0.0-rc.25 / commit f116414</span>
+<span class="tag">2026-08-22</span>
+<span class="tag g">结论基于源码逐条核实</span>
+</div>
+</div>
+</header>
+<div class="wrap">
+
+<div class="toc">
+<strong style="font-size:13px;color:var(--fg2)">目录</strong>
+<ol>
+<li><a href="#s1">现有视频能力盘点</a></li>
+<li><a href="#s2">架构与请求生命周期</a></li>
+<li><a href="#s3">接一个新视频模型要改哪些地方</a></li>
+<li><a href="#s4">现状的 5 个结构性问题</a></li>
+<li><a href="#s5">组件化方案（三级）</a></li>
+<li><a href="#s6">转售/自产 token 的前置条件</a></li>
+<li><a href="#s7">MiniMax-H3 在这套体系里的位置</a></li>
+<li><a href="#s8">落地顺序与决策清单</a></li>
+</ol>
+</div>
+
+<div class="grid g3">
+<div class="kpi b"><div class="v">9</div><div class="l">已实现视频 TaskAdaptor</div></div>
+<div class="kpi"><div class="v">4,541</div><div class="l">task 目录总行数</div></div>
+<div class="kpi y"><div class="v">9~11</div><div class="l">接一个新渠道的硬编码改动点</div></div>
+<div class="kpi r"><div class="v">0</div><div class="l">视频渠道的配置化接入能力</div></div>
+</div>
+
+<div class="note">
+<div class="t">先回答你的三个问题</div>
+<p><strong>1. 现在能不能提供视频能力？</strong>能，且不用改一行代码。9 个视频渠道已跑通，覆盖 Seedance / Hailuo / Sora / 万相 / Kling / Vidu / Jimeng / Veo，共 30+ 模型。后台建渠道填 key 配价即可。</p>
+<p><strong>2. 以后出新大模型能不能快速接？</strong>分两种情况。<span class="pill done">同协议族</span>（比如 Seedance 出 2.5、Hailuo 出新版本）只需在 <code>ModelList</code> 加一行 + 配价，5 分钟。<span class="pill risk">新协议族</span>（新厂商、新请求结构）目前必须写 Go 代码 + 改 9~11 处硬编码，约 300~600 行，1~3 天。</p>
+<p><strong>3. 有没有组件化能力？</strong>视频链路<strong>目前没有</strong>——全是硬编码 switch。但仓库里已有成熟的注册表范式（<code>relaykit/relayconvert/text_converter_registry.go</code>）可以照搬。第五节给三级方案，代价从 2 天到 3 周不等。</p>
+</div>
+<h2 id="s1"><span class="n">01</span>现有视频能力盘点</h2>
+<div class="lead">以 <code>relay/channel/task/</code> 下的 TaskAdaptor 为准，逐个核实模型列表与代码规模。</div>
+
+<table>
+<thead><tr><th>渠道</th><th>类型号</th><th>适配器</th><th class="num">行数</th><th>模型</th><th>计费维度</th></tr></thead>
+<tbody>
+<tr><td>DoubaoVideo</td><td><code>54</code></td><td><code>task/doubao</code></td><td class="num">372</td>
+<td>Seedance 1.0 pro/lite-t2v/lite-i2v、1.5 pro、2.0、2.0-fast（6）</td>
+<td>token × 分辨率档 × 有无视频输入（价格表）</td></tr>
+<tr><td>MiniMax</td><td><code>35</code></td><td><code>task/hailuo</code></td><td class="num">303</td>
+<td>Hailuo 2.3 / 2.3-Fast / 02、T2V-01(-Director)、I2V-01(-Director/-live)、S2V-01（9）</td>
+<td>按模型固定价</td></tr>
+<tr><td>Ali</td><td><code>41</code></td><td><code>task/ali</code></td><td class="num">638</td>
+<td>wan2.7 i2v/t2v、wan2.5-i2v-preview、wan2.2-i2v-flash/plus、wanx2.1-i2v-plus/turbo（7）</td>
+<td>秒数 × 分辨率</td></tr>
+<tr><td>Sora</td><td><code>55</code>+<code>1</code></td><td><code>task/sora</code></td><td class="num">331</td>
+<td>sora-2、sora-2-pro（2）</td><td>按次 + size 校验</td></tr>
+<tr><td>Kling</td><td><code>50</code></td><td><code>task/kling</code></td><td class="num">418</td>
+<td>Kling 系列（模型名由请求带入）</td><td>上游 <code>FinalUnitDeduction</code></td></tr>
+<tr><td>Vidu</td><td><code>52</code></td><td><code>task/vidu</code></td><td class="num">301</td>
+<td>Vidu 系列</td><td>秒数 × 分辨率</td></tr>
+<tr><td>Jimeng</td><td><code>51</code></td><td><code>task/jimeng</code></td><td class="num">481</td>
+<td>即梦系列</td><td>按次</td></tr>
+<tr><td>Vertex AI</td><td><code>41</code></td><td><code>task/vertex</code></td><td class="num">417</td>
+<td>Veo 3.0 / 3.1（含 fast）</td><td>按次（已有默认价）</td></tr>
+<tr><td>Gemini</td><td><code>25</code></td><td><code>task/gemini</code></td><td class="num">293</td>
+<td>Veo via Gemini API</td><td><code>task/gemini/billing.go</code> 142 行</td></tr>
+<tr style="opacity:.65"><td>Suno（音乐，非视频）</td><td><code>36</code></td><td><code>task/suno</code></td><td class="num">167</td>
+<td>suno_music、suno_lyrics</td><td>按次</td></tr>
+</tbody>
+</table>
+
+<h3>对外暴露的接口</h3>
+<table>
+<thead><tr><th>路由</th><th>用途</th><th>兼容性</th><th>适用</th></tr></thead>
+<tbody>
+<tr><td><code>POST /v1/video/generations</code></td><td>提交任务</td><td class="mono">new-api 自有</td><td>全部视频渠道</td></tr>
+<tr><td><code>GET /v1/video/generations/:task_id</code></td><td>查询任务</td><td class="mono">new-api 自有</td><td>全部</td></tr>
+<tr><td><code>POST /v1/videos</code></td><td>提交（multipart）</td><td><span class="pill done">OpenAI 兼容</span></td><td>全部（推荐对外）</td></tr>
+<tr><td><code>GET /v1/videos/:task_id</code></td><td>查询</td><td><span class="pill done">OpenAI 兼容</span></td><td>全部</td></tr>
+<tr><td><code>GET /v1/videos/:task_id/content</code></td><td>取视频内容（代理下载）</td><td><span class="pill done">OpenAI 兼容</span></td><td>全部</td></tr>
+<tr><td><code>POST /v1/videos/:video_id/remix</code></td><td>二次生成</td><td><span class="pill done">OpenAI 兼容</span></td><td>仅 Sora</td></tr>
+<tr><td><code>POST /kling/v1/videos/text2video</code> 等 4 条</td><td>Kling 原生协议</td><td class="mono">Kling 官方</td><td>仅 Kling</td></tr>
+<tr><td><code>POST /jimeng/</code></td><td>即梦原生协议</td><td class="mono">火山官方</td><td>仅 Jimeng</td></tr>
+</tbody>
+</table>
+
+<div class="ok">
+<div class="t">对转售最有价值的一条</div>
+<p><code>/v1/videos</code> 系列是 <strong>OpenAI Videos API 兼容</strong>的（<code>router/video-router.go:28-32</code>），下游可以直接用 OpenAI SDK 调。所有视频渠道都通过统一的 <code>controller.RelayTask</code> 入口，<strong>渠道差异对下游透明</strong>。这是你做转售时应该主推的接口，而不是任何厂商原生协议。</p>
+</div>
+<h2 id="s2"><span class="n">02</span>架构与请求生命周期</h2>
+<div class="lead">视频是<strong>异步任务</strong>模型，和 chat 的同步转发是两条完全独立的链路。这点决定了后面所有的改造代价。</div>
+
+<h3>两条链路的分野</h3>
+<div class="split">
+<div class="card">
+<h4 style="color:var(--blue)">Chat / Image / Embedding（同步）</h4>
+<p style="font-size:13.5px;color:var(--fg2)">注册点：<code>GetAdaptor(apiType)</code><br>
+接口：<code>Adaptor</code><br>
+未知渠道兜底：<code>APITypeOpenAI</code>（<code>common/api_type.go:85</code>）<br>
+配置化能力：<span class="pill done">有</span> AdvancedCustom(58) 可通过 JSON 配路由</p>
+</div>
+<div class="card">
+<h4 style="color:var(--purple)">Video / Suno / MJ（异步任务）</h4>
+<p style="font-size:13.5px;color:var(--fg2)">注册点：<code>GetTaskAdaptor(platform)</code><br>
+接口：<code>TaskAdaptor</code>（16 方法）+ <code>TaskPollingAdaptor</code>（4 方法）<br>
+未知渠道兜底：<strong>无</strong>，返回 <code>nil</code> → 400<br>
+配置化能力：<span class="pill miss">没有</span> 全部硬编码 switch</p>
+</div>
+</div>
+
+<div class="warn">
+<div class="t">AdvancedCustom 接不了视频</div>
+<p>它是仓库里唯一的配置化接入出路，但只注册在 <code>GetAdaptor</code>（<code>relay/relay_adaptor.go:126</code>），<code>GetTaskAdaptor</code> 的 switch 里没有它。而且它的可配路由白名单只有 8 条（<code>relaykit/dto/channel_settings.go:138-146</code>）：chat / responses / responses-compact / alpha-search / claude-messages / rerank / images / embeddings — <strong>一条视频路径都没有</strong>。</p>
+</div>
+
+<h3>提交链路（RelayTaskSubmit，11 步）</h3>
+<div class="flow">
+<div class="step"><div class="i">1-2</div><div class="n">解析 platform</div><div class="d">channel_type 转字符串<br>→ GetTaskAdaptor</div></div>
+<div class="arr">→</div>
+<div class="step hot"><div class="i">3</div><div class="n">Validate</div><div class="d">ValidateRequestAndSetAction<br>适配器自定义</div></div>
+<div class="arr">→</div>
+<div class="step"><div class="i">4</div><div class="n">基础价</div><div class="d">ModelPriceHelperPerCall<br>relay_task.go:182</div></div>
+<div class="arr">→</div>
+<div class="step hot"><div class="i">5</div><div class="n">EstimateBilling</div><div class="d">适配器返回 OtherRatios<br>秒数/分辨率</div></div>
+<div class="arr">→</div>
+<div class="step"><div class="i">6-7</div><div class="n">预扣费</div><div class="d">乘法链应用比率<br>饱和转换防溢出</div></div>
+</div>
+<div class="flow">
+<div class="step hot"><div class="i">8-9</div><div class="n">Build + Do</div><div class="d">BuildRequestBody/URL/Header<br>DoRequest</div></div>
+<div class="arr">→</div>
+<div class="step hot"><div class="i">10</div><div class="n">DoResponse</div><div class="d">取 upstream task id<br>AdjustBillingOnSubmit</div></div>
+<div class="arr">→</div>
+<div class="step"><div class="i">11</div><div class="n">落库</div><div class="d">InitTask + BillingContext<br>controller/relay.go:587</div></div>
+<div class="arr">→</div>
+<div class="step"><div class="i">轮询</div><div class="n">异步收敛</div><div class="d">UpdateVideoTasks<br>ParseTaskResult</div></div>
+<div class="arr">→</div>
+<div class="step hot"><div class="i">终态</div><div class="n">差额结算</div><div class="d">AdjustBillingOnComplete<br>多退少补</div></div>
+</div>
+<p style="font-size:13px;color:var(--fg3)">黄框 = 每个新渠道必须自己实现的部分；白框 = 公共层已处理，不用碰。</p>
+
+<h3>结算优先级（<code>service/task_polling.go:643</code>）</h3>
+<pre><span class="c">// settleTaskBillingOnComplete</span>
+<span class="k">0.</span> BillingContext.PerCallBilling == true  <span class="c">→ 直接 return，不做差额结算</span>
+<span class="k">1.</span> adaptor.AdjustBillingOnComplete() > 0  <span class="c">→ RecalculateTaskQuota（适配器说了算）</span>
+<span class="k">2.</span> taskResult.TotalTokens > 0             <span class="c">→ RecalculateTaskQuotaByTokens（按 token）</span>
+<span class="k">3.</span> 都不满足                                <span class="c">→ 保持预扣额度</span></pre>
+<p>这套三层优先级是<strong>公共能力，不用改</strong>。新渠道只要实现 <code>AdjustBillingOnComplete</code> 返回真实额度就能拿到多退少补。但要注意第 0 条：配了 <code>ModelPrice</code>（按次价）会让 <code>PerCallBilling=true</code>，把差额结算整条短路 — 详见第四节第 5 条。</p>
+<h2 id="s3"><span class="n">03</span>接一个新视频模型要改哪些地方</h2>
+<div class="lead">分两种情况，代价差两个数量级。判断标准只有一个：<strong>上游的请求结构和现有某个适配器是否同族</strong>。</div>
+
+<h3>情况 A：同协议族新模型 <span class="pill done">5 分钟</span></h3>
+<p>比如 Seedance 出 2.5、Hailuo 出新版本、万相出 wan3.0。上游路径和请求结构不变，只是模型名和价格不同。</p>
+<table>
+<thead><tr><th>#</th><th>文件</th><th>改动</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>relay/channel/task/&lt;族&gt;/constants.go</code></td><td><code>ModelList</code> 加一行模型名</td></tr>
+<tr><td>2</td><td>同上（若有价格表）</td><td><code>videoPriceTable</code> 加该模型的分辨率/视频输入档位价</td></tr>
+<tr><td>3</td><td><code>setting/ratio_setting/model_ratio.go</code></td><td>加默认价（可选，也可让管理员在后台配）</td></tr>
+</tbody>
+</table>
+<p style="font-size:13.5px;color:var(--fg2)">这条路已经是"组件化"的了 — doubao 的 <code>videoPriceTable</code>（<code>task/doubao/constants.go:35</code>）就是数据驱动的价格矩阵，加模型不用碰逻辑。</p>
+
+<h3>情况 B：新协议族 <span class="pill risk">1~3 天，9~11 处硬编码</span></h3>
+<p>新厂商、新请求结构。以 Vidu(52)、DoubaoVideo(54)、Sora(55) 三个渠道交叉核实出的<strong>完整注册点清单</strong>：</p>
+<table>
+<thead><tr><th>#</th><th>位置</th><th>改动</th><th>漏了会怎样</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>constant/channel.go</code> 类型常量</td><td>加 <code>ChannelTypeXxx = N</code>，<strong>必须插在 <code>ChannelTypeDummy</code> 之前</strong></td><td>渠道总数算错</td></tr>
+<tr><td>2</td><td><code>constant/channel.go</code> <code>ChannelBaseURLs</code></td><td>数组按下标加默认 BaseURL</td><td>下标错位，全部渠道 URL 串味</td></tr>
+<tr><td>3</td><td><code>constant/channel.go</code> <code>ChannelTypeNames</code></td><td>加显示名</td><td>后台显示空白</td></tr>
+<tr><td>4</td><td><code>relay/relay_adaptor.go:151</code> <code>GetTaskAdaptor</code></td><td>switch 加 case</td><td><span class="pill miss">400 invalid api platform</span></td></tr>
+<tr><td>5</td><td><code>relay/channel/task/&lt;新包&gt;/</code></td><td>实现 <code>TaskAdaptor</code> 16 个方法，300~600 行</td><td>—</td></tr>
+<tr><td>6</td><td><code>common/endpoint_type.go:8</code></td><td>加 <code>EndpointTypeOpenAIVideo</code> 映射</td><td>定价页把视频模型标成 chat 端点</td></tr>
+<tr><td>7</td><td><code>controller/channel-test.go:78</code></td><td>加进 <code>unsupportedTestChannelTypes</code></td><td>测试按钮发 chat 请求打上游，<strong>报 500</strong></td></tr>
+<tr><td>8</td><td><code>controller/video_proxy.go:114</code></td><td>若取内容需鉴权/换 URL，加 case</td><td>默认走 <code>PrivateData.ResultURL</code>，多数够用</td></tr>
+<tr><td>9</td><td><code>web/.../channels/constants.ts:84</code></td><td><code>CHANNEL_TYPES</code> + <code>CHANNEL_TYPE_DISPLAY_ORDER</code></td><td><span class="pill miss">后台下拉框里根本没这个渠道</span></td></tr>
+<tr><td>10</td><td><code>web/.../channels/lib/channel-utils.ts:102</code></td><td>图标映射</td><td>渠道图标缺失</td></tr>
+<tr><td>11</td><td><code>setting/ratio_setting/model_ratio.go</code></td><td>默认价</td><td>不配则请求报 <code>price not configured</code></td></tr>
+</tbody>
+</table>
+
+<div class="danger">
+<div class="t">第 9 条是最容易漏且症状最迷惑的</div>
+<p><code>web/src/features/channels/constants.ts:97</code> 的构造逻辑是 <code>if (label) { ordered.push(...) }</code> — 没有 label 的类型号<strong>被静默过滤</strong>。所以前端漏改的表现不是"显示异常"，而是<strong>这个渠道在后台完全不存在</strong>，你无从下手创建它。而现有方案文档（<code>docs/MiniMax-H3-接入方案.md</code> 第四节 15 项）里<strong>零条前端改动</strong>。</p>
+</div>
+
+<h3>TaskAdaptor 的 16 个方法</h3>
+<table>
+<thead><tr><th>分组</th><th>方法</th><th>能否复用公共实现</th></tr></thead>
+<tbody>
+<tr><td rowspan="2">生命周期</td><td><code>Init</code></td><td>模板代码，3 行</td></tr>
+<tr><td><code>ValidateRequestAndSetAction</code></td><td><span class="pill miss">必须自写</span>协议差异全在这</td></tr>
+<tr><td rowspan="3">计费</td><td><code>EstimateBilling</code></td><td><code>taskcommon.BaseBilling</code> 提供空实现</td></tr>
+<tr><td><code>AdjustBillingOnSubmit</code></td><td>同上，可嵌入后按需覆盖</td></tr>
+<tr><td><code>AdjustBillingOnComplete</code></td><td>同上</td></tr>
+<tr><td rowspan="5">请求</td><td><code>BuildRequestURL</code></td><td><span class="pill miss">必须自写</span></td></tr>
+<tr><td><code>BuildRequestHeader</code></td><td>多数是一行 Bearer</td></tr>
+<tr><td><code>BuildRequestBody</code></td><td><span class="pill miss">必须自写</span></td></tr>
+<tr><td><code>DoRequest</code></td><td>可直接转调公共 helper</td></tr>
+<tr><td><code>DoResponse</code></td><td><span class="pill miss">必须自写</span></td></tr>
+<tr><td rowspan="2">元信息</td><td><code>GetModelList</code> / <code>GetChannelName</code></td><td>返回常量，2 行</td></tr>
+<tr><td>（<code>ConvertToOpenAIVideo</code> 可选接口）</td><td>要 OpenAI 兼容输出才实现</td></tr>
+<tr><td rowspan="2">轮询</td><td><code>FetchTask</code></td><td><span class="pill miss">必须自写</span></td></tr>
+<tr><td><code>ParseTaskResult</code></td><td><span class="pill miss">必须自写</span>状态映射</td></tr>
+</tbody>
+</table>
+<p>真正无法复用的是 <strong>6 个</strong>：Validate / BuildURL / BuildBody / DoResponse / FetchTask / ParseTaskResult。<code>taskcommon.BaseBilling</code>（<code>task/taskcommon/helpers.go:85</code>）已经把三个计费方法做成可嵌入的空实现 — 这是仓库里<strong>已有的组件化雏形</strong>，只是覆盖面还很窄（97 行）。</p>
+<h2 id="s4"><span class="n">04</span>现状的 5 个结构性问题</h2>
+<div class="lead">这些是本次调研新发现的，都会直接影响"快速接入"和"给别人用"这两个目标。</div>
+
+<h3>1. 视频渠道的 EndpointType 注册被注释掉了 <span class="pill risk">影响下游发现能力</span></h3>
+<pre><span class="c">// common/endpoint_type.go:11-18</span>
+<span class="c">//case constant.ChannelTypeMidjourney, constant.ChannelTypeMidjourneyPlus:</span>
+<span class="c">//	endpointTypes = []constant.EndpointType{constant.EndpointTypeMidjourney}</span>
+<span class="c">//case constant.ChannelTypeSunoAPI: ...</span>
+<span class="c">//case constant.ChannelTypeKling: ...</span>
+<span class="c">//case constant.ChannelTypeJimeng: ...</span>
+case constant.ChannelTypeSora:   <span class="c">← 只有 Sora 是活的</span>
+	endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIVideo}
+<span class="k">default:</span>
+	endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI}  <span class="c">← Kling/Vidu/Doubao 落这里</span></pre>
+<p>后果：Kling / Jimeng / Vidu / DoubaoVideo / 万相 在 <code>/api/pricing</code> 和 <code>/api/models</code> 里被标成 <strong>OpenAI chat 端点</strong>。下游拿到模型列表无法区分"这是个视频模型"，只能靠硬编码模型名前缀猜。<strong>做转售平台时这条必须先修</strong>，否则接入方的第一个问题就是"你们哪些模型是视频的"。</p>
+
+<h3>2. 视频模型几乎没有默认价 <span class="pill risk">接入即报错</span></h3>
+<p><code>setting/ratio_setting/model_ratio.go:272</code> 的 <code>defaultModelPrice</code> 里视频模型只有：</p>
+<div class="split">
+<div class="card"><h4 style="color:var(--green)">有默认价</h4>
+<p class="mono" style="font-size:12.5px;color:var(--fg2)">sora-2 → 0.3<br>sora-2-pro → 0.5<br>veo-3.0-generate-001 → 0.4<br>veo-3.0-fast → 0.15<br>veo-3.1-preview → 0.4<br>veo-3.1-fast-preview → 0.15<br>mj_video → 0.8</p></div>
+<div class="card"><h4 style="color:var(--red)">无默认价（必须管理员手配）</h4>
+<p class="mono" style="font-size:12.5px;color:var(--fg2)">全部 Seedance（6 个）<br>全部 Hailuo（9 个）<br>全部万相 wan（7 个）<br>Kling 系列<br>Vidu 系列<br>Jimeng 系列</p></div>
+</div>
+<p>未配价时 <code>ModelPriceHelperPerCall</code>（<code>relay/helper/price.go:200-208</code>）走 <code>GetModelRatio</code>，仍找不到就返回 <code>modelPriceNotConfiguredError</code>，除非用户开了 <code>AcceptUnsetRatioModel</code>。也就是<strong>建完渠道直接调用会 400</strong>，新人接入的第一个坑。</p>
+
+<h3>3. 共享请求结构 <code>TaskSubmitReq</code> 表达力不足 <span class="pill risk">限制新协议接入</span></h3>
+<pre><span class="c">// relay/common/relay_info.go:868 — 10 个扁平字段，被 10 个渠道共用</span>
+Prompt string; Model string; Mode string; Image string;
+Images []string;   <span class="c">← 无 role 概念</span>
+Size string; Duration int; Seconds string; InputReference string;
+Metadata map[string]interface{}  <span class="c">← 所有厂商特有参数的垃圾桶</span></pre>
+<p>两个实际后果：</p>
+<ul>
+<li><strong>Vidu 靠图片数量猜语义</strong>（<code>task/vidu/adaptor.go:102</code>）：<code>len(Images)==2</code> 当首尾帧、<code>&gt;2</code> 当参考图。这种猜法在有 6 种 role 的协议上必错。</li>
+<li><strong>没有 video / audio 输入字段</strong>。参考视频、参考音频这类输入只能塞 <code>Metadata</code>，绕过所有类型校验和计费边界检查 — 而 <code>AGENTS.md</code> 明确警告 <code>Metadata</code> 是计费校验绕过路径。</li>
+</ul>
+<p>还有一条硬约束：<code>validatePrompt</code>（<code>relay/common/relay_utils.go:136</code>）要求顶层 <code>prompt</code> 非空。任何把提示词放在嵌套结构里的协议，走共享校验器<strong>每个请求都 400</strong>。</p>
+
+<h3>4. 秒数上限对视频过松 <span class="pill risk">计费安全</span></h3>
+<p><code>MaxTaskDurationSeconds = 3600</code>（<code>relay/common/relay_utils.go:146</code>）。真实视频模型上限普遍是 5~15 秒。这个通用上限只防溢出，不防"用户传 3600 秒把预扣打到天上"。每个新渠道<strong>必须在自己的 Validate 里再收紧一次</strong>，公共层不会帮你。</p>
+
+<h3>5. <code>PerCallBilling</code> 与 <code>ModelPrice</code> 互斥 <span class="pill miss">设计冲突</span></h3>
+<pre><span class="c">// controller/relay.go:599</span>
+PerCallBilling: common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName)
+                <span class="k">||</span> relayInfo.PriceData.UsePrice,   <span class="c">← 配了 ModelPrice 就是 true</span>
+
+<span class="c">// service/task_polling.go:646 — 第 0 条</span>
+<span class="k">if</span> bc.PerCallBilling { <span class="k">return</span> }   <span class="c">← 差额结算被整条短路</span></pre>
+<div class="danger">
+<div class="t">这条对"按用量结算"的视频渠道是致命的</div>
+<p>凡是希望<strong>终态多退少补</strong>的渠道（实际出片秒数 ≠ 预估秒数、上游返回真实用量），都不能配 <code>ModelPrice</code>，必须走 <code>ModelRatio</code>（token 维度）。doubao 就是这么做的。而 <code>relay/relay_task.go:203</code> 还有一层：<code>TaskPricePatches</code> 里的模型连 OtherRatios 都不应用。</p>
+<p>更麻烦的是 <code>relay.go:599</code> 这一行是<strong>所有任务渠道共用</strong>的（MJ / suno / kling / vidu / sora / doubao / ali / jimeng / gemini / vertex）。想为某个渠道关掉它，改法要么加渠道级白名单，要么改用 ModelRatio 计费 — <strong>不是一行改动</strong>。</p>
+</div>
+<h2 id="s5"><span class="n">05</span>组件化方案（三级）</h2>
+<div class="lead">回答"以后怎么快速接入"。三级方案代价递增、收益递增，可以按顺序做，也可以只做 L1。</div>
+
+<div class="ok">
+<div class="t">好消息：范式不用自己发明</div>
+<p>仓库里已有一个成熟的注册表实现可以照搬：<code>relaykit/relayconvert/text_converter_registry.go</code>。它用 <code>TextConverterSpec{ID, From, To, Quality, Req, Resp}</code> 描述一个转换器，<code>builtinTextConverters</code> 数组声明式注册，<code>sync.RWMutex</code> 保护，支持别名和运行时注册。视频适配器完全可以套同一套结构。</p>
+</div>
+
+<h3>L1 — 注册表 + 声明式 Spec <span class="pill done">推荐先做</span> <span class="tag">约 2~3 天</span></h3>
+<p>目标：把 <strong>11 处硬编码收敛成 1 处</strong>。新渠道只写适配器 + 一个 Spec 字面量，不再满仓库找 switch。</p>
+<pre><span class="c">// 新增 relay/channel/task/registry.go</span>
+<span class="k">type</span> VideoChannelSpec <span class="k">struct</span> {
+	ChannelType   <span class="k">int</span>              <span class="c">// 61</span>
+	Name          <span class="k">string</span>           <span class="c">// "MiniMaxH3"      → ChannelTypeNames</span>
+	DefaultBaseURL <span class="k">string</span>          <span class="c">// "https://..."    → ChannelBaseURLs</span>
+	Models        []<span class="k">string</span>         <span class="c">// ModelList        → /v1/models 发现</span>
+	DefaultPrices <span class="k">map</span>[<span class="k">string</span>]<span class="k">float64</span> <span class="c">// → defaultModelPrice</span>
+	Endpoints     []types.EndpointType <span class="c">// → GetEndpointTypesByChannelType</span>
+	SupportsChannelTest <span class="k">bool</span>     <span class="c">// → 替代 unsupportedTestChannelTypes 黑名单</span>
+	BillingMode   BillingMode      <span class="c">// PerCall | Ratio  → 解掉第四节第 5 条冲突</span>
+	MaxDuration   <span class="k">int</span>              <span class="c">// 渠道自己的秒数上限（替代通用 3600）</span>
+	Icon          <span class="k">string</span>           <span class="c">// → 前端图标映射</span>
+	New           <span class="k">func</span>() channel.TaskAdaptor
+}
+
+<span class="k">var</span> builtinVideoChannels = []VideoChannelSpec{
+	{ChannelType: constant.ChannelTypeVidu, Name: <span class="s">"Vidu"</span>, <span class="c">/* ... */</span>},
+	<span class="c">// 新渠道加一条，其余全自动</span>
+}</pre>
+<h4>配套改动</h4>
+<table>
+<thead><tr><th>原硬编码点</th><th>改成</th></tr></thead>
+<tbody>
+<tr><td><code>GetTaskAdaptor</code> switch</td><td>查表 <code>registry[channelType].New()</code></td></tr>
+<tr><td><code>ChannelTypeNames</code> / <code>ChannelBaseURLs</code></td><td><code>init()</code> 里由 registry 回填</td></tr>
+<tr><td><code>unsupportedTestChannelTypes</code> 黑名单</td><td>读 <code>Spec.SupportsChannelTest</code>（白名单语义，默认不支持）</td></tr>
+<tr><td><code>GetEndpointTypesByChannelType</code></td><td>读 <code>Spec.Endpoints</code>，顺手修掉第四节第 1 条</td></tr>
+<tr><td><code>defaultModelPrice</code></td><td><code>init()</code> 合并 <code>Spec.DefaultPrices</code>，顺手修掉第 2 条</td></tr>
+<tr><td>前端两处映射</td><td>新增 <code>GET /api/channel/video_specs</code>，前端改为运行时拉取</td></tr>
+</tbody>
+</table>
+<p><strong>收益</strong>：新渠道改动点从 11 处 → <strong>2 处</strong>（写适配器 + 加 Spec）。前端零改动。<br>
+<strong>代价</strong>：一次性重构 9 个现有渠道的注册（适配器代码本身不动），加回归测试。<br>
+<strong>风险</strong>：低。纯注册层重构，不碰任何业务逻辑和计费。</p>
+
+<h3>L2 — 抽公共基类，压缩适配器体积 <span class="tag">约 3~5 天</span></h3>
+<p>目标：让"必须自写"的 6 个方法降到 2~3 个。现有 9 个适配器平均 350 行，其中大量是同构样板。</p>
+<table>
+<thead><tr><th>抽取物</th><th>覆盖场景</th><th>预计省下</th></tr></thead>
+<tbody>
+<tr><td><code>taskcommon.BearerAuth</code></td><td>BuildRequestHeader 的 Bearer/API-Key 两种范式</td><td>每渠道 10~15 行</td></tr>
+<tr><td><code>taskcommon.JSONSubmitFlow</code></td><td>DoRequest + DoResponse 的"POST JSON → 取 task_id"标准流</td><td>每渠道 40~60 行</td></tr>
+<tr><td><code>taskcommon.StatusMapper</code></td><td>声明式状态映射表替代手写 switch：<code>{"PROCESSING":IN_PROGRESS, ...}</code></td><td>每渠道 30~50 行</td></tr>
+<tr><td><code>taskcommon.SecondsResolutionBilling</code></td><td>"秒数 × 分辨率档"这个最常见的计费范式（ali/vidu/doubao 三家在用）</td><td>每渠道 40~80 行</td></tr>
+<tr><td><code>taskcommon.DurationGuard</code></td><td>渠道级秒数上限校验 + 计费钳制，修掉第四节第 4 条</td><td>每渠道 15 行 + 消除一类计费漏洞</td></tr>
+</tbody>
+</table>
+<p><strong>收益</strong>：新适配器从 300~600 行降到 <strong>120~250 行</strong>。同族计费范式复用，减少各渠道各写一遍钳制逻辑的漏检风险。<br>
+<strong>代价</strong>：需要重构现有适配器才能验证抽象是否合理（只抽不用等于没抽）。建议<strong>先接 2 个新渠道验证范式，再回头重构老的</strong>。</p>
+
+<h3>L3 — 配置化接入（无需改代码） <span class="pill risk">约 2~3 周</span></h3>
+<p>目标：管理员在后台填 JSON 就能接一个新视频渠道，对标 AdvancedCustom(58) 之于 chat。</p>
+<pre>{
+  <span class="s">"video_routes"</span>: [{
+    <span class="s">"upstream_submit_path"</span>: <span class="s">"/v2/video_generation"</span>,
+    <span class="s">"upstream_query_path"</span>:  <span class="s">"/v2/query/video_generation/{task_id}"</span>,
+    <span class="s">"auth"</span>: {<span class="s">"type"</span>:<span class="s">"bearer"</span>},
+    <span class="s">"request_template"</span>: <span class="s">"{{ jsonpath mapping }}"</span>,
+    <span class="s">"task_id_path"</span>:  <span class="s">"$.task_id"</span>,
+    <span class="s">"status_path"</span>:   <span class="s">"$.status"</span>,
+    <span class="s">"status_map"</span>:    {<span class="s">"Success"</span>:<span class="s">"SUCCESS"</span>, <span class="s">"Processing"</span>:<span class="s">"IN_PROGRESS"</span>},
+    <span class="s">"result_url_path"</span>:<span class="s">"$.file.download_url"</span>,
+    <span class="s">"billing"</span>: {<span class="s">"mode"</span>:<span class="s">"seconds"</span>, <span class="s">"seconds_path"</span>:<span class="s">"$.usage.seconds"</span>}
+  }]
+}</pre>
+<div class="warn">
+<div class="t">L3 能覆盖多少？给个诚实的估计</div>
+<p>纯 JSON 模板能覆盖<strong>"提交拿 id / 轮询看状态 / 取结果 URL"</strong>这个主干，大约是 <strong>60~70%</strong> 的渠道。覆盖不了的：需要签名算法的（AWS SigV4、火山 HMAC）、需要多步交互的（先传文件再提交）、计费规则是加法或阶梯的、状态机有中间态需要特殊处理的。</p>
+<p>所以 L3 <strong>不能取代 L1/L2</strong>，它是"长尾渠道快速上架"的补充。主力渠道仍然应该写 Go 适配器。</p>
+</div>
+<p><strong>建议</strong>：L3 先不做。等 L1+L2 落地、且真的出现"一个月要接 5 个以上新视频渠道"的需求时再评估。过早做配置化会得到一个既不够灵活又难调试的模板引擎。</p>
+<h2 id="s6"><span class="n">06</span>转售 / 自产 token 的前置条件</h2>
+<div class="lead">你提到"自产 token 再通过平台中转卖给别人，要别人也能接入"。这件事 new-api 本身就是为此设计的，但视频链路有几个专门的缺口。</div>
+
+<h3>平台已具备的能力 <span class="pill done">不用改</span></h3>
+<table>
+<thead><tr><th>能力</th><th>实现位置</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>令牌体系</td><td><code>model/token.go</code></td><td>额度、过期、模型白名单、分组限制、IP 白名单</td></tr>
+<tr><td>用户分组与倍率</td><td><code>HandleGroupRatio</code></td><td>不同分组不同价，转售定价的核心杠杆</td></tr>
+<tr><td>渠道负载均衡</td><td><code>middleware/distributor.go</code></td><td>按模型+分组选渠道，权重/优先级/自动重试</td></tr>
+<tr><td>额度预扣与结算</td><td><code>service/` 计费链</code></td><td>视频异步任务的多退少补已跑通</td></tr>
+<tr><td>用量日志与审计</td><td><code>model/log.go</code></td><td><code>other.admin_info</code> 对非管理员自动脱敏</td></tr>
+<tr><td>OpenAI 兼容视频接口</td><td><code>/v1/videos*</code></td><td><strong>下游可直接用 OpenAI SDK</strong></td></tr>
+<tr><td>模型发现</td><td><code>/api/models</code>、<code>/api/pricing</code></td><td>下游可自动拉取可用模型与价格</td></tr>
+</tbody>
+</table>
+
+<h3>视频链路专属缺口 <span class="pill miss">要补</span></h3>
+<table>
+<thead><tr><th>#</th><th>缺口</th><th>对接入方的影响</th><th>优先级</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>视频模型的 EndpointType 标错（第四节第 1 条）</td><td>接入方无法从 <code>/api/models</code> 判断哪些是视频模型，只能问你要文档</td><td><span class="pill miss">高</span></td></tr>
+<tr><td>2</td><td>多数视频模型无默认价</td><td>你自己上架时每个都要手配，漏配则接入方收到 400</td><td><span class="pill miss">高</span></td></tr>
+<tr><td>3</td><td>无统一的任务列表接口</td><td>接入方只能逐个 task_id 查，做不了"我的任务列表"页</td><td><span class="pill risk">中</span></td></tr>
+<tr><td>4</td><td>无终态回调（webhook）</td><td>接入方必须自己轮询，体验差且浪费双方资源</td><td><span class="pill risk">中</span></td></tr>
+<tr><td>5</td><td>无取消任务接口（除个别渠道）</td><td>误提交的任务无法止损，额度照扣</td><td><span class="pill todo">低</span></td></tr>
+<tr><td>6</td><td>厂商原生协议路由（Kling / Jimeng）暴露了上游身份</td><td>转售场景下泄露你的上游是谁</td><td><span class="pill risk">中</span></td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<div class="t">第 4 条：回调机制当前是零实现</div>
+<p>我在全仓库搜过 <code>OnVideoTaskTerminal</code> 之类的钩子，<strong>0 命中</strong>。<code>model/task.go</code> 里刚加的 <code>CallbackURL</code> / <code>CallbackPushedStatus</code> 字段是为 H3 预埋的，但消费它们的代码一行没有。如果要做转售平台，<strong>回调应该做进公共层</strong>（所有视频渠道共享），而不是某个渠道的私有能力 — 否则每接一个渠道都要重写一遍推送和幂等逻辑。</p>
+</div>
+
+<h3>建议的对外接口收口</h3>
+<div class="card">
+<h4>只对外暴露这一组，其余全部内部化</h4>
+<pre><span class="f">POST</span>   /v1/videos                     <span class="c">提交（OpenAI 兼容，multipart 或 JSON）</span>
+<span class="f">GET</span>    /v1/videos/:task_id            <span class="c">查询单个</span>
+<span class="f">GET</span>    /v1/videos/:task_id/content    <span class="c">取视频内容（平台代理，不暴露上游 URL）</span>
+<span class="f">GET</span>    /v1/videos                     <span class="c">✚ 待补：任务列表（分页 + 状态过滤）</span>
+<span class="f">DELETE</span> /v1/videos/:task_id            <span class="c">✚ 待补：取消/删除</span>
+<span class="f">POST</span>   （回调）                        <span class="c">✚ 待补：终态 webhook，带签名</span>
+<span class="f">GET</span>    /v1/models                     <span class="c">模型发现（需先修 EndpointType）</span></pre>
+<p style="font-size:13.5px;color:var(--fg2);margin-top:12px">三条 <code>✚ 待补</code> 建议做进<strong>公共任务层</strong>，一次实现全部视频渠道受益。这也是"组件化"在对外契约层面的体现：<strong>接入方看到的接口形状与上游是谁完全无关</strong>。</p>
+</div>
+
+<div class="warn">
+<div class="t">安全提醒：<code>/v1/videos/:task_id/content</code> 的代理下载</div>
+<p><code>controller/video_proxy.go</code> 已经做了 SSRF 防护（<code>ValidateSSRFProtectedFetchURL</code>）。如果你新增渠道时在 <code>video_proxy.go:114</code> 加 case 直接拼上游 URL，<strong>务必保留这层校验</strong> — 上游返回的 URL 是不可信输入。</p>
+</div>
+<h2 id="s7"><span class="n">07</span>MiniMax-H3 在这套体系里的位置</h2>
+<div class="lead">把进行中的 H3 接入放回全局看，它其实是"新协议族接入"的一个典型样本，也暴露了现有体系的短板。</div>
+
+<h3>当前进度</h3>
+<ul class="chk">
+<li class="d"><code>constant/channel.go</code> — 类型 61 + BaseURL + Name 已注册</li>
+<li class="d"><code>model/task.go</code> — <code>TaskPrivateData</code> 加了 5 个字段（H3 专用 + 回调状态）</li>
+<li class="d"><code>relay/channel/task/minimaxh3/constants.go</code> — 104 行常量（价格、路径、role、比例白名单）</li>
+<li class="t">适配器本体（types / path / validate / billing / query / adaptor）— 未开始</li>
+<li class="t"><code>GetTaskAdaptor</code> case、路由、distributor 分支 — 未开始</li>
+<li class="x"><strong>前端两处映射 — 方案文档漏了，导致后台下拉框选不到 61</strong></li>
+<li class="x"><strong>渠道测试黑名单 — 未加，测试按钮会发 chat 请求打上游（本次 500 报错的直接原因）</strong></li>
+<li class="w"><code>PerCallBilling</code> 与 <code>ModelPrice=0.5</code> 冲突 — 方案里写了"关闭"，但未评估共享代码的爆炸半径</li>
+</ul>
+
+<h3>H3 为什么不能复用 <code>/v1/video/generations</code></h3>
+<p>这条结论此前已确认，这里补上它和第四节第 3 条的关系：<strong>H3 撞的正是 <code>TaskSubmitReq</code> 表达力不足这个共性问题</strong>，不是 H3 特殊。</p>
+<table>
+<thead><tr><th>H3 的需求</th><th><code>TaskSubmitReq</code> 现状</th><th>其他渠道的应对</th></tr></thead>
+<tbody>
+<tr><td>6 种 role 的 <code>content[]</code></td><td>只有扁平 <code>Images []string</code></td><td>Vidu 按数量猜（会错）</td></tr>
+<tr><td><code>reference_video</code> 参与计费</td><td>无 video 字段</td><td>塞 <code>Metadata</code>（绕过校验）</td></tr>
+<tr><td>提示词在 <code>content[]</code> 内</td><td><code>validatePrompt</code> 要求顶层非空</td><td>无解，必然 400</td></tr>
+<tr><td>加法定价（秒×价 + 超额图 + 输入视频秒）</td><td><code>OtherRatios</code> 是乘法链</td><td>折算成单一乘数 <code>h3_units</code></td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<div class="t">一个可以顺手做掉的选择</div>
+<p>如果先做 L1 注册表（第五节），H3 的 11 处硬编码会自动降到 2 处，前端漏改和测试黑名单这两个坑<strong>结构上就不会再出现</strong>。相当于用 2~3 天的重构，换掉每个新渠道都要踩一遍的坑。</p>
+<p>反过来，如果先赶 H3 再重构，H3 会成为第 10 个需要被重构的渠道。</p>
+</div>
+
+<h3>H3 仍待冻结的 4 个契约点</h3>
+<p>这 4 处在 <code>docs/MiniMax-H3 视频生成接口文档.md</code> 与 <code>docs/MiniMax-H3-渠道实现文档.md</code> 之间自相矛盾，是对外契约，动手前必须定。</p>
+<table>
+<thead><tr><th>#</th><th>争议点</th><th>接口文档</th><th>实现文档</th><th>建议</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>ratio</code> 是否必填</td><td>可选，上游取默认</td><td>纯文生视频必填且不能 <code>adaptive</code></td><td>按可选，不做本地强校验（本地比上游严会误杀）</td></tr>
+<tr><td>2</td><td><code>aigc_watermark: false</code> 语义</td><td>显式 false 原样下发</td><td>仅 true 时透传</td><td>按接口文档，用 <code>*bool</code>（符合 AGENTS.md 硬规则）</td></tr>
+<tr><td>3</td><td><code>running</code> 能否取消</td><td>同节内自相矛盾</td><td>—</td><td>以上游实际行为为准，透传上游错误（有资损风险）</td></tr>
+<tr><td>4</td><td>content 模式再生成预扣口径</td><td>不接收 <code>duration</code></td><td>按 <code>MaxDuration=15</code> 估</td><td>保留 15 秒保守预扣，但写进接口文档告知客户</td></tr>
+</tbody>
+</table>
+<h2 id="s8"><span class="n">08</span>落地顺序与决策清单</h2>
+<div class="lead">按"先解锁能力，再补长尾"的顺序排。每一阶段都是可独立交付、可回归验证的。</div>
+
+<h3>推荐顺序</h3>
+<table>
+<thead><tr><th>阶段</th><th>内容</th><th>为什么排这个位置</th><th>估时</th></tr></thead>
+<tbody>
+<tr><td><strong>P0</strong><br><span class="pill done">立即</span></td>
+<td>① 61 加进渠道测试黑名单<br>② 修 <code>EndpointType</code> 注释（Kling/Vidu/Jimeng/Doubao → OpenAIVideo）<br>③ 补现有视频模型默认价</td>
+<td>三处都是<strong>独立的小修</strong>，不依赖任何决策，且第 ②③ 条是转售的前置条件</td><td>0.5 天</td></tr>
+<tr><td><strong>P1</strong><br><span class="pill done">推荐</span></td>
+<td>L1 注册表：<code>VideoChannelSpec</code> + 9 个现有渠道迁移 + <code>/api/channel/video_specs</code> 接口</td>
+<td>把 11 处硬编码收到 1 处。<strong>越早做，后面每个新渠道都省一遍坑</strong></td><td>2~3 天</td></tr>
+<tr><td><strong>P2</strong></td>
+<td>H3 适配器本体（generation 单任务类型闭环）</td>
+<td>建立在 P1 之上，只需写适配器 + Spec。<strong>前提：4 个契约点已冻结</strong></td><td>3~4 天</td></tr>
+<tr><td><strong>P3</strong></td>
+<td>公共任务层补齐：任务列表、取消、终态 webhook（带签名 + 幂等）、防双退</td>
+<td>做进公共层，<strong>所有视频渠道一次受益</strong>。转售平台的体验分水岭</td><td>4~6 天</td></tr>
+<tr><td><strong>P4</strong></td>
+<td>L2 公共基类抽取 + 回头重构现有适配器</td>
+<td>此时已有 10 个渠道样本，抽象的边界才看得清</td><td>3~5 天</td></tr>
+<tr><td><strong>P5</strong></td>
+<td>H3 剩余任务类型（<code>h3_context_ir</code>、<code>video_regeneration</code>）</td>
+<td>独立任务类型，不阻塞主干</td><td>2~3 天</td></tr>
+<tr><td><em>暂不做</em></td>
+<td>L3 配置化接入</td>
+<td>覆盖率只有 60~70%，过早做会得到难调试的模板引擎</td><td>—</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<div class="t">关于 P1 排在 P2 之前</div>
+<p>这是我的建议，但如果 H3 有明确的对外交付日期，可以 P2 优先、P1 延后。代价是 H3 会成为第 10 个待重构渠道，且前端漏改、测试黑名单这两个坑要手动踩一遍（已知，可规避）。<strong>这个顺序由你的交付压力决定，不是技术问题。</strong></p>
+</div>
+
+<h3>需要你决策的事项</h3>
+<table>
+<thead><tr><th>#</th><th>决策项</th><th>选项</th><th>不定会怎样</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>先重构（P1）还是先交付 H3（P2）</td><td>看 H3 交付日期</td><td>—</td></tr>
+<tr><td>2</td><td>H3 的 4 个契约点</td><td>认第七节的建议值，或给你们的口径</td><td><strong>P2 无法开工</strong>（对外契约，客户端也依赖）</td></tr>
+<tr><td>3</td><td>H3 计费走 <code>ModelPrice</code> 还是 <code>ModelRatio</code></td><td>Ratio 可保留差额结算，Price 需改共享代码</td><td>影响第四节第 5 条的解法</td></tr>
+<tr><td>4</td><td>转售是否需要 webhook（P3）</td><td>需要则提前，不需要可后置</td><td>接入方只能轮询</td></tr>
+<tr><td>5</td><td>上游 token（H3）</td><td>有则可端到端验收，无则只能 mock</td><td>上线一个从未打过真上游的渠道</td></tr>
+<tr><td>6</td><td>下游客户端技术栈</td><td>此前从机器上的 <code>m2-repository</code>、<code>springboot3.0</code> 推测是 Java/Spring Boot，<strong>未确认</strong></td><td>影响是否需要提供 SDK / 示例代码</td></tr>
+</tbody>
+</table>
+
+<h3>验收口径</h3>
+<table>
+<thead><tr><th>层次</th><th>手段</th><th>前置</th></tr></thead>
+<tbody>
+<tr><td>编译</td><td><code>go build ./...</code> + <code>cd relaykit &amp;&amp; GOWORK=off go build ./...</code></td><td>无</td></tr>
+<tr><td>单测</td><td>计费边界、校验分支、状态映射的表驱动测试（testify）</td><td>无</td></tr>
+<tr><td>集成</td><td>mock 上游 httptest server 跑完整 提交→轮询→结算</td><td>无</td></tr>
+<tr><td>端到端</td><td>真实提交任务核对扣费</td><td><strong>需上游 token</strong></td></tr>
+</tbody>
+</table>
+<div class="note">
+<div class="t">基线注意</div>
+<p><code>service</code> 包有 2 个上游自带的失败测试（<code>TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode</code> 和 <code>_UnsupportedModeKeepsEmpty</code>，测试间全局计数器泄漏，单独跑能过）。判断自己的改动有没有引入回归时要排除这两个。</p>
+</div>
+
+<footer>
+new-api v1.0.0-rc.25 · commit f116414 · 2026-08-22<br>
+本文所有代码位置与行号均经源码核实；结论中的估时为工程量参考，不含契约沟通时间。
+</footer>
+</div>
+</body>
+</html>

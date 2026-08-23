@@ -1,0 +1,551 @@
+<!--
+  康贝斯算力云 · 关于页自定义内容（适配 New API 顶部悬浮导航）
+  用法：系统设置 → 站点设置 → 关于内容，整段粘贴替换原内容。
+  改动与首页一致：顶部只留 64px 导航位 + 深色主题适配。
+
+  视觉体系与 kbs-home.html 完全对齐，类名和关键帧名都刻意复用，
+  两个文件应当作同一套系统来读改：
+    Hero  = 呼吸极光 + 上升光粒 + 星尘 + 鼠标柔光拖尾
+    浅色区 = 蓝图网格底纹 + 渐变描边卡 + 悬停扫光
+  首页那边总结出来的两条硬规矩，这里同样适用：
+    1. 只用大半径柔光，不出现任何硬边几何（早期的竖线/扇形雷达已废弃）
+    2. 不用 filter: blur() 做常驻动画，代价是每帧重算大面积高斯模糊
+
+  注意：不要在本文件的 CSS 注释里写出字面的脚本标签（尖括号 + script），
+  DOMPurify 会因此把整个 style 块整体丢掉，特效会静默失效。
+-->
+<style>
+  .kbs-about {
+    --kbs-nav-h: 64px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #1f2430; width: 100%; overflow-x: hidden;
+  }
+  .kbs-about * { box-sizing: border-box; }
+  .kbs-about .wrap { max-width: 1120px; margin: 0 auto; padding: 0 40px; }
+
+  .kbs-about-hero {
+    position: relative; width: 100%; text-align: center; color: #eaf2ff; overflow: hidden;
+    padding: calc(var(--kbs-nav-h) + 36px) 20px 88px;
+    background: linear-gradient(180deg,
+      #16325a 0, #14294a 22%, #0f2444 58%, #0a1a34 100%);
+  }
+  .kbs-about-hero::before {
+    content: ""; position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(88,166,255,.07) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(88,166,255,.07) 1px, transparent 1px);
+    background-size: 52px 52px;
+    -webkit-mask-image: radial-gradient(700px 460px at 50% 32%, #000 42%, transparent 80%);
+    mask-image: radial-gradient(700px 460px at 50% 32%, #000 42%, transparent 80%);
+  }
+  /* 暖色光晕：对齐首页 Hero 的 ::after，给冷调深蓝压一点橙，避免发死 */
+  .kbs-about-hero::after {
+    content: ""; position: absolute; width: 560px; height: 460px; left: 50%;
+    top: -40px; transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(255,122,24,.15), transparent 62%);
+  }
+  .kbs-about-hero > * { position: relative; z-index: 1; }
+  .kbs-about-hero img { display: block; margin: 0 auto 6px; height: 58px; width: auto; max-width: 320px; object-fit: contain; }
+  .kbs-about-hero h1 { font-size: clamp(34px, 5vw, 56px); font-weight: 800; margin: 22px 0 12px; letter-spacing: 1px; }
+  .kbs-about-hero p { color: #b9c8e0; font-size: 19px; margin: 0; }
+  /* 标题里的渐变字。用 background-image 而不是 background 简写：
+     简写会把 background-clip: text 重置回 border-box，渐变就变成
+     一个实心色块把文字整块盖住。首页那边踩过这个坑。 */
+  .kbs-about-hero h1 .grad {
+    background-image: linear-gradient(90deg, #58a6ff, #00d4ff 30%, #ff9d4d 60%, #58a6ff 100%);
+    background-size: 260% 100%; background-position: 0% 50%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    transition: background-position 1.1s ease;
+  }
+  .kbs-about-hero:hover h1 .grad { background-position: 100% 50%; }
+</style>
+<style>
+  /* ============================================================
+     Hero 特效层：与 kbs-home.html 同一套实现，类名/关键帧名刻意一致。
+     纯 CSS，不依赖 JS（关于内容也过 DOMPurify，脚本一律被清掉）。
+
+     层序（后面的盖在前面之上）：
+       .kbs-fx-aura   常驻呼吸极光
+       .kbs-fx-rise   底部光源 + 上升光粒（常驻，触屏也保留）
+       .kbs-fx-cells  探测网格，逐格 hover 点亮柔光 => 鼠标拖尾
+       .kbs-fx-stars  常驻星尘闪烁（清脆光点，浮在柔光之上）
+     ============================================================ */
+  .kbs-about-hero { isolation: isolate; }
+  .kbs-fx { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+  /* 文案层压在特效层上，但把指针事件让给下面的网格，拖尾才能穿过标题区域。
+     关于页 Hero 里只有 logo/标题/副标题，没有可点元素，所以整层让出即可；
+     真正需要选中复制的正文都在下面各 band 里，不受影响。 */
+  .kbs-about-hero > *:not(.kbs-fx) { z-index: 2; pointer-events: none; }
+
+  /* ---- 鼠标柔光拖尾 ----
+     格子密度高而柔光半径固定很大（400px），相邻格光团大幅重叠，
+     移动时是一条连续光带而不是一格一格跳。格子只做命中判定，
+     本身不画任何边框，所以看不出网格感。
+     关于页 Hero 比首页矮，行数用 8（首页 12），省掉三分之一节点。 */
+  .kbs-fx-cells {
+    position: absolute; inset: 0; display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    pointer-events: auto;
+  }
+  .kbs-fx-cells > i { position: relative; display: block; }
+  /* 进入 170ms 淡入、离开 1.1s 慢淡 —— 拖尾的丝滑感全靠这个不对称。
+     只过渡 opacity：同时有几十格在淡出，再叠 transform 缩放等于
+     每帧重新光栅化几十个 400px 渐变，收益极小。 */
+  .kbs-fx-cells > i::before {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 400px; height: 400px; margin: -200px 0 0 -200px;
+    border-radius: 50%; opacity: 0;
+    background: radial-gradient(circle closest-side,
+      rgba(140,205,255,.20) 0%, rgba(96,170,255,.12) 30%,
+      rgba(80,150,255,.05) 55%, transparent 78%);
+    transition: opacity 1.1s cubic-bezier(.22,.61,.36,1);
+  }
+  .kbs-fx-cells > i:hover::before { opacity: 1; transition-duration: 170ms; }
+
+  /* ---- 常驻呼吸极光：两团大柔光缓慢漂移，给背景一点"活着"的感觉 ----
+     不挂 filter: blur()。radial-gradient 到 transparent 本身就是柔和过渡，
+     再模糊一次等于每帧重算大面积高斯模糊。首页那边实测是最贵的一笔。 */
+  .kbs-fx-aura {
+    position: absolute; inset: 0; overflow: hidden;
+    contain: paint;
+    opacity: .85; transition: opacity 1.1s ease;
+  }
+  .kbs-about-hero:hover .kbs-fx-aura { opacity: 1; }
+  .kbs-fx-aura::before, .kbs-fx-aura::after {
+    content: ""; position: absolute; border-radius: 50%;
+    will-change: transform, opacity;
+  }
+  .kbs-fx-aura::before {
+    width: 640px; height: 480px; left: 6%; top: -18%;
+    background: radial-gradient(circle closest-side,
+      rgba(88,166,255,.16), rgba(88,166,255,.05) 55%, transparent 78%);
+    animation: kbs-drift-a 19s ease-in-out infinite;
+  }
+  .kbs-fx-aura::after {
+    width: 560px; height: 440px; right: 3%; top: 18%;
+    background: radial-gradient(circle closest-side,
+      rgba(255,157,77,.10), rgba(255,140,60,.04) 55%, transparent 78%);
+    animation: kbs-drift-b 24s ease-in-out infinite;
+  }
+  @keyframes kbs-drift-a {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: .75; }
+    50%      { transform: translate3d(60px, 30px, 0) scale(1.1); opacity: 1; }
+  }
+  @keyframes kbs-drift-b {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1.06); opacity: .6; }
+    50%      { transform: translate3d(-52px, 36px, 0) scale(1); opacity: .95; }
+  }
+
+  /* ---- 底部光源 + 上升光粒 ----
+     方向朝上、形状是柔光点。首页原来那批"由上往下掉的 1px 竖线"已废弃：
+     方向语义是坠落，且贴着大标题落下像划了一刀。不要改回竖线。
+
+     每颗光粒两层，因为一个元素只能挂一条 transform 动画：
+       i         轨道，只做垂直位移
+       i::before 光点本体，只做横向摆动（alternate 往复）
+     位移量全写字面量，不在 keyframes 里用 var()，避免浏览器解析差异。
+     每颗的差异靠标签上 --x --s --t --d --w 五个变量表达。 */
+  .kbs-fx-rise {
+    position: absolute; inset: 0; overflow: hidden;
+    pointer-events: none;
+    opacity: .85; transition: opacity 1.1s ease;
+  }
+  .kbs-about-hero:hover .kbs-fx-rise { opacity: 1; }
+  /* 轨道高 20% Hero，起点 top:100%（可视区下缘外）。
+     升到 top:-20% 是位移 120% Hero 高 = 自身高的 600%。
+     动 transform 不动 top，避免每帧 reflow。 */
+  .kbs-fx-rise > i {
+    position: absolute; left: var(--x); top: 100%;
+    width: var(--s); height: 20%;
+    /* 必须显式抬到底部光源（本层 ::after）之上：伪元素在同一层里的绘制
+       顺序排在普通子元素之后，不写这行光源就会压在光粒上面。 */
+    z-index: 1;
+    will-change: transform;
+    animation: kbs-rise var(--t) linear var(--d) infinite;
+  }
+  .kbs-fx-rise > i::before {
+    content: ""; position: absolute; left: 0; bottom: 0;
+    width: var(--s); height: var(--s); border-radius: 50%;
+    background: radial-gradient(circle closest-side,
+      rgba(198,228,255,.85) 0%, rgba(140,200,255,.42) 34%,
+      rgba(96,170,255,.14) 60%, transparent 78%);
+    will-change: transform;
+    animation: kbs-sway var(--w) ease-in-out var(--d) infinite alternate;
+  }
+  @keyframes kbs-rise {
+    0%   { transform: translate3d(0, 0, 0); opacity: 0; }
+    18%  { opacity: 0; }
+    34%  { opacity: 1; }
+    78%  { opacity: 1; }
+    100% { transform: translate3d(0, -600%, 0); opacity: 0; }
+  }
+  @keyframes kbs-sway {
+    from { transform: translate3d(-150%, 0, 0); }
+    to   { transform: translate3d(150%, 0, 0); }
+  }
+  /* 底部光源：贴底一片椭圆柔光，极慢明暗呼吸，给光粒一个"从哪来"的交代 */
+  .kbs-fx-rise::after {
+    content: ""; position: absolute; left: 50%; bottom: -34%;
+    width: 1080px; max-width: 150%; height: 62%;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse closest-side,
+      rgba(120,190,255,.20), rgba(88,166,255,.08) 45%,
+      rgba(70,140,240,.03) 68%, transparent 82%);
+    animation: kbs-glow-breathe 13s ease-in-out infinite;
+  }
+  @keyframes kbs-glow-breathe {
+    0%, 100% { opacity: .62; }
+    50%      { opacity: 1; }
+  }
+
+  /* ---- 星尘：不依赖鼠标，常驻缓慢闪烁 ----
+     1px 实心点看着很硬，靠 box-shadow 外发光揉成柔光点；
+     发光半径由尺寸推导，大星自然更亮，省掉一个变量。
+     只动 opacity/transform，两者都走合成器，几乎不产生重绘。 */
+  .kbs-fx-stars {
+    position: absolute; inset: 0; overflow: hidden;
+    pointer-events: none;
+    opacity: .9; transition: opacity 1.1s ease;
+  }
+  .kbs-about-hero:hover .kbs-fx-stars { opacity: 1; }
+  .kbs-fx-stars > i {
+    position: absolute; left: var(--x); top: var(--y);
+    width: var(--s); height: var(--s);
+    border-radius: 50%; opacity: 0;
+    background: rgba(216,237,255,.95);
+    box-shadow: 0 0 calc(var(--s) * 3.5) rgba(150,205,255,.7);
+    will-change: opacity, transform;
+    animation: kbs-twinkle var(--t) ease-in-out var(--d) infinite;
+  }
+  @keyframes kbs-twinkle {
+    0%, 100% { opacity: 0; transform: scale(.55); }
+    50%      { opacity: 1; transform: scale(1); }
+  }
+
+  /* ---- Hero 网格与暖光在 hover 时轻微提亮，克制一点别提到发白 ---- */
+  .kbs-about-hero::before { opacity: .55; transition: opacity 1s ease; }
+  .kbs-about-hero::after { opacity: .85; transition: opacity 1s ease; }
+  .kbs-about-hero:hover::before { opacity: .8; }
+  .kbs-about-hero:hover::after { opacity: 1; }
+  /* Logo 轻微抬升 + 冷光投影 */
+  .kbs-about-hero img { transition: transform .45s ease, filter .45s ease; }
+  .kbs-about-hero:hover img {
+    transform: translateY(-3px);
+    filter: drop-shadow(0 0 18px rgba(120,200,255,.45));
+  }
+  .kbs-about-hero h1 { transition: text-shadow .6s ease; }
+  .kbs-about-hero:hover h1 { text-shadow: 0 0 30px rgba(120,200,255,.30); }
+  .kbs-about-hero p { transition: color .6s ease; }
+  .kbs-about-hero:hover p { color: #cfdcf0; }
+
+  /* ---- 触屏：只撤掉依赖鼠标的拖尾网格。极光、光粒、星尘都不需要鼠标，
+       全部保留 —— 手机上也能看到完整氛围。 ---- */
+  @media (hover: none), (max-width: 640px) {
+    .kbs-fx-cells { display: none; }
+  }
+  /* ---- 尊重降低动效偏好：留静态柔光，去掉所有持续动画 ----
+     星尘不隐藏，停在中等亮度，保留星空质感但不闪。
+     光粒撤掉：存在感全在"上升"这个动作上，停住只是几个散点。 */
+  @media (prefers-reduced-motion: reduce) {
+    .kbs-fx-rise > i { display: none; }
+    .kbs-fx-rise::after { animation: none; opacity: .8; }
+    .kbs-fx-aura::before, .kbs-fx-aura::after { animation: none; }
+    .kbs-fx-stars > i { animation: none; opacity: .55; transform: none; }
+    .kbs-about-hero:hover h1 .grad { background-position: 0% 50%; }
+    .kbs-fx-cells > i::before { transition-duration: 1ms; }
+  }
+</style>
+<style>
+  .kbs-about .band { width: 100%; padding: 88px 0; }
+  .kbs-about .band-light { background: #ffffff; }
+  .kbs-about .band-soft { background: linear-gradient(180deg, #f4f9ff, #eef5ff); }
+  .kbs-about h2 { font-size: clamp(26px, 3.4vw, 40px); font-weight: 800; color: #14213d; margin: 0 0 22px; text-align: center; }
+  .kbs-about .lead { color: #454b57; font-size: 19px; line-height: 2.1; margin: 0 auto 18px; max-width: 900px; text-align: center; }
+  .kbs-about .highlight { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; margin-top: 44px; }
+  .kbs-about .hl-card { padding: 40px 32px; border-radius: 20px; background: #fff; border: 1px solid #e7eef8; box-shadow: 0 10px 30px rgba(20,50,90,.06); transition: transform .2s, box-shadow .2s; }
+  .kbs-about .hl-card:hover { transform: translateY(-6px); box-shadow: 0 20px 44px rgba(20,50,90,.14); }
+  .kbs-about .hl-card h3 { margin: 0 0 12px; font-size: 22px; color: #1e4b8f; }
+  .kbs-about .hl-card p { margin: 0; font-size: 16px; line-height: 1.85; color: #5a6273; }
+  .kbs-about .contact-band { width: 100%; padding: 96px 0; background: linear-gradient(180deg, #0f1f3d, #16305a); color: #eaf2ff; text-align: center; }
+  .kbs-about .contact-band h2 { color: #fff; }
+  .kbs-about .contact-band p { color: #c3d2ea; font-size: 18px; line-height: 2; margin: 0 auto; max-width: 760px; }
+
+  /* ===== 深色主题适配 ===== */
+  .dark .kbs-about { color: #dbe4f2; }
+  .dark .kbs-about-hero {
+    background: linear-gradient(180deg,
+      #0d1830 0, #102341 22%, #0c1d38 58%, #080f20 100%);
+  }
+  .dark .kbs-about .band-light { background: #0a1020; }
+  .dark .kbs-about .band-soft { background: linear-gradient(180deg, #0c1426, #0a1020); }
+  .dark .kbs-about h2 { color: #eaf2ff; }
+  .dark .kbs-about .lead { color: #9fb0cc; }
+  .dark .kbs-about .hl-card { background: rgba(255,255,255,.04); border-color: rgba(146,190,255,.16); box-shadow: none; }
+  .dark .kbs-about .hl-card h3 { color: #9cd2ff; }
+  .dark .kbs-about .hl-card p { color: #9fb0cc; }
+  .dark .kbs-about .contact-band { background: linear-gradient(180deg, #0b1730, #102343); }
+
+  @media (max-width: 640px) {
+    .kbs-about { --kbs-nav-h: 56px; }
+    .kbs-about-hero { padding: calc(var(--kbs-nav-h) + 24px) 16px 68px; }
+    .kbs-about .wrap { padding: 0 20px; }
+    .kbs-about .band, .kbs-about .contact-band { padding: 60px 0; }
+  }
+</style>
+<style>
+  /* ============================================================
+     浅色区块的科技感强化：蓝图底纹 + 渐变描边 + 悬停扫光
+     与 kbs-home.html 同一套做法。原来是白底白卡 + 1px 灰边，太扁。
+     全部走"薄描边 + 冷光"，不加重阴影，避免变成拟物卡片。
+     ============================================================ */
+  /* ---- 区块底纹：极淡的蓝图网格 + 一层冷光晕 ----
+     直接叠在 background 上（多层 background-image），不占用伪元素。 */
+  .kbs-about .band-light {
+    position: relative;
+    background-color: #ffffff;
+    background-image:
+      radial-gradient(900px 420px at 50% -8%, rgba(88,166,255,.07), transparent 70%),
+      linear-gradient(rgba(20,60,120,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(20,60,120,.045) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+  }
+  .kbs-about .band-soft {
+    position: relative;
+    background-image:
+      linear-gradient(180deg, #f4f9ff, #eef5ff),
+      linear-gradient(rgba(20,60,120,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(20,60,120,.05) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+  }
+  .kbs-about .band > .wrap { position: relative; z-index: 1; }
+
+  /* ---- 区块标题：下面加一道渐变短线，比纯文字更像产品页 ---- */
+  .kbs-about h2 { position: relative; padding-bottom: 18px; }
+  .kbs-about h2::after {
+    content: ""; position: absolute; left: 50%; bottom: 0;
+    width: 64px; height: 3px; margin-left: -32px; border-radius: 999px;
+    background: linear-gradient(90deg, #58a6ff, #00d4ff 50%, #ff9d4d);
+  }
+
+  /* ---- 卡片渐变描边 ----
+     两层 background + background-clip 的双层技巧：第一层填 padding-box
+     当卡面，第二层填 border-box 当描边，于是 1px 边框本身是渐变的。
+     好处是两个伪元素都还空着，留给扫光和顶部高亮。
+     注意：border 必须是 transparent，否则会盖住描边层。
+     不过渡 background-image：渐变插值要每帧重画整张卡面，代价很高，
+     而且多数浏览器直接跳变不平滑插值，等于白付钱。 */
+  .kbs-about .hl-card {
+    position: relative; overflow: hidden;
+    border: 1px solid transparent;
+    background-image:
+      linear-gradient(#ffffff, #ffffff),
+      linear-gradient(135deg, rgba(88,166,255,.45), rgba(0,212,255,.18) 45%, rgba(255,157,77,.28));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    box-shadow: 0 10px 30px rgba(20,50,90,.06);
+    transition: transform .38s cubic-bezier(.22,.61,.36,1),
+                box-shadow .38s ease;
+  }
+  .kbs-about .hl-card:hover {
+    transform: translateY(-6px);
+    background-image:
+      linear-gradient(#ffffff, #ffffff),
+      linear-gradient(135deg, rgba(88,166,255,.95), rgba(0,212,255,.55) 45%, rgba(255,157,77,.7));
+    box-shadow: 0 18px 44px rgba(20,50,90,.13), 0 0 0 4px rgba(88,166,255,.06);
+  }
+  /* ---- 顶部高亮：hover 时从中间拉开一道渐变线 ---- */
+  .kbs-about .hl-card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    transform: scaleX(0); transform-origin: 50% 50%;
+    background: linear-gradient(90deg, transparent, #58a6ff 20%, #00d4ff 50%, #ff9d4d 80%, transparent);
+    transition: transform .45s cubic-bezier(.22,.61,.36,1);
+  }
+  .kbs-about .hl-card:hover::before { transform: scaleX(1); }
+  /* ---- 悬停扫光：一道很淡的斜向高光掠过卡面 ---- */
+  .kbs-about .hl-card::after {
+    content: ""; position: absolute; top: -30%; bottom: -30%;
+    left: -75%; width: 55%; opacity: 0; pointer-events: none;
+    transform: skewX(-16deg); filter: blur(10px);
+    background: linear-gradient(90deg,
+      transparent, rgba(120,190,255,.16) 45%, rgba(150,210,255,.22) 55%, transparent);
+  }
+  .kbs-about .hl-card:hover::after {
+    animation: kbs-card-sweep 1.15s cubic-bezier(.33,0,.25,1);
+  }
+  @keyframes kbs-card-sweep {
+    0%   { left: -75%; opacity: 0; }
+    30%  { opacity: 1; }
+    70%  { opacity: 1; }
+    100% { left: 130%; opacity: 0; }
+  }
+  .kbs-about .hl-card h3 { transition: color .38s ease; }
+  .kbs-about .hl-card:hover h3 { color: #1a4fa0; }
+
+  /* ---- 卡片图标块：冷色描边 + 内高光，hover 时发光并轻微放大 ---- */
+  .kbs-about .hl-icon {
+    position: relative;
+    width: 60px; height: 60px; margin-bottom: 20px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; border-radius: 16px;
+    border: 1px solid rgba(88,166,255,.22);
+    background: linear-gradient(135deg, #e8f3ff, #f2f8ff);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+    transition: transform .38s cubic-bezier(.22,.61,.36,1),
+                box-shadow .38s ease, border-color .38s ease;
+  }
+  .kbs-about .hl-card:hover .hl-icon {
+    transform: translateY(-2px) scale(1.06);
+    border-color: rgba(88,166,255,.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.9),
+                0 0 0 5px rgba(88,166,255,.07),
+                0 8px 22px rgba(40,110,210,.16);
+  }
+
+  /* ---- 深色联系区块：同样加网格底纹 ---- */
+  .kbs-about .contact-band {
+    position: relative;
+    background-image:
+      linear-gradient(180deg, #0f1f3d, #16305a),
+      linear-gradient(rgba(88,166,255,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(88,166,255,.055) 1px, transparent 1px);
+    background-size: 100% 100%, 48px 48px, 48px 48px;
+  }
+  .kbs-about .contact-band > .wrap { position: relative; z-index: 1; }
+
+  /* ---- 深色主题 ----
+     必须写成 .dark 前缀并重新声明整套双层背景：上面那批
+     .dark .kbs-about .hl-card 用的是 background 简写且特异性更高
+     （0,3,0 > 0,2,0），会把渐变描边层整个重置掉。 */
+  .dark .kbs-about .band-light {
+    background-color: #0a1020;
+    background-image:
+      radial-gradient(900px 420px at 50% -8%, rgba(88,166,255,.08), transparent 70%),
+      linear-gradient(rgba(88,166,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(88,166,255,.05) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+  }
+  .dark .kbs-about .band-soft {
+    background-image:
+      linear-gradient(180deg, #0c1426, #0a1020),
+      linear-gradient(rgba(88,166,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(88,166,255,.05) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+  }
+  .dark .kbs-about .hl-card {
+    border: 1px solid transparent;
+    background-image:
+      linear-gradient(rgba(255,255,255,.04), rgba(255,255,255,.04)),
+      linear-gradient(135deg, rgba(156,210,255,.34), rgba(88,166,255,.12) 50%, rgba(255,157,77,.2));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    box-shadow: none;
+  }
+  .dark .kbs-about .hl-card:hover {
+    background-image:
+      linear-gradient(rgba(255,255,255,.07), rgba(255,255,255,.07)),
+      linear-gradient(135deg, rgba(156,210,255,.85), rgba(88,166,255,.45) 50%, rgba(255,157,77,.55));
+    box-shadow: 0 0 0 4px rgba(88,166,255,.06);
+  }
+  .dark .kbs-about .hl-card:hover h3 { color: #9cd2ff; }
+  .dark .kbs-about .hl-icon {
+    border-color: rgba(146,190,255,.24);
+    background: linear-gradient(135deg, rgba(88,166,255,.18), rgba(88,166,255,.06));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .dark .kbs-about .hl-card:hover .hl-icon {
+    border-color: rgba(156,210,255,.55);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08),
+                0 0 0 5px rgba(88,166,255,.08),
+                0 8px 22px rgba(0,0,0,.35);
+  }
+  .dark .kbs-about .contact-band {
+    background-image:
+      linear-gradient(180deg, #0b1730, #102343),
+      linear-gradient(rgba(88,166,255,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(88,166,255,.055) 1px, transparent 1px);
+    background-size: 100% 100%, 48px 48px, 48px 48px;
+  }
+
+  /* ---- 降低动效偏好：留静态描边，去掉扫光和位移 ---- */
+  @media (prefers-reduced-motion: reduce) {
+    .kbs-about .hl-card:hover { transform: none; }
+    .kbs-about .hl-card:hover::after { animation: none; }
+    .kbs-about .hl-card:hover::before { transition: none; }
+    .kbs-about .hl-card:hover .hl-icon { transform: none; }
+  }
+</style>
+<div class="kbs-about" data-nav-tone="invert">
+  <section class="kbs-about-hero">
+    <!-- 特效层：纯 CSS 驱动。网格只做命中判定，本身不可见，
+         逐格点亮一团大柔光并慢速淡出，连起来就是丝滑的光带拖尾。 -->
+    <div class="kbs-fx" aria-hidden="true">
+      <div class="kbs-fx-aura"></div>
+      <!-- 上升光粒：--x 横向起点 / --s 光点直径 / --t 单程时长
+           / --d 起始延迟 / --w 横向摆动周期。全部错开，看不出节拍。 -->
+      <div class="kbs-fx-rise">
+        <i style="--x:6.2%;--s:12px;--t:14.8s;--d:0s;--w:7.2s"></i><i style="--x:13.6%;--s:9px;--t:12.4s;--d:5.6s;--w:5.9s"></i><i style="--x:21.4%;--s:15px;--t:17.2s;--d:10.8s;--w:9.1s"></i><i style="--x:29.1%;--s:10px;--t:13.6s;--d:3.4s;--w:6.5s"></i>
+        <i style="--x:36.8%;--s:13px;--t:16.3s;--d:8.2s;--w:8.4s"></i><i style="--x:44.2%;--s:8px;--t:11.9s;--d:13.7s;--w:5.3s"></i><i style="--x:51.7%;--s:16px;--t:18.1s;--d:2.1s;--w:9.7s"></i><i style="--x:59.3%;--s:11px;--t:14.2s;--d:11.2s;--w:7.3s"></i>
+        <i style="--x:66.9%;--s:9px;--t:12.7s;--d:6.4s;--w:6.1s"></i><i style="--x:74.5%;--s:14px;--t:16.9s;--d:12.6s;--w:8.8s"></i><i style="--x:82.1%;--s:10px;--t:13.3s;--d:1.8s;--w:5.7s"></i><i style="--x:89.7%;--s:15px;--t:17.6s;--d:9.1s;--w:9.3s"></i>
+        <i style="--x:95.4%;--s:8px;--t:11.6s;--d:15.1s;--w:5.2s"></i><i style="--x:2.8%;--s:11px;--t:15.4s;--d:4.7s;--w:7.7s"></i><i style="--x:17.9%;--s:10px;--t:12.9s;--d:14.3s;--w:6.3s"></i><i style="--x:70.4%;--s:12px;--t:15.9s;--d:7.3s;--w:8.1s"></i>
+      </div>
+      <div class="kbs-fx-cells">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <div class="kbs-fx-stars">
+        <i style="--x:18.4%;--y:22.6%;--s:1.8px;--t:6.3s;--d:2.1s"></i><i style="--x:71.2%;--y:74.3%;--s:1.9px;--t:3.4s;--d:5.7s"></i><i style="--x:9.7%;--y:58.1%;--s:2.4px;--t:8.2s;--d:1.4s"></i><i style="--x:86.5%;--y:31.8%;--s:2.8px;--t:4.2s;--d:6.2s"></i>
+        <i style="--x:34.1%;--y:81.4%;--s:1.5px;--t:8.0s;--d:3.6s"></i><i style="--x:78.3%;--y:48.7%;--s:1.2px;--t:7.3s;--d:0.8s"></i><i style="--x:52.6%;--y:88.2%;--s:2.5px;--t:3.9s;--d:4.9s"></i><i style="--x:93.8%;--y:62.5%;--s:2.6px;--t:7.3s;--d:2.4s"></i>
+        <i style="--x:26.9%;--y:14.3%;--s:1.5px;--t:4.6s;--d:5.1s"></i><i style="--x:64.7%;--y:19.6%;--s:1.7px;--t:4.3s;--d:1.9s"></i><i style="--x:44.3%;--y:36.9%;--s:2.5px;--t:8.1s;--d:6.8s"></i><i style="--x:3.6%;--y:73.2%;--s:2.5px;--t:4.5s;--d:0.3s"></i>
+        <i style="--x:58.9%;--y:65.1%;--s:1.3px;--t:4.3s;--d:4.2s"></i><i style="--x:82.4%;--y:85.7%;--s:1.3px;--t:7.9s;--d:2.7s"></i><i style="--x:40.2%;--y:9.8%;--s:1.3px;--t:5.5s;--d:5.4s"></i><i style="--x:15.3%;--y:91.4%;--s:1.6px;--t:5.1s;--d:1.1s"></i>
+        <i style="--x:68.5%;--y:41.3%;--s:1.2px;--t:7.2s;--d:6.5s"></i><i style="--x:31.7%;--y:53.8%;--s:2.9px;--t:4.3s;--d:3.1s"></i><i style="--x:89.1%;--y:12.7%;--s:1.2px;--t:4.5s;--d:5.8s"></i><i style="--x:49.4%;--y:27.4%;--s:1.6px;--t:7.9s;--d:0.6s"></i>
+        <i style="--x:6.8%;--y:38.5%;--s:1.0px;--t:8.2s;--d:4.7s"></i><i style="--x:75.6%;--y:8.9%;--s:1.2px;--t:3.6s;--d:2.3s"></i><i style="--x:22.1%;--y:68.7%;--s:1.4px;--t:6.1s;--d:6.1s"></i><i style="--x:96.2%;--y:44.2%;--s:1.8px;--t:5.2s;--d:1.6s"></i>
+        <i style="--x:55.8%;--y:78.3%;--s:1.6px;--t:6.8s;--d:3.9s"></i><i style="--x:11.4%;--y:6.2%;--s:1.1px;--t:6.4s;--d:5.2s"></i><i style="--x:38.6%;--y:94.1%;--s:1.2px;--t:6.8s;--d:0.4s"></i><i style="--x:62.3%;--y:57.6%;--s:2.4px;--t:3.7s;--d:6.7s"></i>
+        <i style="--x:84.9%;--y:70.4%;--s:1.7px;--t:4.3s;--d:2.8s"></i><i style="--x:47.1%;--y:47.9%;--s:2.2px;--t:5.7s;--d:4.4s"></i><i style="--x:29.4%;--y:85.6%;--s:1.1px;--t:8.1s;--d:1.3s"></i><i style="--x:91.7%;--y:24.1%;--s:1.5px;--t:3.5s;--d:5.9s"></i>
+      </div>
+    </div>
+    <img src="https://34343375.s21i.faiusr.com/4/ABUIABAEGAAgs4ia0AYo6576zAEwzAg42QI.png" alt="昆山康贝斯" />
+    <h1>关于<span class="grad">康贝斯算力云</span></h1>
+    <p>昆山康贝斯新能源科技有限公司 · AI 算力云开放平台</p>
+  </section>
+
+  <section class="band band-light">
+    <div class="wrap">
+      <h2>平台简介</h2>
+      <p class="lead">康贝斯算力云是昆山康贝斯新能源科技有限公司旗下的 AI 模型聚合与分发平台。平台统一聚合 OpenAI、Claude、Gemini、DeepSeek、豆包等主流大模型，兼容 OpenAI 接口标准，为企业应用、研发团队与创新业务提供稳定、安全、透明的 AI 能力底座。</p>
+      <p class="lead">我们希望把复杂的多模型接入、额度管理与调用监控简化为一个统一、易用的控制台，让每一次 AI 调用背后都有可靠的算力支撑。</p>
+    </div>
+  </section>
+
+  <section class="band band-soft">
+    <div class="wrap">
+      <h2>关于康贝斯</h2>
+      <p class="lead">昆山康贝斯新能源科技有限公司是一家集研发、设计、生产与销售于一体的高新技术企业。公司在长期的产业实践中积累了扎实的技术研发与工程落地能力，并拥有多项自主知识产权。公司注重技术创新，曾联合高校开展前沿技术研究与试验，持续以技术驱动业务发展。康贝斯算力云是公司在人工智能领域的前沿布局，依托公司的技术积累与产业实力，将先进的大模型能力以统一、安全、可控的方式开放给更多企业与开发者。</p>
+      <div class="highlight">
+        <div class="hl-card"><div class="hl-icon">🧩</div><h3>多模型聚合</h3><p>主流大模型统一接入，一处管理，兼容 OpenAI 接口标准。</p></div>
+        <div class="hl-card"><div class="hl-icon">🛡️</div><h3>安全可控</h3><p>令牌分组、额度管控、调用日志齐全，企业级权限管理。</p></div>
+        <div class="hl-card"><div class="hl-icon">💰</div><h3>透明计费</h3><p>用量、余额、调用明细实时可查，随用随充，成本清晰。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band-light">
+    <div class="wrap">
+      <h2>我们的定位</h2>
+      <p class="lead">以稳定、安全、透明为核心，做企业可信赖的 AI 能力入口。无论是构建 AI 应用、支撑内部研发，还是探索创新业务，康贝斯算力云都致力于提供简单、可靠的接入体验。</p>
+    </div>
+  </section>
+
+  <section class="contact-band">
+    <div class="wrap">
+      <h2>联系我们</h2>
+      <p>如需了解平台接入、企业合作等信息，欢迎通过官方渠道与我们联系。<br/>昆山康贝斯新能源科技有限公司</p>
+    </div>
+  </section>
+</div>

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分组配置流程模拟器 — new-api</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:#0f1420;color:#e6e9ef;line-height:1.7;
+  padding:32px 20px 80px;
+}
+.wrap{max-width:1000px;margin:0 auto}
+h1{font-size:28px;margin-bottom:8px;color:#fff}
+.sub{color:#8b95a8;font-size:15px;margin-bottom:32px}
+h2{
+  font-size:20px;margin:40px 0 16px;color:#fff;
+  padding-left:12px;border-left:4px solid #4a7dff;
+}
+h3{font-size:16px;margin:24px 0 10px;color:#c7d0e0}
+p{margin-bottom:12px;color:#c7d0e0}
+.card{
+  background:#1a2130;border:1px solid #2a3446;
+  border-radius:12px;padding:20px;margin-bottom:16px;
+}
+.hint{
+  background:#1e2a1e;border-left:4px solid #5cb85c;
+  padding:14px 18px;border-radius:8px;margin:16px 0;
+  color:#b8d8b8;font-size:14px;
+}
+.warn{
+  background:#2d2416;border-left:4px solid #d9a441;
+  padding:14px 18px;border-radius:8px;margin:16px 0;
+  color:#e0cba0;font-size:14px;
+}
+.danger{
+  background:#2d1a1a;border-left:4px solid #d9534f;
+  padding:14px 18px;border-radius:8px;margin:16px 0;
+  color:#e8b4b4;font-size:14px;
+}
+code{
+  background:#0d1117;padding:2px 7px;border-radius:4px;
+  font-family:Consolas,Monaco,monospace;font-size:13px;color:#9ecbff;
+}
+pre{
+  background:#0d1117;border:1px solid #2a3446;border-radius:8px;
+  padding:14px 16px;overflow-x:auto;margin:12px 0;
+}
+pre code{background:none;padding:0;color:#c9d1d9;line-height:1.6}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{
+  background:#232c3d;padding:10px 12px;text-align:left;
+  color:#fff;font-weight:600;border-bottom:2px solid #4a7dff;
+}
+td{padding:10px 12px;border-bottom:1px solid #2a3446;color:#c7d0e0}
+tr:last-child td{border-bottom:none}
+.tag{
+  display:inline-block;padding:2px 9px;border-radius:20px;
+  font-size:12px;font-weight:600;
+}
+.tag-ok{background:#1e3a1e;color:#7dd87d}
+.tag-no{background:#3a1e1e;color:#ff8a8a}
+.tag-wait{background:#3a331e;color:#e0c060}
+
+/* ---- 四步骤面板 ---- */
+.steps{display:flex;flex-direction:column;gap:12px;margin:20px 0}
+.step{
+  background:#1a2130;border:2px solid #2a3446;border-radius:10px;
+  padding:16px 18px;transition:border-color .25s,background .25s;
+}
+.step.done{border-color:#5cb85c;background:#1a2620}
+.step-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.step-num{
+  width:26px;height:26px;border-radius:50%;flex:0 0 26px;
+  display:flex;align-items:center;justify-content:center;
+  background:#2a3446;color:#8b95a8;font-size:13px;font-weight:700;
+}
+.step.done .step-num{background:#5cb85c;color:#0f1420}
+.step-title{font-size:15px;font-weight:600;color:#fff}
+.step-path{font-size:12px;color:#7c879c;margin-left:auto;font-family:Consolas,monospace}
+.step-body{font-size:13px;color:#9aa5b8;margin-left:36px}
+.toggle{
+  display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+  margin-top:8px;margin-left:36px;user-select:none;font-size:13px;
+}
+.toggle input{width:16px;height:16px;cursor:pointer;accent-color:#4a7dff}
+
+/* ---- 输入区 ---- */
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:12px;color:#8b95a8}
+.fld input{
+  background:#0d1117;border:1px solid #2a3446;border-radius:6px;
+  padding:8px 11px;color:#e6e9ef;font-size:14px;width:150px;
+  font-family:Consolas,monospace;
+}
+.fld input:focus{outline:none;border-color:#4a7dff}
+button{
+  background:#4a7dff;color:#fff;border:none;border-radius:7px;
+  padding:9px 18px;font-size:14px;font-weight:600;cursor:pointer;
+  transition:background .2s;font-family:inherit;
+}
+button:hover{background:#3a6ae8}
+button.ghost{background:#2a3446}
+button.ghost:hover{background:#354258}
+
+/* ---- 模拟两个下拉框 ---- */
+.selects{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
+@media(max-width:720px){.selects{grid-template-columns:1fr}}
+.sel{
+  background:#141a26;border:1px solid #2a3446;
+  border-radius:10px;padding:14px;
+}
+.sel-t{font-size:13px;font-weight:600;color:#c7d0e0;margin-bottom:4px}
+.sel-src{font-size:11px;color:#6b7688;margin-bottom:10px;font-family:Consolas,monospace}
+.sel-box{
+  background:#0d1117;border:1px solid #2a3446;border-radius:6px;
+  min-height:38px;padding:7px 10px;font-size:13px;
+}
+.opt{
+  padding:5px 8px;border-radius:4px;margin:2px 0;
+  display:flex;align-items:center;gap:8px;
+}
+.opt:hover{background:#1a2130}
+.opt-name{font-family:Consolas,monospace;color:#9ecbff}
+.opt-desc{font-size:12px;color:#7c879c}
+.opt-ratio{
+  margin-left:auto;font-size:11px;padding:1px 7px;border-radius:10px;
+  background:#1e3a2e;color:#7dd8a8;
+}
+.empty{color:#6b7688;font-size:13px;padding:6px 8px;font-style:italic}
+
+/* ---- 结果 ---- */
+.result{
+  background:#141a26;border:1px solid #2a3446;
+  border-radius:10px;padding:18px;margin-top:20px;
+}
+.res-line{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:9px 0;border-bottom:1px solid #222b3a;font-size:14px;
+}
+.res-line:last-child{border-bottom:none}
+.res-ico{flex:0 0 20px;font-size:15px;text-align:center}
+.res-txt{flex:1;color:#c7d0e0}
+.res-txt b{color:#fff}
+.fail{color:#ff9a9a}
+.pass{color:#8fe08f}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>分组配置流程模拟器</h1>
+<p class="sub">同一个名字，要在四个地方对上号 — 漏一个就会看到对应的报错</p>
+<div class="card">
+  <h3 style="margin-top:0">先看懂这一件事</h3>
+  <p>分组不是一个"东西"，是一个<b>名字</b>。这个名字要在四个不同的地方各写一次，四处都对上，流量才通、价格才对。</p>
+  <pre><code>分组倍率     "tx3": 0.5           ← 值多少钱（也决定渠道下拉框能不能选到）
+用户可用分组 "tx3": "公有云·tx3"   ← 谁能用、显示成什么
+渠道的分组   tx3                   ← 流量去哪台机器
+令牌的分组   tx3                   ← 这把钥匙走哪条路</code></pre>
+  <p style="margin-bottom:0">下面四个勾，你可以随意勾/不勾，看漏掉某步会发生什么。</p>
+</div>
+
+<h2>① 把四步勾一遍</h2>
+
+<div class="row">
+  <div class="fld">
+    <label>分组名</label>
+    <input id="gname" value="tx3">
+  </div>
+  <div class="fld">
+    <label>分组倍率（折扣）</label>
+    <input id="gratio" value="0.5">
+  </div>
+  <div class="fld">
+    <label>显示名</label>
+    <input id="gdesc" value="公有云 · tx3" style="width:170px">
+  </div>
+  <button class="ghost" onclick="allOn()">全部勾上</button>
+  <button class="ghost" onclick="allOff()">全部清空</button>
+</div>
+
+<div class="steps" id="steps">
+  <div class="step" id="s1">
+    <div class="step-head">
+      <div class="step-num">1</div>
+      <div class="step-title">在「分组倍率」里注册并定价</div>
+      <div class="step-path">系统设置 → 分组与模型定价设置</div>
+    </div>
+    <div class="step-body">决定这个分组值多少钱。<b>也是渠道下拉框选项的唯一来源。</b></div>
+    <label class="toggle"><input type="checkbox" id="c1" onchange="run()"> 已配置</label>
+  </div>
+
+  <div class="step" id="s2">
+    <div class="step-head">
+      <div class="step-num">2</div>
+      <div class="step-title">在「用户可用分组」里登记</div>
+      <div class="step-path">系统设置 → 用户可用分组</div>
+    </div>
+    <div class="step-body">决定客户能不能用它、在令牌下拉框里显示成什么中文名。</div>
+    <label class="toggle"><input type="checkbox" id="c2" onchange="run()"> 已配置</label>
+  </div>
+
+  <div class="step" id="s3">
+    <div class="step-head">
+      <div class="step-num">3</div>
+      <div class="step-title">渠道的「分组」字段挂上这个名字</div>
+      <div class="step-path">渠道 → 编辑 → 模型与分组</div>
+    </div>
+    <div class="step-body">决定流量真正落到哪台上游。<b>没有这步，请求会报「无可用渠道」。</b></div>
+    <label class="toggle"><input type="checkbox" id="c3" onchange="run()"> 已配置</label>
+  </div>
+
+  <div class="step" id="s4">
+    <div class="step-head">
+      <div class="step-num">4</div>
+      <div class="step-title">令牌的「令牌分组」选这个名字</div>
+      <div class="step-path">令牌 → 新建/编辑</div>
+    </div>
+    <div class="step-body">不选就走用户自己的分组，享受不到这个价格。</div>
+    <label class="toggle"><input type="checkbox" id="c4" onchange="run()"> 已配置</label>
+  </div>
+</div>
+
+<h2>② 两个下拉框现在长什么样</h2>
+<p>这两个框读的是<b>不同的配置</b>，这就是你「渠道能看到、令牌看不到」的原因。</p>
+
+<div class="selects">
+  <div class="sel">
+    <div class="sel-t">渠道 → 分组</div>
+    <div class="sel-src">数据来源：分组倍率的所有键</div>
+    <div class="sel-box" id="selCh"></div>
+  </div>
+  <div class="sel">
+    <div class="sel-t">令牌 → 令牌分组</div>
+    <div class="sel-src">数据来源：分组倍率 ∩ 用户可用分组</div>
+    <div class="sel-box" id="selTk"></div>
+  </div>
+</div>
+
+<h2>③ 客户发一个请求会怎样</h2>
+<div class="result" id="res"></div>
+
+<h2>④ 直接抄这两段 JSON</h2>
+<p>下面是按你上面填的值生成的，可以直接粘进后台。</p>
+
+<div class="card">
+  <h3 style="margin-top:0">分组倍率 <span style="font-weight:400;font-size:13px;color:#7c879c">（系统设置 → 分组与模型定价设置）</span></h3>
+  <pre><code id="json1"></code></pre>
+  <h3>用户可用分组 <span style="font-weight:400;font-size:13px;color:#7c879c">（系统设置 → 用户可用分组）</span></h3>
+  <pre><code id="json2"></code></pre>
+</div>
+
+<div class="warn">
+  <b>改完必须刷新页面。</b>渠道编辑页的下拉框选项是<b>打开页面那一刻</b>拉取的，不会自动更新。很多人配完回到渠道页发现还是选不到，以为没生效，其实只是没刷新。
+</div>
+
+<h2>为什么渠道那个框不让手填</h2>
+<p>你截图里打 <code>11111</code> 显示「没有匹配项」—— 这不是 bug。同一个页面上，模型那个框是允许自己造名字的，代码里差一个开关：</p>
+<pre><code>// 模型框 —— 允许自定义
+&lt;MultiSelect options={modelOptions} allowCreate /&gt;   ← 有
+
+// 分组框 —— 只能挑
+&lt;MultiSelect options={groupOptions} /&gt;               ← 没有</code></pre>
+<p>挡住你是有道理的：如果能在渠道页随手造一个分组名，这个分组就成了<b>孤儿</b> —— 没有倍率、没人有权限用、流量永远进不来。你会得到一个看起来配好了、实际永远不工作的渠道。</p>
+
+<h2>一个容易踩的例外</h2>
+<div class="hint">
+  <b>用户自己所属的那个分组，永远可用</b>，不需要在「用户可用分组」里登记。<br><br>
+  所以如果你把某个用户的分组直接改成 <code>tx3</code>，他不需要第②步就能用。但<b>别靠这个偷懒</b> —— 这样一来令牌下拉框还是空的，客户没法自己选，而且你也没法把这个分组开放给其他用户。
+</div>
+
+<h2>报错对照表</h2>
+<table>
+<tr><th>症状</th><th>漏了哪步</th><th>去哪修</th></tr>
+<tr><td>渠道下拉框选不到、显示"没有匹配项"</td><td>①</td><td>分组倍率里加这个键</td></tr>
+<tr><td>令牌下拉框看不到这个分组</td><td>②</td><td>用户可用分组里加</td></tr>
+<tr><td>报「无权访问 xx 分组」</td><td>②</td><td>用户可用分组里加</td></tr>
+<tr><td>报「分组 xx 已被弃用」</td><td>①被删了</td><td>分组倍率里补回来</td></tr>
+<tr><td>报「无可用渠道」</td><td>③</td><td>渠道的分组字段挂上</td></tr>
+<tr><td>能用但价格不对</td><td>④</td><td>令牌分组没选对，走了默认分组</td></tr>
+</table>
+
+<h2>如果你要复刻多渠道差异定价</h2>
+<p>把上面四步对每个上游各做一遍，分组名不同、倍率不同即可。<b>不需要改任何后端代码。</b></p>
+<pre><code>分组倍率：
+{
+  "default": 1,
+  "ai15": 0.5,     ← 官转，5折
+  "tx3":  0.5,     ← 公有云腾讯，5折
+  "jd6":  0.79,    ← 公有云京东，7.9折
+  "op1":  1.09     ← 企业中转，加价9%
+}
+
+然后 4 个渠道各自挂一个分组名，
+模型列表填一模一样的模型名。</code></pre>
+<div class="danger">
+  <b>唯一做不到的事：</b>分组倍率是<b>一个数</b>，输入和输出被同一个数缩放。如果某个上游的真实结构不同（比如输出是输入的 8 倍，而你按 3 倍配），那部分会亏钱。<br><br>
+  绕法：给它单独起一个模型名单独定价，再在渠道上用<b>模型重定向</b>把名字改回上游认识的真名。代价是客户会看到两个型号。
+</div>
+
+<h2>只记三件事</h2>
+<div class="card">
+  <p><b>1. 渠道下拉框的选项，只来自「分组倍率」。</b>选不到就是那里没注册。</p>
+  <p><b>2. 令牌下拉框要过两道筛选</b>，分组倍率和用户可用分组都得有。</p>
+  <p style="margin-bottom:0"><b>3. 改完配置要刷新页面</b>，否则下拉框还是旧的。</p>
+</div>
+
+<script>
+function $(id){return document.getElementById(id)}
+
+function allOn(){[1,2,3,4].forEach(function(i){$('c'+i).checked=true});run()}
+function allOff(){[1,2,3,4].forEach(function(i){$('c'+i).checked=false});run()}
+
+function run(){
+  var name  = $('gname').value.trim() || 'tx3';
+  var ratio = parseFloat($('gratio').value);
+  if(isNaN(ratio)||ratio<0) ratio=1;
+  var desc  = $('gdesc').value.trim() || name;
+
+  var s1=$('c1').checked, s2=$('c2').checked,
+      s3=$('c3').checked, s4=$('c4').checked;
+
+  [1,2,3,4].forEach(function(i){
+    $('s'+i).className = $('c'+i).checked ? 'step done' : 'step';
+  });
+
+  // ---- 渠道下拉框：分组倍率的全部键 ----
+  var chOpts = [
+    {n:'default', d:'', r:'1x'},
+    {n:'vip',     d:'', r:'1x'}
+  ];
+  if(s1 && name!=='default' && name!=='vip'){
+    chOpts.push({n:name, d:'', r:ratio+'x'});
+  }
+  $('selCh').innerHTML = chOpts.map(function(o){
+    return '<div class="opt"><span class="opt-name">'+o.n+'</span>'+
+           '<span class="opt-ratio">'+o.r+' 倍率</span></div>';
+  }).join('');
+
+  // ---- 令牌下拉框：分组倍率 ∩ 用户可用分组 ----
+  var tkOpts = [
+    {n:'default', d:'默认分组', r:'1x'},
+    {n:'vip',     d:'vip分组', r:'1x'}
+  ];
+  if(s1 && s2 && name!=='default' && name!=='vip'){
+    tkOpts.push({n:name, d:desc, r:ratio+'x'});
+  }
+  $('selTk').innerHTML = tkOpts.map(function(o){
+    return '<div class="opt"><span class="opt-name">'+o.n+'</span>'+
+           '<span class="opt-desc">'+o.d+'</span>'+
+           '<span class="opt-ratio">'+o.r+' 倍率</span></div>';
+  }).join('');
+
+  // ---- 请求链路 ----
+  var out=[];
+  function line(ico,txt,cls){
+    out.push('<div class="res-line"><div class="res-ico">'+ico+
+             '</div><div class="res-txt '+(cls||'')+'">'+txt+'</div></div>');
+  }
+
+  if(!s1){
+    line('&#10007;','<b>第①步没做。</b>渠道编辑页的分组下拉框里根本没有 <code>'+
+         name+'</code> 这个选项，你会看到「没有匹配项」。','fail');
+    line('&#8594;','配置卡在这里，后面三步都无从下手。');
+    $('res').innerHTML=out.join('');
+    writeJson(s1,s2,name,ratio,desc);
+    return;
+  }
+  line('&#10003;','分组 <code>'+name+'</code> 已注册，倍率 <b>'+ratio+
+       '</b>。渠道下拉框现在能选到它了。','pass');
+
+  if(!s4){
+    line('&#9888;','<b>第④步没做。</b>令牌没指定分组，请求会走<b>用户自己的分组</b>（这里是 default，倍率 1）。','fail');
+    line('&#8594;','能用，但<b>价格是原价</b> — 你配的 '+ratio+' 折没生效。','fail');
+    $('res').innerHTML=out.join('');
+    writeJson(s1,s2,name,ratio,desc);
+    return;
+  }
+
+  if(!s2){
+    line('&#10007;','<b>第②步没做。</b>令牌下拉框里看不到 <code>'+name+
+         '</code>，客户根本选不了。','fail');
+    line('&#10007;','就算用接口硬填，会被<b>第一道闸门</b>挡下：<br>'+
+         '<code>无权访问 '+name+' 分组</code>（HTTP 403）','fail');
+    $('res').innerHTML=out.join('');
+    writeJson(s1,s2,name,ratio,desc);
+    return;
+  }
+  line('&#10003;','令牌分组 <code>'+name+'</code> 通过权限校验（显示为「'+desc+'」）。','pass');
+
+  if(!s3){
+    line('&#10007;','<b>第③步没做。</b>没有任何渠道挂 <code>'+name+
+         '</code> 分组，找不到能干活的上游。','fail');
+    line('&#10007;','客户收到：<code>当前分组 '+name+' 下对于模型 xxx 无可用渠道</code>','fail');
+    $('res').innerHTML=out.join('');
+    writeJson(s1,s2,name,ratio,desc);
+    return;
+  }
+  line('&#10003;','找到挂了 <code>'+name+'</code> 分组的渠道，请求发往上游。','pass');
+  line('&#128176;','计费按 <b>'+ratio+'</b> 倍率结算。'+
+       (ratio<1 ? '客户享受 <b>'+(ratio*10).toFixed(1).replace(/\.0$/,'')+'折</b>。'
+                : ratio>1 ? '客户被<b>加价 '+Math.round((ratio-1)*100)+'%</b>。'
+                : '原价。'),'pass');
+  line('&#127881;','<b>四步齐全，链路通了。</b>','pass');
+
+  $('res').innerHTML=out.join('');
+  writeJson(s1,s2,name,ratio,desc);
+}
+
+function writeJson(s1,s2,name,ratio,desc){
+  var j1={'default':1,'vip':1};
+  if(s1 && name!=='default' && name!=='vip') j1[name]=ratio;
+  $('json1').textContent=JSON.stringify(j1,null,2);
+
+  var j2={'default':'默认分组','vip':'vip分组'};
+  if(s2 && name!=='default' && name!=='vip') j2[name]=desc;
+  $('json2').textContent=JSON.stringify(j2,null,2);
+}
+
+['gname','gratio','gdesc'].forEach(function(id){
+  $(id).addEventListener('input',run);
+});
+run();
+</script>
+</div>
+</body>
+</html>

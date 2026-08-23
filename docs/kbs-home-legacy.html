@@ -1,0 +1,236 @@
+<!--
+  康贝斯算力云 · 首页自定义内容（适配 New API 顶部悬浮导航）
+  用法：系统设置 → 站点设置 → 首页内容，整段粘贴替换原内容。
+
+  这是 LEGACY 版本：适用于尚未重新编译的旧二进制（导航不支持反色）。
+  Hero 顶部保留 64px 浅色带 + 发丝线，保证深字导航可读。
+  重新 go build 之后请换用 kbs-home.html（hero 从 0px 深蓝 + 导航反色）。
+-->
+<style>
+  .kbs-home {
+    --kbs-nav-h: 64px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #1f2430; background: #ffffff; width: 100%; overflow-x: hidden;
+  }
+  .kbs-home * { box-sizing: border-box; }
+  .kbs-wrap { max-width: 1320px; margin: 0 auto; padding: 0 40px; }
+
+  /* ===== Hero：顶部 64px 让给导航，随后迅速转深蓝 ===== */
+  .kbs-hero {
+    position: relative; width: 100%; text-align: center; color: #eaf2ff; overflow: hidden;
+    padding: calc(var(--kbs-nav-h) + 52px) 20px 96px;
+    background: linear-gradient(180deg,
+      #eef4fd 0,
+      #e9f0fb var(--kbs-nav-h),
+      #2a527f calc(var(--kbs-nav-h) + 36px),
+      #1a3b68 calc(var(--kbs-nav-h) + 96px),
+      #0f2444 62%, #0a1a34 100%);
+  }
+  .kbs-hero::before {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+    top: calc(var(--kbs-nav-h) + 56px);
+    background-image: linear-gradient(rgba(88,166,255,.07) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(88,166,255,.07) 1px, transparent 1px);
+    background-size: 52px 52px;
+    -webkit-mask-image: radial-gradient(760px 460px at 50% 24%, #000 42%, transparent 80%);
+    mask-image: radial-gradient(760px 460px at 50% 24%, #000 42%, transparent 80%);
+  }
+  .kbs-hero::after {
+    content: ""; position: absolute; width: 620px; height: 560px; left: 50%;
+    top: calc(var(--kbs-nav-h) + 24px); transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(255,122,24,.16), transparent 62%);
+    filter: blur(26px);
+  }
+  .kbs-hero > * { position: relative; z-index: 1; }
+</style>
+<style>
+  /* 导航底缘一条发丝线，让「白导航条 + 深色 Hero」看起来是刻意设计 */
+  .kbs-hero-navline {
+    position: absolute; left: 0; right: 0; top: var(--kbs-nav-h); height: 1px; z-index: 2;
+    background: linear-gradient(90deg, transparent, rgba(20,50,90,.10) 18%, rgba(20,50,90,.10) 82%, transparent);
+  }
+  .kbs-logo { display: block; margin: 0 auto 6px; height: 58px; width: auto; max-width: 320px; object-fit: contain; }
+  .kbs-badge { display: inline-block; margin: 20px 0 14px; padding: 8px 22px; font-size: 15px; letter-spacing: .5px; border-radius: 999px; color: #9cd2ff; background: rgba(88,166,255,.12); border: 1px solid rgba(88,166,255,.35); }
+  .kbs-title { font-size: clamp(40px, 6vw, 72px); font-weight: 800; margin: 6px 0 20px; line-height: 1.15; letter-spacing: 1px; }
+  .kbs-title .grad { background: linear-gradient(90deg, #58a6ff, #00d4ff 45%, #ff9d4d); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .kbs-sub { max-width: 900px; margin: 0 auto; font-size: 19px; line-height: 2; color: #b9c8e0; }
+  .kbs-cta { margin-top: 38px; display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }
+  .kbs-btn { display: inline-flex; align-items: center; padding: 16px 42px; font-size: 17px; font-weight: 700; border-radius: 14px; text-decoration: none; transition: transform .2s, box-shadow .2s; }
+  .kbs-btn-primary { color: #0f1f3d; background: linear-gradient(90deg, #ff9d4d, #ff7a18); box-shadow: 0 12px 30px rgba(255,122,24,.42); }
+  .kbs-btn-primary:hover { transform: translateY(-3px); box-shadow: 0 16px 38px rgba(255,122,24,.52); }
+  .kbs-btn-ghost { color: #eaf2ff; background: rgba(255,255,255,.06); border: 1px solid rgba(146,190,255,.45); }
+  .kbs-btn-ghost:hover { transform: translateY(-3px); background: rgba(255,255,255,.12); }
+  .kbs-stats { margin-top: 44px; display: flex; gap: 70px; justify-content: center; flex-wrap: wrap; }
+  .kbs-stat .n { font-size: 30px; font-weight: 800; color: #fff; }
+  .kbs-stat .l { font-size: 15px; color: #90a4c4; margin-top: 6px; }
+
+  /* ===== 通栏区块 ===== */
+  .kbs-band { width: 100%; padding: 96px 0; }
+  .kbs-band-light { background: #ffffff; }
+  .kbs-band-soft { background: linear-gradient(180deg, #f4f9ff, #eef5ff); }
+  .kbs-sec-title { text-align: center; font-size: clamp(30px, 4vw, 46px); font-weight: 800; margin: 0 0 16px; color: #14213d; }
+  .kbs-sec-desc { text-align: center; color: #5a6273; font-size: 18px; line-height: 1.9; max-width: 820px; margin: 0 auto 60px; }
+  .kbs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; }
+  .kbs-card { padding: 38px 32px; border-radius: 22px; background: #fff; border: 1px solid #e7eef8; box-shadow: 0 10px 30px rgba(20,50,90,.06); transition: transform .2s, box-shadow .2s; }
+  .kbs-card:hover { transform: translateY(-6px); box-shadow: 0 20px 44px rgba(20,50,90,.14); }
+  .kbs-icon { width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; font-size: 32px; border-radius: 16px; margin-bottom: 22px; background: linear-gradient(135deg, #e6f2ff, #eef6ff); }
+  .kbs-card h3 { font-size: 22px; font-weight: 700; margin: 0 0 12px; color: #14213d; }
+  .kbs-card p { font-size: 16px; line-height: 1.8; color: #5a6273; margin: 0; }
+  .kbs-caps { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }
+  .kbs-cap { padding: 14px 30px; border-radius: 999px; font-size: 18px; font-weight: 600; color: #1e4b8f; background: #ffffff; border: 1px solid #d6e6fb; box-shadow: 0 6px 18px rgba(20,50,90,.05); }
+  .kbs-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 28px; }
+  .kbs-step { padding: 38px 30px; border-radius: 20px; background: #fff; border: 1px solid #e7eef8; box-shadow: 0 10px 30px rgba(20,50,90,.06); }
+  .kbs-step .sn { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: #fff; border-radius: 14px; background: linear-gradient(135deg, #58a6ff, #2c5282); margin-bottom: 20px; }
+  .kbs-step h4 { margin: 0 0 10px; font-size: 21px; color: #14213d; }
+  .kbs-step p { margin: 0; font-size: 16px; line-height: 1.8; color: #5a6273; }
+</style>
+<style>
+  .kbs-band-company { width: 100%; padding: 100px 0; background: linear-gradient(180deg, #0f1f3d, #16305a); color: #eaf2ff; }
+  .kbs-band-company .kbs-sec-title { color: #fff; }
+  .kbs-band-company .kbs-sec-desc { color: #b9c8e0; }
+  .kbs-company-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+  .kbs-company-card { padding: 40px 34px; border-radius: 20px; background: rgba(255,255,255,.05); border: 1px solid rgba(146,190,255,.22); }
+  .kbs-company-card h3 { margin: 0 0 14px; font-size: 22px; color: #9cd2ff; }
+  .kbs-company-card p { margin: 0; font-size: 16px; line-height: 1.9; color: #c3d2ea; }
+  .kbs-band-cta { width: 100%; text-align: center; padding: 110px 20px; background: radial-gradient(1000px 400px at 50% 0%, #eaf3ff, #ffffff); }
+  .kbs-band-cta h2 { font-size: clamp(30px, 4vw, 46px); font-weight: 800; margin: 0 0 18px; color: #14213d; }
+  .kbs-band-cta p { color: #5a6273; font-size: 18px; margin: 0 0 36px; }
+  .kbs-footer { width: 100%; border-top: 1px solid rgba(255,255,255,.08); background: #08122a; color: #90a4c4; padding: 44px 20px; text-align: center; }
+  .kbs-footer .row { display: flex; gap: 12px 22px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 16px; }
+  .kbs-footer .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; color: #eaf2ff; font-size: 17px; }
+  .kbs-footer .brand img { width: 30px; height: 30px; border-radius: 7px; background: #fff; padding: 3px; }
+  .kbs-footer a { color: #90a4c4; text-decoration: none; transition: color .2s; }
+  .kbs-footer a:hover { color: #ff9d4d; }
+  .kbs-footer .sep { color: #3a4d70; }
+  .kbs-footer .copy { margin-top: 16px; font-size: 14px; color: #6b7ea0; }
+
+  /* ===== 深色主题适配：New API 会把 dark class 同步进来 ===== */
+  .dark .kbs-home { background: #0a1020; color: #dbe4f2; }
+  .dark .kbs-hero {
+    background: linear-gradient(180deg,
+      #0d1830 0, #0d1830 var(--kbs-nav-h),
+      #14294a calc(var(--kbs-nav-h) + 36px),
+      #0f2444 calc(var(--kbs-nav-h) + 96px),
+      #0b1c36 62%, #080f20 100%);
+  }
+  .dark .kbs-hero-navline { background: linear-gradient(90deg, transparent, rgba(146,190,255,.14) 18%, rgba(146,190,255,.14) 82%, transparent); }
+  .dark .kbs-band-light { background: #0a1020; }
+  .dark .kbs-band-soft { background: linear-gradient(180deg, #0c1426, #0a1020); }
+  .dark .kbs-sec-title, .dark .kbs-band-cta h2 { color: #eaf2ff; }
+  .dark .kbs-sec-desc, .dark .kbs-band-cta p { color: #9fb0cc; }
+  .dark .kbs-card, .dark .kbs-step { background: rgba(255,255,255,.04); border-color: rgba(146,190,255,.16); box-shadow: none; }
+  .dark .kbs-card h3, .dark .kbs-step h4 { color: #eaf2ff; }
+  .dark .kbs-card p, .dark .kbs-step p { color: #9fb0cc; }
+  .dark .kbs-icon { background: linear-gradient(135deg, rgba(88,166,255,.16), rgba(88,166,255,.06)); }
+  .dark .kbs-cap { color: #9cd2ff; background: rgba(255,255,255,.04); border-color: rgba(146,190,255,.22); box-shadow: none; }
+  .dark .kbs-band-company { background: linear-gradient(180deg, #0b1730, #102343); }
+  .dark .kbs-band-cta { background: radial-gradient(1000px 400px at 50% 0%, #101d38, #0a1020); }
+
+  @media (max-width: 640px) {
+    .kbs-home { --kbs-nav-h: 56px; }
+    .kbs-hero { padding: calc(var(--kbs-nav-h) + 40px) 16px 72px; }
+    .kbs-wrap { padding: 0 20px; }
+    .kbs-band, .kbs-band-company { padding: 64px 0; }
+    .kbs-stats { gap: 28px 40px; }
+  }
+</style>
+<div class="kbs-home">
+  <section class="kbs-hero">
+    <div class="kbs-hero-navline" aria-hidden="true"></div>
+    <img class="kbs-logo" src="https://34343375.s21i.faiusr.com/4/ABUIABAEGAAgs4ia0AYo6576zAEwzAg42QI.png" alt="昆山康贝斯" />
+    <div><span class="kbs-badge">昆山康贝斯 · AI 算力云开放平台</span></div>
+    <h1 class="kbs-title">一个 API Key，<span class="grad">调用主流大模型</span></h1>
+    <p class="kbs-sub">康贝斯算力云是昆山康贝斯新能源科技有限公司旗下的 AI 模型聚合与分发平台。统一聚合 OpenAI、Claude、Gemini、DeepSeek、豆包等主流大模型，兼容 OpenAI 接口标准，为企业应用、研发团队与创新业务提供稳定、安全、透明的 AI 能力底座。</p>
+    <div class="kbs-cta">
+      <a class="kbs-btn kbs-btn-primary" href="/sign-up">立即接入</a>
+      <a class="kbs-btn kbs-btn-ghost" href="/pricing">查看模型广场</a>
+    </div>
+    <div class="kbs-stats">
+      <div class="kbs-stat"><div class="n">多模型</div><div class="l">主流大模型统一接入</div></div>
+      <div class="kbs-stat"><div class="n">多协议兼容</div><div class="l">OpenAI / Claude / Gemini 等</div></div>
+      <div class="kbs-stat"><div class="n">按量计费</div><div class="l">用量透明，随用随充</div></div>
+    </div>
+  </section>
+
+  <section class="kbs-band kbs-band-light">
+    <div class="kbs-wrap">
+      <h2 class="kbs-sec-title">为什么选择康贝斯算力云</h2>
+      <p class="kbs-sec-desc">一站式接入丰富的大模型能力，把更多精力留给业务与创新本身。</p>
+      <div class="kbs-grid">
+        <div class="kbs-card"><div class="kbs-icon">🧩</div><h3>多模型聚合</h3><p>OpenAI、Claude、Gemini、DeepSeek、豆包等主流模型统一接入，一处管理。</p></div>
+        <div class="kbs-card"><div class="kbs-icon">🔌</div><h3>多协议兼容</h3><p>兼容 OpenAI、Anthropic、Gemini 等多种接口标准，主流 AI 应用与工具填入地址和密钥即可使用。</p></div>
+        <div class="kbs-card"><div class="kbs-icon">💰</div><h3>按量计费透明</h3><p>用量、余额、调用明细实时可查，随用随充，成本一目了然。</p></div>
+        <div class="kbs-card"><div class="kbs-icon">⚡</div><h3>稳定高可用</h3><p>多渠道负载与自动重试，接口稳定，保障企业生产场景连续可用。</p></div>
+        <div class="kbs-card"><div class="kbs-icon">🎛️</div><h3>多模态能力</h3><p>对话、图像、视频、语音、向量等多种能力，一个平台全覆盖。</p></div>
+        <div class="kbs-card"><div class="kbs-icon">🛡️</div><h3>安全可控</h3><p>令牌分组、额度管控、调用日志齐全，企业级权限与安全管理。</p></div>
+        <div class="kbs-card"><div class="kbs-icon">🚀</div><h3>一站式管理</h3><p>模型、令牌、额度、用量集中在一个控制台，无需在多家平台间来回切换。</p></div>
+        <div class="kbs-card"><div class="kbs-icon">🧑‍💻</div><h3>开发者友好</h3><p>可视化控制台、模型广场与调用文档齐全，几分钟即可完成接入。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="kbs-band kbs-band-soft">
+    <div class="kbs-wrap">
+      <h2 class="kbs-sec-title">覆盖的 AI 能力</h2>
+      <p class="kbs-sec-desc">从文本对话到图像视频，满足企业应用与研发的多样需求。</p>
+      <div class="kbs-caps">
+        <span class="kbs-cap">💬 文本对话</span>
+        <span class="kbs-cap">🖼️ 图像生成</span>
+        <span class="kbs-cap">🎬 视频生成</span>
+        <span class="kbs-cap">🎙️ 语音合成</span>
+        <span class="kbs-cap">🔤 文本向量</span>
+        <span class="kbs-cap">🔎 重排序</span>
+        <span class="kbs-cap">🧠 推理模型</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="kbs-band kbs-band-light">
+    <div class="kbs-wrap">
+      <h2 class="kbs-sec-title">四步，接入 AI 能力</h2>
+      <p class="kbs-sec-desc">几分钟完成接入，把一个 Key 用在你的业务、应用或研发里。</p>
+      <div class="kbs-steps">
+        <div class="kbs-step"><div class="sn">1</div><h4>注册账号</h4><p>注册并进入控制台，选择合适的分组与模型。</p></div>
+        <div class="kbs-step"><div class="sn">2</div><h4>创建令牌</h4><p>在「令牌」页面生成 API Key，设置额度与权限。</p></div>
+        <div class="kbs-step"><div class="sn">3</div><h4>调用接口</h4><p>用 OpenAI 兼容格式发起请求，替换 Base URL 与 Key 即可。</p></div>
+        <div class="kbs-step"><div class="sn">4</div><h4>查看用量</h4><p>在控制台实时查看调用明细与余额，成本清晰可控。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="kbs-band-company">
+    <div class="kbs-wrap">
+      <h2 class="kbs-sec-title">关于康贝斯</h2>
+      <p class="kbs-sec-desc">依托昆山康贝斯新能源科技有限公司的技术积累与产业实力，打造可信赖的 AI 算力底座。</p>
+      <div class="kbs-company-body">
+        <div class="kbs-company-card"><h3>高新技术企业</h3><p>昆山康贝斯新能源科技有限公司是一家集研发、设计、生产与销售于一体的高新技术企业，具备扎实的技术研发与工程实践能力。</p></div>
+        <div class="kbs-company-card"><h3>自主研发实力</h3><p>拥有多项自主知识产权，联合高校开展前沿技术研究与试验，持续以技术创新驱动业务发展。</p></div>
+        <div class="kbs-company-card"><h3>面向未来的算力布局</h3><p>康贝斯算力云是公司在 AI 领域的前沿布局，将先进的大模型能力以统一、易用、安全的方式开放给更多企业与开发者。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="kbs-band-cta">
+    <div class="kbs-wrap">
+      <h2>准备好接入 AI 能力了吗？</h2>
+      <p>注册账号，创建你的第一个 API Key，即刻调用主流大模型。</p>
+      <div class="kbs-cta">
+        <a class="kbs-btn kbs-btn-primary" href="/sign-up">立即接入</a>
+        <a class="kbs-btn kbs-btn-ghost" href="/pricing" style="color:#1e4b8f;border-color:#c9def7;background:#eef6ff;">查看模型广场</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="kbs-footer">
+    <div class="row">
+      <span class="brand"><img src="https://34343375.s21i.faiusr.com/4/ABUIABAEGAAgs4ia0AYo6576zAEwzAg42QI.png" alt="康贝斯" />昆山康贝斯算力云</span>
+      <span class="sep">|</span>
+      <a href="/about">关于我们</a>
+      <span class="sep">·</span>
+      <a href="/pricing">模型广场</a>
+      <span class="sep">·</span>
+      <a href="/sign-up">立即接入</a>
+    </div>
+    <div class="copy">© 2026 昆山康贝斯新能源科技有限公司　·　康贝斯算力云　·　备案号审核通过后填写</div>
+  </footer>
+</div>

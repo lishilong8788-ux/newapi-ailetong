@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>计费公式计算器 · new-api</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+background:#f4f6f9;color:#1e293b;line-height:1.7;padding:32px 20px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:30px;margin-bottom:8px;letter-spacing:-.5px}
+.sub{color:#64748b;font-size:15px;margin-bottom:36px}
+h2{font-size:21px;margin:44px 0 6px;display:flex;align-items:center;gap:10px}
+h2 .n{background:#7c3aed;color:#fff;width:28px;height:28px;border-radius:8px;
+font-size:15px;display:grid;place-items:center;flex:none}
+.h2sub{color:#64748b;font-size:14px;margin-bottom:20px;padding-left:38px}
+.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big{background:#fff;border-left:5px solid #7c3aed;border-radius:12px;padding:20px 24px;
+font-size:17px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.big b{color:#7c3aed}
+code{background:#eef2f7;padding:2px 7px;border-radius:5px;font-size:13px;
+font-family:ui-monospace,Consolas,monospace}
+.muted{color:#64748b;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;
+border-radius:11px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+th{background:#f1f5f9;padding:12px 15px;text-align:left;font-size:13px;color:#475569}
+td{padding:12px 15px;border-top:1px solid #f1f5f9;vertical-align:top}
+tr:hover td{background:#fafbfc}
+.warn{background:#fffbeb;border-left:5px solid #f59e0b;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.warn b{color:#92400e}
+.tip{background:#f5f3ff;border-left:5px solid #7c3aed;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.tip b{color:#6d28d9}
+.danger{background:#fef2f2;border-left:5px solid #dc2626;padding:15px 19px;
+border-radius:10px;margin-top:14px;font-size:14px}
+.danger b{color:#b91c1c}
+.path{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;
+background:#f8fafc;padding:9px 13px;border-radius:8px;margin-top:8px;
+font-family:ui-monospace,Consolas,monospace;color:#334155}
+.path .arw{color:#94a3b8}
+/* 计算器 */
+.calcbox{background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+.mode{display:flex;gap:10px;margin-bottom:20px}
+.mbtn{flex:1;padding:13px;border:2px solid #e2e8f0;background:#fff;border-radius:10px;
+font-size:15px;font-weight:600;cursor:pointer;transition:.15s;font-family:inherit}
+.mbtn:hover{border-color:#c4b5fd}
+.mbtn.on{border-color:#7c3aed;background:#f5f3ff;color:#6d28d9}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:6px}
+.grid.two{grid-template-columns:1fr 1fr}
+.f label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5px}
+.f label .q{color:#94a3b8;font-weight:400}
+.f input{width:100%;padding:9px 11px;border:2px solid #e2e8f0;border-radius:8px;
+font-size:14px;font-family:ui-monospace,Consolas,monospace}
+.f input:focus{outline:none;border-color:#7c3aed}
+.sec{font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;
+letter-spacing:.5px;margin:22px 0 10px;padding-bottom:6px;border-bottom:2px solid #f1f5f9}
+.presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.pbtn{padding:8px 14px;background:#f1f5f9;border:2px solid #e2e8f0;border-radius:8px;
+font-size:13px;cursor:pointer;transition:.15s;font-family:inherit}
+.pbtn:hover{border-color:#7c3aed;background:#f5f3ff}
+/* 结果 */
+.out{margin-top:24px;padding:20px;background:#faf5ff;border-radius:12px;border:2px solid #ddd6fe}
+.steps{font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:2.05}
+.steps .lbl{display:inline-block;width:220px;color:#64748b}
+.steps .num{font-weight:700}
+.steps .op{color:#7c3aed;font-weight:700}
+.steps hr{border:none;border-top:1px dashed #c4b5fd;margin:9px 0}
+.total{margin-top:16px;padding:16px 20px;background:#fff;border-radius:10px;
+display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.total .t1{font-size:13px;color:#64748b}
+.total .t2{font-size:30px;font-weight:800;font-family:ui-monospace,Consolas,monospace;color:#6d28d9}
+.total .t3{font-size:15px;color:#475569}
+.hint{font-size:13px;color:#64748b;margin-top:12px;padding-top:12px;border-top:1px solid #ddd6fe}
+@media(max-width:760px){.grid,.grid.two{grid-template-columns:1fr 1fr}
+.mode{flex-direction:column}.steps .lbl{width:auto;display:block}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>计费公式计算器</h1>
+<div class="sub">一个请求的价格是怎么算出来的。前三份图解讲的东西在这里汇合：分组决定倍率，双钱包决定扣哪儿，任务类型决定扣几次。</div>
+
+<h2><span class="n">1</span>核心公式</h2>
+<div class="h2sub">这是从代码里逐字抄出来的，不是简化版</div>
+<div class="big">
+<b>按量计费：</b><br>
+额度 = (输入部分 + 输出部分) × <b>模型倍率</b> × <b>分组倍率</b> × 附加倍率<br><br>
+<b>按次计费：</b><br>
+额度 = <b>模型固定价</b> × 500000 × <b>分组倍率</b>
+</div>
+
+<div class="tip"><b>先理解单位：</b><code>1 美元 = 500000 额度</code>。<br>
+系统内部不用「元」算钱，用大整数「额度」——因为浮点数累积会有精度误差，对不上账。<br>
+倍率表里 <code>1</code> 的含义是 <code>$0.002 / 1000 tokens</code>，所以 gpt-4 倍率 15 = 比这个基准贵 15 倍。</div>
+
+<h2><span class="n">2</span>自己动手算</h2>
+<div class="h2sub">改任意数字，下面立刻重算并展示每一步</div>
+
+<div class="calcbox">
+<div class="mode">
+<button class="mbtn on" id="m0" onclick="setMode(0)">📊 按量计费（对话/embedding）</button>
+<button class="mbtn" id="m1" onclick="setMode(1)">🎫 按次计费（图片/视频/音乐）</button>
+</div>
+
+<div class="presets" id="presets"></div>
+
+<div id="body0">
+  <div class="sec">用量（token 数）</div>
+  <div class="grid">
+    <div class="f"><label>普通输入 tokens</label><input type="number" id="pt" value="1000"></div>
+    <div class="f"><label>输出 tokens</label><input type="number" id="ct" value="500"></div>
+    <div class="f"><label>缓存命中 tokens <span class="q">便宜</span></label><input type="number" id="cat" value="0"></div>
+  </div>
+  <div class="sec">倍率</div>
+  <div class="grid">
+    <div class="f"><label>模型倍率 <span class="q">ModelRatio</span></label><input type="number" id="mr" value="2.5" step="0.1"></div>
+    <div class="f"><label>补全倍率 <span class="q">CompletionRatio</span></label><input type="number" id="cr" value="4" step="0.1"></div>
+    <div class="f"><label>缓存倍率 <span class="q">CacheRatio</span></label><input type="number" id="kr" value="0.5" step="0.1"></div>
+  </div>
+  <div class="grid" style="margin-top:14px">
+    <div class="f"><label>分组倍率 <span class="q">GroupRatio</span></label><input type="number" id="gr" value="1" step="0.05"></div>
+    <div class="f"><label>附加倍率 <span class="q">OtherRatios 乘积</span></label><input type="number" id="or" value="1" step="0.1"></div>
+    <div class="f"><label>工具调用附加费 <span class="q">额度</span></label><input type="number" id="tc" value="0"></div>
+  </div>
+</div>
+
+<div id="body1" style="display:none">
+  <div class="sec">按次计费参数</div>
+  <div class="grid">
+    <div class="f"><label>模型固定价 <span class="q">美元/次</span></label><input type="number" id="mp" value="0.04" step="0.01"></div>
+    <div class="f"><label>分组倍率</label><input type="number" id="gr2" value="1" step="0.05"></div>
+    <div class="f"><label>次数 / 附加倍率 <span class="q">如视频秒数</span></label><input type="number" id="or2" value="1" step="0.1"></div>
+  </div>
+</div>
+
+<div class="out" id="out"></div>
+</div>
+
+<h2><span class="n">3</span>为什么输出比输入贵</h2>
+<div class="h2sub">补全倍率是最容易被忽略的成本放大器</div>
+<div class="card">
+<div style="font-size:14px">
+<b>补全倍率（CompletionRatio）</b>是「输出相对输入的倍数」。<br>
+比如 gpt-4o 模型倍率 2.5、补全倍率 4，意思是：<br>
+输入每 1000 token 按 2.5 算，<b>输出每 1000 token 按 2.5 × 4 = 10 算</b>。
+</div>
+<div class="warn" style="margin-top:14px"><b>产品含义：让模型少说话 = 直接省钱。</b><br>
+同样 1000 token，输出的成本是输入的 4 倍。所以「请简洁回答」这类系统提示词，
+或者在渠道层强制压低 <code>max_tokens</code>，都是实打实的降本手段。<br>
+你在计算器里把输出 tokens 从 500 改成 100，看总额降多少 —— 比改输入的效果明显得多。</div>
+</div>
+
+<h2><span class="n">4</span>缓存：最大的降本杠杆</h2>
+<div class="h2sub">现代模型普遍支持提示词缓存，命中的部分极便宜</div>
+<div class="card">
+<div style="font-size:14px">
+重复的长提示词（系统提示、知识库、few-shot 示例）第二次发送时会命中缓存。<br>
+命中部分按 <b>缓存倍率</b> 计价，通常是 <code>0.1 ~ 0.5</code>，也就是<b>打一到五折</b>。
+</div>
+<div class="tip" style="margin-top:14px"><b>试一下：</b>在计算器里把
+「普通输入」改成 <code>200</code>、「缓存命中」改成 <code>800</code>（总输入还是 1000），
+看总额怎么变。<br>
+这就是为什么<b>鼓励客户用缓存可以做成卖点</b> —— 他省钱，你的上游成本也同步降低。</div>
+</div>
+
+<h2><span class="n">5</span>三层倍率的叠加关系</h2>
+<div class="h2sub">这块最容易配错，因为不全是相乘</div>
+<table>
+<tr><th style="width:170px">层</th><th>作用</th><th style="width:170px">怎么叠加</th></tr>
+<tr><td><b>模型倍率</b><br><span class="muted">ModelRatio</span></td>
+<td>这个模型本身多贵。gpt-4 是 15，gpt-4o-mini 是 0.075</td>
+<td><b>相乘</b></td></tr>
+<tr><td><b>分组倍率</b><br><span class="muted">GroupRatio</span></td>
+<td>这个套餐档位的整体折扣。vip 组 0.9 = 全模型九折</td>
+<td><b>相乘</b></td></tr>
+<tr><td><b>用户组专属倍率</b><br><span class="muted">GroupGroupRatio</span></td>
+<td>「什么身份 × 用什么组」的交叉定价</td>
+<td><b>⚠ 覆盖分组倍率</b><br>不是相乘</td></tr>
+<tr><td><b>附加倍率</b><br><span class="muted">OtherRatios</span></td>
+<td>视频时长、分辨率、图片张数等</td>
+<td><b>相乘</b></td></tr>
+</table>
+
+<div class="danger"><b>「用户组专属倍率」是覆盖关系，不是相乘。</b>
+一旦命中，分组倍率就被完全替换掉。<br>
+这是最容易算错账的地方 —— 你以为 0.9 × 0.85 = 0.765，实际是直接用 0.85。<br>
+<b>建议：除非有明确的差别定价需求，别用这一层。</b>它会让价格体系变成二维矩阵，
+客户问「我这个请求为什么是这个价」你自己都要算半天。</div>
+
+<h2><span class="n">6</span>两个保护机制</h2>
+<div class="h2sub">代码里的两道防线，理解它们能帮你判断异常账单</div>
+<div class="card">
+<div style="font-weight:600;margin-bottom:5px">① 最低消费 1 额度</div>
+<div style="font-size:14px">倍率不为零但算出来 ≤ 0 时，<b>强制记 1 额度</b>。
+防止出现「有消费但账单为 0」的记录，保证每次调用都有痕迹。</div>
+
+<div style="font-weight:600;margin:20px 0 5px">② 溢出饱和 + 告警</div>
+<div style="font-size:14px">
+额度字段在数据库里是 <b>32 位整数</b>（上限约 21 亿）。如果某次计算溢出，
+在计算机里<b>正数会变成负数</b> —— 扣费变成充值。<br>
+所以所有额度换算都走统一函数，超界时<b>截断到上限并打警告日志</b>，
+而不是让它悄悄溢出。</div>
+<div class="warn" style="margin-top:12px"><b>这个告警会记到日志的管理员专属区域</b>
+（普通客户看不到）。<br>
+如果你在日志里看到 <code>quota_saturation</code> 标记，
+说明有请求的计算值撞到了上限 —— 正常业务<b>永远不该出现</b>，
+出现了就是有 bug 或有人在恶意构造请求。<b>看到就要查。</b></div>
+</div>
+
+<h2><span class="n">7</span>后台在哪配</h2>
+<div class="card">
+<div class="path">系统设置 <span class="arw">→</span> 分组与模型定价</div>
+<div style="margin-top:12px;font-size:14px">六张表都在这一个页面：</div>
+<table style="margin-top:10px;box-shadow:none">
+<tr><th>表名</th><th>管什么</th></tr>
+<tr><td><b>模型倍率</b></td><td>按量计费的基础价</td></tr>
+<tr><td><b>补全倍率</b></td><td>输出相对输入的倍数</td></tr>
+<tr><td><b>模型固定价格</b></td><td>按次计费；<b>配了就无视倍率</b></td></tr>
+<tr><td><b>图片倍率</b></td><td>图像生成专用</td></tr>
+<tr><td><b>音频倍率 / 音频补全倍率</b></td><td>语音输入 / 输出</td></tr>
+<tr><td><b>分组倍率 / 用户组专属倍率</b></td><td>套餐折扣</td></tr>
+</table>
+<div class="danger" style="margin-top:14px"><b>最高频的配置事故：模型倍率和模型固定价格同时填了。</b><br>
+以为会叠加，实际<b>只有固定价格生效</b>，倍率被完全无视。<br>
+结果账单和预期差很远。<b>一个模型只能选一种计费方式。</b></div>
+</div>
+
+<h2><span class="n">8</span>怎么验证配得对</h2>
+<div class="card">
+<div style="font-size:14px">配完价格，用这个流程验证：</div>
+<div class="steps" style="margin-top:12px;background:#f8fafc;padding:14px 17px;border-radius:9px;font-size:13px">1. 在本页计算器里<b>手算</b>一遍预期额度
+2. 用该模型发一次真实请求
+3. 日志 → 消费日志 → 找到这条记录
+4. 对比：日志里的额度 vs 你手算的额度
+5. 不一致 → 点开日志详情，看各项倍率是不是你配的那些</div>
+<div class="tip" style="margin-top:14px"><b>日志详情里会列出本次实际生效的每一项倍率</b>
+（模型倍率、分组倍率、补全倍率、附加倍率）。<br>
+这是唯一可信的对账依据 —— 比配置页面上看到的更真实，
+因为它反映了完整的解析结果（含令牌覆盖分组、auto 降级、用户组专属倍率覆盖）。</div>
+</div>
+
+<div style="margin-top:44px;padding:20px 24px;background:#fff;border-radius:12px;
+box-shadow:0 1px 3px rgba(15,23,42,.07)">
+<div style="font-weight:700;margin-bottom:10px">🎯 如果只记三件事</div>
+<div style="font-size:15px;line-height:2.1">
+1. <b>输出比输入贵</b>（补全倍率），让模型少说话是最直接的降本手段<br>
+2. <b>倍率和固定价格互斥</b>，一个模型只能选一种，同时配只有固定价格生效<br>
+3. <b>用户组专属倍率是覆盖不是相乘</b>，非必要别用
+</div>
+</div>
+<script>
+const QPU=500000;
+let mode=0;
+const $=id=>document.getElementById(id);
+const V=id=>parseFloat($(id).value)||0;
+const fmt=n=>n.toLocaleString('en-US',{maximumFractionDigits:0});
+const usd=n=>'$'+(n/QPU).toFixed(4);
+
+const PRESETS=[
+ [{n:'gpt-4o 标准',v:{pt:1000,ct:500,cat:0,mr:2.5,cr:4,kr:0.5,gr:1,or:1,tc:0}},
+  {n:'gpt-4o-mini',v:{pt:1000,ct:500,cat:0,mr:0.075,cr:4,kr:0.5,gr:1,or:1,tc:0}},
+  {n:'大量缓存命中',v:{pt:200,ct:500,cat:800,mr:2.5,cr:4,kr:0.5,gr:1,or:1,tc:0}},
+  {n:'vip 九折',v:{pt:1000,ct:500,cat:0,mr:2.5,cr:4,kr:0.5,gr:0.9,or:1,tc:0}},
+  {n:'长输出（贵）',v:{pt:1000,ct:4000,cat:0,mr:2.5,cr:4,kr:0.5,gr:1,or:1,tc:0}}],
+ [{n:'dall-e-3',v:{mp:0.04,gr2:1,or2:1}},
+  {n:'sora-2 视频',v:{mp:0.3,gr2:1,or2:1}},
+  {n:'veo-3.0',v:{mp:0.4,gr2:1,or2:1}},
+  {n:'suno 音乐',v:{mp:0.1,gr2:1,or2:1}},
+  {n:'6秒视频×倍率',v:{mp:0.5,gr2:1,or2:6}}]
+];
+
+function setMode(m){
+  mode=m;
+  $('m0').className='mbtn'+(m===0?' on':'');
+  $('m1').className='mbtn'+(m===1?' on':'');
+  $('body0').style.display=m===0?'':'none';
+  $('body1').style.display=m===1?'':'none';
+  paintPresets();calc();
+}
+function paintPresets(){
+  $('presets').innerHTML=PRESETS[mode].map((p,i)=>
+    `<button class="pbtn" onclick="usePreset(${i})">${p.n}</button>`).join('');
+}
+function usePreset(i){
+  const v=PRESETS[mode][i].v;
+  Object.keys(v).forEach(k=>{if($(k))$(k).value=v[k]});
+  calc();
+}
+
+function calc(){
+  const O=$('out');
+  if(mode===1){
+    const mp=V('mp'),gr=V('gr2'),or=V('or2');
+    let q=mp*QPU*gr*or;
+    if(q>0&&q<1)q=1;
+    q=Math.floor(q);
+    O.innerHTML=`<div class="steps">
+<span class="lbl">模型固定价</span><span class="num">$${mp}</span>
+<span class="lbl">× 额度单位</span><span class="op">×</span> <span class="num">${fmt(QPU)}</span>　<span class="muted">(1 美元 = 50 万额度)</span>
+<span class="lbl">× 分组倍率</span><span class="op">×</span> <span class="num">${gr}</span>
+<span class="lbl">× 次数/附加倍率</span><span class="op">×</span> <span class="num">${or}</span>
+<hr>
+<span class="lbl">额度</span><span class="num">${fmt(q)}</span></div>
+<div class="total"><span class="t1">本次扣费</span>
+<span class="t2">${fmt(q)}</span><span class="t3">额度　≈　${usd(q)}　≈　¥${(q/QPU*7.3).toFixed(3)}</span></div>
+<div class="hint"><b>按次计费完全不看 token 数。</b>
+无论客户生成一张图还是一段 10 秒视频，只要模型固定价一样、附加倍率一样，价格就一样。<br>
+视频类通常用「附加倍率」承载秒数 —— 比如单价 0.5、6 秒 → 附加倍率填 6。</div>`;
+    return;
+  }
+  // 按量
+  const pt=V('pt'),ct=V('ct'),cat=V('cat');
+  const mr=V('mr'),cr=V('cr'),kr=V('kr'),gr=V('gr'),or=V('or'),tc=V('tc');
+  const ratio=mr*gr;
+  const cachePart=cat*kr;
+  const promptQ=pt+cachePart;
+  const compQ=ct*cr;
+  const sub=(promptQ+compQ)*ratio;
+  const withOther=sub*or;
+  let q=withOther+tc;
+  const bumped=(ratio!==0&&q<=0);
+  if(bumped)q=1;
+  q=Math.floor(q);
+
+  // 对比：不用缓存的话
+  const noCache=(pt+cat+compQ)*ratio*or+tc;
+  const saved=noCache-withOther-tc;
+
+  O.innerHTML=`<div class="steps">
+<span class="lbl">普通输入</span><span class="num">${fmt(pt)}</span> tokens
+<span class="lbl">缓存命中输入</span><span class="num">${fmt(cat)}</span> × ${kr} <span class="op">=</span> <span class="num">${fmt(cachePart)}</span>${cat>0?'　<span class="muted">(打'+(kr*10).toFixed(1)+'折)</span>':''}
+<span class="lbl">输入部分小计</span><span class="num">${fmt(promptQ)}</span>
+<hr>
+<span class="lbl">输出</span><span class="num">${fmt(ct)}</span> × 补全倍率 ${cr} <span class="op">=</span> <span class="num">${fmt(compQ)}</span>
+<hr>
+<span class="lbl">(输入 + 输出)</span><span class="num">${fmt(promptQ+compQ)}</span>
+<span class="lbl">× 模型倍率 ${mr}</span>
+<span class="lbl">× 分组倍率 ${gr}</span><span class="op">=</span> 合并倍率 <span class="num">${ratio.toFixed(4)}</span>
+<span class="lbl">小计</span><span class="num">${fmt(sub)}</span>
+${or!==1?`<span class="lbl">× 附加倍率 ${or}</span><span class="num">${fmt(withOther)}</span>\n`:''}${tc>0?`<span class="lbl">+ 工具调用附加费</span><span class="num">${fmt(tc)}</span>\n`:''}<hr>
+<span class="lbl">额度</span><span class="num">${fmt(q)}</span>${bumped?'　<span class="muted">(算出 ≤0，按最低 1 额度记)</span>':''}</div>
+<div class="total"><span class="t1">本次扣费</span>
+<span class="t2">${fmt(q)}</span><span class="t3">额度　≈　${usd(q)}　≈　¥${(q/QPU*7.3).toFixed(4)}</span></div>
+<div class="hint">
+<b>输出成本占比：</b>${(promptQ+compQ)>0?((compQ/(promptQ+compQ))*100).toFixed(1):0}%
+　（输出 ${fmt(ct)} tokens 贡献了 ${fmt(compQ)}，输入 ${fmt(pt+cat)} tokens 只贡献了 ${fmt(promptQ)}）<br>
+${cat>0?`<b style="color:#6d28d9">缓存省了 ${fmt(saved)} 额度</b>（${usd(saved)}）—— 不用缓存要 ${fmt(Math.floor(noCache))}，用了只要 ${fmt(q)}`:
+`<span class="muted">试试把「普通输入」改小、「缓存命中」改大（总数不变），看能省多少</span>`}</div>`;
+}
+
+['pt','ct','cat','mr','cr','kr','gr','or','tc','mp','gr2','or2'].forEach(id=>{
+  const el=$(id);if(el)el.addEventListener('input',calc);
+});
+paintPresets();calc();
+</script>
+</div></body>
+</html>
