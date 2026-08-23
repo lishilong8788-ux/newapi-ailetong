@@ -31,6 +31,7 @@ const rankingsSearchSchema = z.object({
 })
 
 export const Route = createFileRoute('/rankings/')({
+  staticData: { publicChrome: true },
   validateSearch: rankingsSearchSchema,
   beforeLoad: async ({ context, location }) => {
     const access = await getFreshModuleAccess(context.queryClient, 'rankings')

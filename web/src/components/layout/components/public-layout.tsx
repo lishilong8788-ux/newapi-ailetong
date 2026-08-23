@@ -16,45 +16,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { TopNavLink } from '../types'
-import {
-  PublicHeader,
-  type PublicHeaderProps,
-  type PublicHeaderTone,
-} from './public-header'
+import { usePublicHeaderTone } from '../lib/public-chrome'
+import type { PublicHeaderTone } from './public-header'
 
 type PublicLayoutProps = {
   children: React.ReactNode
   showMainContainer?: boolean
-  navContent?: React.ReactNode
   headerTone?: PublicHeaderTone
-  headerProps?: Omit<PublicHeaderProps, 'navContent'>
-  navLinks?: TopNavLink[]
-  showThemeSwitch?: boolean
-  showAuthButtons?: boolean
-  showNotifications?: boolean
-  logo?: React.ReactNode
-  siteName?: string
 }
 
+/**
+ * Page shell for public routes. The floating header is *not* rendered here — it
+ * is mounted once by `PublicChrome` above the outlet so it survives navigation.
+ * This component only owns the page background and content container, and tells
+ * the shared header which tone the current page needs.
+ */
 export function PublicLayout(props: PublicLayoutProps) {
+  usePublicHeaderTone(props.headerTone ?? 'auto')
+
   // `bg-canvas`, not `bg-background`: this is a page shell, so it sits one step
   // below the card surfaces it hosts. `--background` stays reserved for
   // surfaces *inside* cards (detail tiles, code blocks, table rows).
   return (
     <div className='bg-canvas text-foreground relative min-h-svh overflow-x-clip'>
-      <PublicHeader
-        navContent={props.navContent}
-        tone={props.headerTone}
-        navLinks={props.navLinks}
-        showThemeSwitch={props.showThemeSwitch}
-        showAuthButtons={props.showAuthButtons}
-        showNotifications={props.showNotifications}
-        logo={props.logo}
-        siteName={props.siteName}
-        {...props.headerProps}
-      />
-
       {props.showMainContainer !== false ? (
         <main className='container px-4 py-6 pt-20 md:px-4'>
           {props.children}
