@@ -110,6 +110,12 @@ type TaskPrivateData struct {
 	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
 	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
 	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	// MiniMax-H3 专用：任务语义与终态回调状态。
+	CallbackURL          string `json:"callback_url,omitempty"`           // 终态回调地址，仅存本地不转上游
+	TaskType             string `json:"task_type,omitempty"`              // generation / h3_context_ir / regeneration
+	Modality             string `json:"modality,omitempty"`               // video / text
+	H3SourceDuration     int    `json:"h3_source_duration,omitempty"`     // 再生成时原任务的出片时长，用于预扣估算
+	CallbackPushedStatus string `json:"callback_pushed_status,omitempty"` // 已成功推送的终态，用于回调幂等
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。

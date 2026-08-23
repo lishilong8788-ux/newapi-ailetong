@@ -1,0 +1,112 @@
+name: Publish Docker image (GHCR)
+
+# Fork 自用镜像流水线：推送到 ghcr.io/<owner>/<repo>，
+# 只依赖内置 GITHUB_TOKEN，无需配置 DOCKERHUB_* secret。
+on:
+  push:
+    tags:
+      - 'kbs-v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch / tag / commit to build (default: main)'
+        required: false
+        default: 'main'
+        type: string
+      platforms:
+        description: 'Target platforms'
+        required: false
+        default: 'linux/amd64'
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
+          - linux/amd64,linux/arm64
+      push_latest:
+        description: 'Also tag as :latest'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build:
+    name: Build & push to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Resolve version & image name
+        id: version
+        run: |
+          if [ "${GITHUB_REF}" != "${GITHUB_REF#refs/tags/}" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="$(git describe --tags --always)-$(date +'%Y%m%d')"
+          fi
+          IMAGE="ghcr.io/$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          echo "${VERSION}" > VERSION
+          echo "Building ${IMAGE}:${VERSION}"
+
+      - name: Set up QEMU
+        # 仅在选了 arm64 时需要。此处用浮动 v3 而非 SHA 固定：
+        # 本地网络无法核对 SHA，写错会直接让流水线失败。
+        if: contains(github.event.inputs.platforms || 'linux/amd64', 'arm64')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        env:
+          PUSH_LATEST: ${{ github.event.inputs.push_latest || 'true' }}
+        run: |
+          {
+            echo 'value<<__EOF__'
+            printf '%s:%s\n' "${IMAGE}" "${VERSION}"
+            if [ "${PUSH_LATEST}" = "true" ]; then
+              printf '%s:latest\n' "${IMAGE}"
+            fi
+            echo '__EOF__'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build & push
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: ${{ github.event.inputs.platforms || 'linux/amd64' }}
+          push: true
+          tags: ${{ steps.tags.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Deploy summary
+        run: |
+          {
+            echo "### 镜像已推送"
+            echo ''
+            echo '```bash'
+            echo "docker pull ${IMAGE}:${VERSION}"
+            echo '```'
+            echo ''
+            echo "digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
