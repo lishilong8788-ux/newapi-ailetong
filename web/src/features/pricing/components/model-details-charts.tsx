@@ -16,10 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { VChart } from '@visactor/react-vchart'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { LazyVChart } from '@/components/lazy-vchart'
 import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { getSuccessRateColor } from '@/features/performance-metrics/lib/format'
 import { useThemeRadiusPx } from '@/lib/theme-radius'
@@ -173,7 +173,7 @@ export function LatencyTrendChart(props: {
   return (
     <div className={cn('h-64 sm:h-72', props.className)}>
       {themeReady && spec && (
-        <VChart
+        <LazyVChart
           key={`latency-${resolvedTheme}`}
           spec={{
             ...spec,
@@ -301,7 +301,7 @@ export function UptimeTrendChart(props: {
   return (
     <div className={cn('h-56 sm:h-64', props.className)}>
       {themeReady && spec && (
-        <VChart
+        <LazyVChart
           key={`uptime-trend-${resolvedTheme}`}
           spec={{
             ...spec,
@@ -394,7 +394,7 @@ export function ThroughputBarChart(props: {
   return (
     <div className={cn('h-48 sm:h-56', props.className)}>
       {themeReady && spec && (
-        <VChart
+        <LazyVChart
           key={`tput-${resolvedTheme}`}
           spec={{
             ...spec,

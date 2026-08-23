@@ -16,11 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { VChart } from '@visactor/react-vchart'
 import { PieChart } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { LazyVChart } from '@/components/lazy-vchart'
 import { useChartTheme } from '@/lib/use-chart-theme'
 import { VCHART_OPTION } from '@/lib/vchart'
 
@@ -227,7 +227,7 @@ export function MarketShareSection(props: MarketShareSectionProps) {
       <div className='px-5 pb-5'>
         <div className='h-60 sm:h-72'>
           {themeReady && spec ? (
-            <VChart
+            <LazyVChart
               key={`vendor-share-${resolvedTheme}-${props.period}`}
               spec={{
                 ...spec,

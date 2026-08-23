@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { VChart } from '@visactor/react-vchart'
 import type { EventParamsDefinition, IVChart } from '@visactor/vchart'
 import {
   Activity,
@@ -41,6 +40,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { LazyVChart } from '@/components/lazy-vchart'
 import { MultiSelect } from '@/components/multi-select'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -490,7 +490,7 @@ export function FlowCharts(props: FlowChartsProps) {
       ? flowError.message
       : t('Please try again later.')
   let chartContent = (
-    <VChart
+    <LazyVChart
       key={`flow-${chartKey}`}
       spec={{
         ...flowSpec,

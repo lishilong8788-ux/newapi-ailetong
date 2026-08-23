@@ -16,11 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { VChart } from '@visactor/react-vchart'
 import { PieChart as PieChartIcon } from 'lucide-react'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { LazyVChart } from '@/components/lazy-vchart'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useTheme } from '@/context/theme-provider'
@@ -153,7 +153,7 @@ export function ModelCharts(props: ModelChartsProps) {
 
       <div className='h-[300px] p-1.5 sm:h-96 sm:p-2'>
         {themeReady && spec && (
-          <VChart
+          <LazyVChart
             key={chartKey}
             spec={{
               ...spec,
