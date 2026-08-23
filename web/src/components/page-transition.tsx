@@ -47,7 +47,10 @@ export function PageTransition(props: PageTransitionProps) {
     <motion.div
       initial={MOTION_VARIANTS.pageEnter.initial}
       animate={MOTION_VARIANTS.pageEnter.animate}
-      transition={MOTION_TRANSITION.default}
+      // `fast`, not `default`: this fade delays the moment the user sees the new
+      // page, so it has to be short enough to read as a transition rather than
+      // as waiting.
+      transition={MOTION_TRANSITION.fast}
       className={props.className}
     >
       {props.children}

@@ -36,10 +36,18 @@ export const MOTION_TRANSITION: Record<string, Transition> = {
 }
 
 export const MOTION_VARIANTS = {
+  // Opacity only, and deliberately so.
+  //
+  // Animating `filter: blur()` here forced the browser to re-rasterize the whole
+  // page every frame while the floating header (backdrop-blur) re-sampled that
+  // changing surface on top. The vertical offset was the other half of the
+  // problem: there is no exit animation, so a page sliding up from below reads
+  // as content still arriving rather than as a transition. A short cross-fade
+  // with no movement stays on the GPU and does not imply loading.
   pageEnter: {
-    initial: { opacity: 0, y: 8, filter: 'blur(4px)' },
-    animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
-    exit: { opacity: 0, y: -4, filter: 'blur(2px)' },
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
   },
   fadeIn: {
     initial: { opacity: 0 },

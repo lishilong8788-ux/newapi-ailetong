@@ -98,7 +98,13 @@ const router = createRouter({
   routeTree,
   context: { queryClient },
   defaultPreload: 'intent',
-  defaultPreloadStaleTime: 0,
+  // A preloaded match stays valid for 30s. With 0 (the previous value) every
+  // hover re-ran `beforeLoad`, so sweeping the header nav fired a guard round
+  // trip per item and the subsequent click paid for yet another one.
+  defaultPreloadStaleTime: 30_000,
+  // Don't preload on a pointer that is merely passing over a link on its way
+  // somewhere else.
+  defaultPreloadDelay: 120,
 })
 
 // Register the router instance for type safety
@@ -170,4 +176,34 @@ if (!rootElement.innerHTML) {
       </QueryClientProvider>
     </StrictMode>
   )
+
+  warmPublicRoutes()
+}
+
+/**
+ * Pull the header-reachable public routes into cache once the app is idle.
+ *
+ * Route components are code-split in production, so the first click on a nav
+ * item paid for a chunk download before anything could render — the delay reads
+ * as a stutter no amount of animation tuning can hide. `preloadRoute` fetches
+ * the chunk and runs the route's loaders, both of which are then cache hits when
+ * the user actually navigates. Failures are ignored: this is opportunistic, and
+ * a disabled module simply redirects when preloaded.
+ */
+function warmPublicRoutes() {
+  const paths = ['/', '/pricing', '/rankings', '/about'] as const
+
+  const warm = () => {
+    for (const to of paths) {
+      void router.preloadRoute({ to }).catch(() => {
+        /* opportunistic */
+      })
+    }
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(warm, { timeout: 3000 })
+  } else {
+    window.setTimeout(warm, 1500)
+  }
 }
