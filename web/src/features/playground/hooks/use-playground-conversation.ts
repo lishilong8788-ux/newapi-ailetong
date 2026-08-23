@@ -44,8 +44,8 @@ export function usePlaygroundConversation({
   )
 
   const handleSendMessage = useCallback(
-    (text: string) => {
-      const nextMessages = appendUserMessagePair(messages, text)
+    (text: string, images?: string[]) => {
+      const nextMessages = appendUserMessagePair(messages, text, images)
       updateMessages(nextMessages)
       sendChat(nextMessages)
     },

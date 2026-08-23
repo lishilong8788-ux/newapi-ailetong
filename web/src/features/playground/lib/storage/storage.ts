@@ -28,6 +28,7 @@ import { hasMessageContent } from '../message/message-utils'
 import {
   MAX_LOADED_MESSAGE_CHARS,
   MAX_LOADED_MESSAGES_CHARS,
+  MAX_STORED_IMAGE_CHARS,
   MAX_STORED_MESSAGES,
   MAX_STORED_MESSAGES_BYTES,
   STORAGE_VERSION,
@@ -92,6 +93,53 @@ function trimMessages(messages: Message[]): Message[] {
   }
 
   return messages.slice(-MAX_STORED_MESSAGES)
+}
+
+function stripMessageImages(messages: Message[]): Message[] {
+  return messages.map((message) => {
+    if (!message.images) {
+      return message
+    }
+
+    const { images: _images, ...rest } = message
+    return rest
+  })
+}
+
+function getMessageImagesSize(message: Message): number {
+  return (message.images ?? []).reduce(
+    (total, image) => total + image.length,
+    0
+  )
+}
+
+/**
+ * Keep image attachments for the newest messages within the image budget and
+ * drop the rest, so a large screenshot never costs the whole conversation.
+ */
+function trimMessageImagesByBudget(messages: Message[]): Message[] {
+  let remaining = MAX_STORED_IMAGE_CHARS
+  let changed = false
+  const result = [...messages]
+
+  for (let index = result.length - 1; index >= 0; index--) {
+    const message = result[index]
+    const imagesSize = getMessageImagesSize(message)
+    if (imagesSize === 0) {
+      continue
+    }
+
+    if (imagesSize > remaining) {
+      const { images: _images, ...rest } = message
+      result[index] = rest
+      changed = true
+      continue
+    }
+
+    remaining -= imagesSize
+  }
+
+  return changed ? result : messages
 }
 
 function getMessageSize(message: Message): number {
@@ -373,13 +421,27 @@ export function loadMessages(): Message[] | null {
  * Save messages to localStorage
  */
 export function saveMessages(messages: Message[]): void {
+  const trimmed = trimMessageImagesByBudget(trimMessages(messages))
+
   try {
-    const trimmed = trimMessages(messages)
     const parsed = messagesSchema.parse(trimmed) as Message[]
     writeStoredValue(STORAGE_KEYS.MESSAGES, parsed)
+    return
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to save messages:', error)
+  }
+
+  // The write most likely blew the storage quota. Retry without attachments so
+  // the conversation text still survives a reload.
+  try {
+    const parsed = messagesSchema.parse(
+      stripMessageImages(trimmed)
+    ) as Message[]
+    writeStoredValue(STORAGE_KEYS.MESSAGES, parsed)
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to save messages without attachments:', error)
   }
 }
 

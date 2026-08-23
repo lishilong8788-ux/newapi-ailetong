@@ -23,9 +23,11 @@ import { parseThinkTags } from './message-reasoning-utils'
 type MessageContentStateBase = {
   displayContent: string
   hasSources: boolean
+  images: string[]
   isAssistant: boolean
   showLoader: boolean
   showMessageContent: boolean
+  showMessageImages: boolean
   sources: NonNullable<Message['sources']>
 }
 
@@ -64,6 +66,12 @@ function shouldShowMessageContent(
   )
 }
 
+function shouldShowMessageImages(message: Message): boolean {
+  return (
+    message.from === MESSAGE_ROLES.USER && (message.images?.length ?? 0) > 0
+  )
+}
+
 function getDisplayContent(message: Message, versionContent: string): string {
   if (message.from !== MESSAGE_ROLES.ASSISTANT) {
     return versionContent
@@ -93,9 +101,11 @@ export function getMessageContentState(
   const baseState: MessageContentStateBase = {
     displayContent: getDisplayContent(message, versionContent),
     hasSources: sources.length > 0,
+    images: message.images ?? [],
     isAssistant,
     showLoader,
     showMessageContent,
+    showMessageImages: shouldShowMessageImages(message),
     sources,
   }
 

@@ -32,6 +32,8 @@ export interface Message {
   key: string
   from: MessageRole
   versions: MessageVersion[]
+  /** Image attachments (data URLs) sent alongside the message text. */
+  images?: string[]
   createdAt?: number
   startedAt?: number
   completedAt?: number

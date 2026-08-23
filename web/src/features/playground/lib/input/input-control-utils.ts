@@ -17,8 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { GroupOption, ModelOption } from '../../types'
+import { getAttachmentImageUrls } from './input-attachment-utils'
 
 type InputControlStateOptions = {
+  attachmentCount?: number
   disabled?: boolean
   groups: GroupOption[]
   hasStopHandler: boolean
@@ -36,20 +38,37 @@ type InputControlState = {
 
 type SubmittableInputMessage = {
   text?: string | null
+  files?: { mediaType?: string; url?: string }[]
 }
 
-export function getSubmittableInputText(
+export type SubmittableInput = {
+  images: string[]
+  text: string
+}
+
+/**
+ * An image-only message is submittable, so the text alone cannot gate sending.
+ */
+export function getSubmittableInput(
   message: SubmittableInputMessage,
   disabled?: boolean
-): string | null {
-  if (disabled || !message.text?.trim()) {
+): SubmittableInput | null {
+  if (disabled) {
     return null
   }
 
-  return message.text
+  const text = message.text ?? ''
+  const images = getAttachmentImageUrls(message.files)
+
+  if (!text.trim() && images.length === 0) {
+    return null
+  }
+
+  return { images, text }
 }
 
 export function getInputControlState({
+  attachmentCount = 0,
   disabled,
   groups,
   hasStopHandler,
@@ -59,9 +78,10 @@ export function getInputControlState({
   text,
 }: InputControlStateOptions): InputControlState {
   const hasModels = models.length > 0
+  const hasContent = text.trim().length > 0 || attachmentCount > 0
 
   return {
-    canSubmit: !disabled && hasModels && text.trim().length > 0,
+    canSubmit: !disabled && hasModels && hasContent,
     isSelectorDisabled: disabled || isModelLoading || groups.length === 0,
     shouldShowStop: Boolean(isGenerating && hasStopHandler),
   }

@@ -76,14 +76,21 @@ export function updateCurrentVersionContent(
  */
 export function createUserMessage(
   content: string,
-  createdAt: number = Date.now()
+  createdAt: number = Date.now(),
+  images: string[] = []
 ): Message {
-  return {
+  const message: Message = {
     key: nanoid(),
     from: MESSAGE_ROLES.USER,
     versions: [createMessageVersion(content)],
     createdAt,
   }
+
+  if (images.length > 0) {
+    message.images = images
+  }
+
+  return message
 }
 
 /**
@@ -156,7 +163,7 @@ export function formatMessageForAPI(message: Message): ChatCompletionMessage {
   const currentVersion = getCurrentVersion(message)
   return {
     role: message.from,
-    content: currentVersion.content,
+    content: buildMessageContent(currentVersion.content, message.images ?? []),
   }
 }
 

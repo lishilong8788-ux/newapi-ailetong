@@ -20,9 +20,15 @@ import { z } from 'zod'
 
 export const STORAGE_VERSION = 1
 export const MAX_STORED_MESSAGES = 100
-export const MAX_STORED_MESSAGES_BYTES = 1024 * 1024
+/** Raised from 1 MiB so image attachments do not evict the whole history. */
+export const MAX_STORED_MESSAGES_BYTES = 3 * 1024 * 1024
 export const MAX_LOADED_MESSAGES_CHARS = 120_000
 export const MAX_LOADED_MESSAGE_CHARS = 40_000
+/**
+ * Image data URLs are kept for the newest messages only; older attachments are
+ * dropped while their text is preserved.
+ */
+export const MAX_STORED_IMAGE_CHARS = 1_500_000
 
 export const playgroundConfigSchema = z.object({
   model: z.string().optional(),
@@ -75,6 +81,7 @@ const messageSchema = z.object({
   key: z.string(),
   from: messageRoleSchema,
   versions: z.array(messageVersionSchema).min(1),
+  images: z.array(z.string()).optional(),
   createdAt: z.number().optional(),
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),

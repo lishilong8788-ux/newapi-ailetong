@@ -50,6 +50,7 @@ import {
 import { getMessageContentStyles } from '../../lib/message/message-styles'
 import type { Message } from '../../types'
 import { MessageError } from './message-error'
+import { MessageImages } from './message-images'
 import { MessageMetadata } from './message-metadata'
 
 type PlaygroundMessageContentProps = {
@@ -74,9 +75,11 @@ export function PlaygroundMessageContent({
     displayContent,
     hasReasoning,
     hasSources,
+    images,
     reasoningContent,
     showLoader,
     showMessageContent,
+    showMessageImages,
     sources,
   } = getMessageContentState(message, versionContent)
   const isError = isErrorMessage(message)
@@ -134,9 +137,13 @@ export function PlaygroundMessageContent({
         </>
       )}
 
-      {!isError && showMessageContent && (
+      {!isError && showMessageImages && (
+        <MessageImages className='mb-2' images={images} />
+      )}
+
+      {!isError && (showMessageContent || showMessageImages) && (
         <>
-          {isSourceVisible ? (
+          {showMessageContent && isSourceVisible && (
             <CodeBlock
               code={versionContent}
               className='my-0 group-[.is-assistant]:w-full group-[.is-assistant]:max-w-[78ch]'
@@ -150,7 +157,9 @@ export function PlaygroundMessageContent({
             >
               <CodeBlockCopyButton />
             </CodeBlock>
-          ) : (
+          )}
+
+          {showMessageContent && !isSourceVisible && (
             <MessageContent
               variant='flat'
               className={cn(getMessageContentStyles())}

@@ -18,27 +18,36 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import {
   PromptInput,
   PromptInputFooter,
   PromptInputTextarea,
   type PromptInputMessage,
+  type PromptInputProps,
 } from '@/components/ai-elements/prompt-input'
 
-import { getSubmittableInputText } from '../../lib'
+import {
+  compressImageDataUrls,
+  getSubmittableInput,
+  INPUT_IMAGE_ACCEPT,
+  MAX_INPUT_IMAGE_BYTES,
+  MAX_INPUT_IMAGES,
+} from '../../lib'
 import type {
   ModelOption,
   GroupOption,
   ParameterEnabled,
   PlaygroundConfig,
 } from '../../types'
+import { PlaygroundInputAttachments } from './playground-input-attachments'
 import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
 
 interface PlaygroundInputProps {
   config: PlaygroundConfig
-  onSubmit: (text: string) => void
+  onSubmit: (text: string, images?: string[]) => void
   onStop?: () => void
   disabled?: boolean
   isGenerating?: boolean
@@ -84,21 +93,47 @@ export function PlaygroundInput({
   const { t } = useTranslation()
   const [text, setText] = useState('')
 
-  const handleSubmit = (message: PromptInputMessage) => {
-    const submittableText = getSubmittableInputText(message, disabled)
+  const handleSubmit = async (message: PromptInputMessage) => {
+    const submittable = getSubmittableInput(message, disabled)
 
-    if (!submittableText) return
-    onSubmit(submittableText)
+    if (!submittable) return
+    const images = await compressImageDataUrls(submittable.images)
+    onSubmit(submittable.text, images)
     setText('')
+  }
+
+  const handleAttachmentError: NonNullable<PromptInputProps['onError']> = (
+    error
+  ) => {
+    if (error.code === 'accept') {
+      toast.error(t('Only image attachments are supported'))
+      return
+    }
+
+    if (error.code === 'max_file_size') {
+      toast.error(t('Image is too large to attach'))
+      return
+    }
+
+    toast.error(
+      t('You can attach up to {{limit}} images', { limit: MAX_INPUT_IMAGES })
+    )
   }
 
   return (
     <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
       <PromptInput
+        accept={INPUT_IMAGE_ACCEPT}
         className='relative'
+        maxFiles={MAX_INPUT_IMAGES}
+        maxFileSize={MAX_INPUT_IMAGE_BYTES}
+        multiple
+        onError={handleAttachmentError}
         groupClassName='bg-background/95 dark:bg-background/80 border-border/70 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] ring-1 ring-foreground/5 rounded-xl overflow-hidden transition-all duration-200 focus-within:border-primary/45 focus-within:ring-primary/15 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)]'
         onSubmit={handleSubmit}
       >
+        <PlaygroundInputAttachments />
+
         <PromptInputTextarea
           autoComplete='off'
           autoCorrect='off'
