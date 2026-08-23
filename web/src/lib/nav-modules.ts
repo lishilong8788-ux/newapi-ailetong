@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getStatus } from '@/lib/api'
+import type { QueryClient } from '@tanstack/react-query'
+
+import { ensureStatus, readCachedStatus } from '@/lib/status-query'
 
 export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
 
@@ -142,26 +144,6 @@ export function parseHeaderNavModulesFromStatus(
   return parseHeaderNavModules(status?.HeaderNavModules)
 }
 
-function getCachedStatus(): Record<string, unknown> | null {
-  try {
-    if (typeof window === 'undefined') return null
-    const raw = window.localStorage.getItem('status')
-    return raw ? (JSON.parse(raw) as Record<string, unknown>) : null
-  } catch {
-    return null
-  }
-}
-
-function cacheStatus(status: Record<string, unknown> | null): void {
-  try {
-    if (typeof window !== 'undefined' && status) {
-      window.localStorage.setItem('status', JSON.stringify(status))
-    }
-  } catch {
-    /* empty */
-  }
-}
-
 export function getModuleAccessFromStatus(
   status: Record<string, unknown> | null,
   module: HeaderNavModule
@@ -170,16 +152,20 @@ export function getModuleAccessFromStatus(
 }
 
 export function getModuleAccess(module: HeaderNavModule): ModuleAccess {
-  return getModuleAccessFromStatus(getCachedStatus(), module)
+  return getModuleAccessFromStatus(readCachedStatus(), module)
 }
 
+/**
+ * Route-guard variant. Goes through the shared react-query cache so a warm
+ * status entry resolves synchronously and concurrent navigations (or preload
+ * hovers) share one request instead of each blocking on its own.
+ */
 export async function getFreshModuleAccess(
+  queryClient: QueryClient,
   module: HeaderNavModule
 ): Promise<ModuleAccess> {
   try {
-    const status = (await getStatus()) as Record<string, unknown> | null
-    cacheStatus(status)
-    return getModuleAccessFromStatus(status, module)
+    return getModuleAccessFromStatus(await ensureStatus(queryClient), module)
   } catch {
     return { enabled: false, requireAuth: true }
   }
@@ -189,7 +175,7 @@ export function isSidebarModuleEnabled(
   section: string,
   module: string
 ): boolean {
-  const status = getCachedStatus()
+  const status = readCachedStatus()
   if (!status) return true
 
   const raw = status.SidebarModulesAdmin
