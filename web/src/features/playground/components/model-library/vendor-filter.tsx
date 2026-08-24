@@ -44,22 +44,24 @@ export function VendorFilter({ options, value, onChange }: VendorFilterProps) {
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant='outline'
-          size='sm'
-          className={cn(
-            'h-8 shrink-0 gap-1.5 px-2.5 text-[13px] font-normal',
-            value !== FILTER_ALL &&
-              'border-primary/45 bg-accent text-accent-foreground font-medium'
-          )}
-        >
-          {value !== FILTER_ALL && selected?.icon
-            ? getLobeIcon(selected.icon, 14)
-            : null}
-          <span className='max-w-24 truncate'>{label}</span>
-          <ChevronDown className='size-3 opacity-50' />
-        </Button>
+      <PopoverTrigger
+        render={
+          <Button
+            variant='outline'
+            size='sm'
+            className={cn(
+              'h-8 shrink-0 gap-1.5 px-2.5 text-[13px] font-normal',
+              value !== FILTER_ALL &&
+                'border-primary/45 bg-accent text-accent-foreground font-medium'
+            )}
+          />
+        }
+      >
+        {value !== FILTER_ALL && selected?.icon
+          ? getLobeIcon(selected.icon, 14)
+          : null}
+        <span className='max-w-24 truncate'>{label}</span>
+        <ChevronDown className='size-3 opacity-50' />
       </PopoverTrigger>
 
       <PopoverContent align='start' className='w-56 p-1'>
