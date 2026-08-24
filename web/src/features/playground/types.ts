@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { PlaygroundModality } from './lib/capability'
+
 // Message types
 export type MessageRole = 'user' | 'assistant' | 'system'
 
@@ -143,6 +145,20 @@ export interface ParameterEnabled {
 export interface ModelOption {
   label: string
   value: string
+  /**
+   * Catalog metadata joined in from `/api/pricing`. All optional: the
+   * permission source (`/api/user/models`) is authoritative for which models
+   * exist, and a model with no catalog entry still has to render.
+   */
+  modality?: PlaygroundModality
+  description?: string
+  icon?: string
+  tags?: string[]
+  vendorId?: number
+  vendorName?: string
+  vendorIcon?: string
+  /** Endpoint types as reported by the backend, kept for debugging. */
+  endpointTypes?: string[]
 }
 
 export interface GroupOption {

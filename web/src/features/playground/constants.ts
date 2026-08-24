@@ -37,6 +37,8 @@ export const API_ENDPOINTS = {
   CHAT_COMPLETIONS: '/pg/chat/completions',
   USER_MODELS: '/api/user/models',
   USER_GROUPS: '/api/user/self/groups',
+  /** Catalog metadata (icon, description, vendor, endpoint types). */
+  PRICING: '/api/pricing',
 } as const
 
 // Default group — uses 'default' as the safe fallback; auto-group is

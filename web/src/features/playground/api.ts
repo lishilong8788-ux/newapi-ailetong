@@ -16,9 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { PricingModel, PricingVendor } from '@/features/pricing/types'
 import { api } from '@/lib/api'
 
 import { API_ENDPOINTS } from './constants'
+import { buildModelCatalog } from './lib/catalog/model-catalog'
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
@@ -41,22 +43,48 @@ export async function sendChatCompletion(
 }
 
 /**
- * Get user available models
+ * Get the models the user can call in a group, enriched with catalog metadata.
+ *
+ * Two requests, two roles: `/api/user/models` decides *which* models exist for
+ * this user, `/api/pricing` supplies icon/description/vendor/modality. A failing
+ * catalog request degrades to bare names instead of emptying the library.
  */
 export async function getUserModels(group: string): Promise<ModelOption[]> {
-  const res = await api.get(API_ENDPOINTS.USER_MODELS, {
-    params: { group },
-  })
-  const { data } = res
+  const [modelsRes, pricing] = await Promise.all([
+    api.get(API_ENDPOINTS.USER_MODELS, { params: { group } }),
+    getModelCatalogMetadata(),
+  ])
 
+  const { data } = modelsRes
   if (!data.success || !Array.isArray(data.data)) {
     return []
   }
 
-  return data.data.map((model: string) => ({
-    label: model,
-    value: model,
-  }))
+  return buildModelCatalog(
+    data.data as string[],
+    pricing.models,
+    pricing.vendors
+  )
+}
+
+/**
+ * Catalog metadata is decorative, so a failure here must not take the model
+ * library down with it.
+ */
+async function getModelCatalogMetadata(): Promise<{
+  models: PricingModel[]
+  vendors: PricingVendor[]
+}> {
+  try {
+    const res = await api.get(API_ENDPOINTS.PRICING)
+    const { data } = res
+    return {
+      models: Array.isArray(data?.data) ? data.data : [],
+      vendors: Array.isArray(data?.vendors) ? data.vendors : [],
+    }
+  } catch {
+    return { models: [], vendors: [] }
+  }
 }
 
 /**
