@@ -2985,6 +2985,8 @@
     "No model mappings configured. Click \"Add Mapping\" to get started.": "Не настроены сопоставления моделей. Нажмите \"Добавить сопоставление\", чтобы начать.",
     "No model price changes to save": "Нет изменений цен моделей для сохранения",
     "No models available": "Модели недоступны",
+    "Generating video. This takes a few minutes...": "Generating video. This takes a few minutes...",
+    "Generation progress": "Generation progress",
     "Open video": "Open video",
     "Still generating. Check the task log for the result.": "Still generating. Check the task log for the result.",
     "No models available in this category": "В этой категории нет моделей",

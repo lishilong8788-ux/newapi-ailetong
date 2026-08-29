@@ -154,8 +154,15 @@ export function useVideoHandler({
       toast.error(errorMessage)
       onMessageUpdate(
         (prev) =>
+          // The task markers are cleared as well as the status set: the loader is
+          // status-gated so a stale flag renders nothing, but it would otherwise
+          // be persisted and reloaded on a message that is finished.
           updateAssistantMessageWithError(
-            prev,
+            updateLastAssistantMessage(prev, (message) => ({
+              ...message,
+              isTaskPending: undefined,
+              taskProgress: undefined,
+            })),
             errorMessage,
             errorCode,
             t(ERROR_MESSAGES.API_REQUEST_ERROR)
@@ -211,6 +218,17 @@ export function useVideoHandler({
 
       try {
         setIsRequesting(true)
+        // Before the submit resolves, so the waiting state reads as "generating
+        // video" from the first frame rather than switching wording on the first
+        // poll.
+        onMessageUpdate(
+          (prev) =>
+            updateLastAssistantMessage(prev, (message) => ({
+              ...message,
+              isTaskPending: true,
+            })),
+          requestModelRef.current
+        )
 
         const submitted = await submitVideoTask(
           {
@@ -253,6 +271,7 @@ export function useVideoHandler({
             updateLastAssistantMessage(prev, (message) =>
               completeAssistantMessage({
                 ...message,
+                isTaskPending: undefined,
                 taskProgress: undefined,
                 videos: [settled.resultUrl as string],
               })
@@ -295,7 +314,11 @@ export function useVideoHandler({
     onMessageUpdate(
       (prev) =>
         updateLastAssistantMessage(prev, (message) =>
-          completeAssistantMessage({ ...message, taskProgress: undefined })
+          completeAssistantMessage({
+            ...message,
+            isTaskPending: undefined,
+            taskProgress: undefined,
+          })
         ),
       requestModelRef.current
     )

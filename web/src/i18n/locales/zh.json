@@ -2985,6 +2985,8 @@
     "No model mappings configured. Click \"Add Mapping\" to get started.": "未配置模型映射。点击“添加映射”即可开始使用。",
     "No model price changes to save": "没有模型价格变更需要保存",
     "No models available": "没有可用的模型",
+    "Generating video. This takes a few minutes...": "正在生成视频，需要几分钟…",
+    "Generation progress": "生成进度",
     "Open video": "打开视频",
     "Still generating. Check the task log for the result.": "仍在生成中，可到任务日志查看结果。",
     "No models available in this category": "该分类下没有可用模型",

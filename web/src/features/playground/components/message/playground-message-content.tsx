@@ -122,11 +122,41 @@ export function PlaygroundMessageContent({
       )}
 
       {showLoader && (
-        <div className='flex items-center gap-2 py-2'>
-          <Loader />
-          <Shimmer className='text-sm' duration={1}>
-            {t('Responding...')}
-          </Shimmer>
+        <div className='flex flex-col gap-2 py-2'>
+          <div className='flex items-center gap-2'>
+            <Loader />
+            <Shimmer className='text-sm' duration={1}>
+              {/* A video runs for minutes, so "Responding..." would read as a
+                  hang. Naming the wait is what makes it legible. */}
+              {message.isTaskPending
+                ? t('Generating video. This takes a few minutes...')
+                : t('Responding...')}
+            </Shimmer>
+          </div>
+
+          {/* Only when the platform actually reports progress: a bar stuck at 0
+              for two minutes is worse than no bar, since it looks broken rather
+              than merely slow. */}
+          {message.taskProgress !== undefined && (
+            <div className='flex items-center gap-2'>
+              <div
+                aria-label={t('Generation progress')}
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={message.taskProgress}
+                className='bg-muted h-1.5 w-full max-w-60 overflow-hidden rounded-full'
+                role='progressbar'
+              >
+                <div
+                  className='bg-primary h-full rounded-full transition-[width] duration-500'
+                  style={{ width: `${message.taskProgress}%` }}
+                />
+              </div>
+              <span className='text-muted-foreground text-[11px] tabular-nums'>
+                {message.taskProgress}%
+              </span>
+            </div>
+          )}
         </div>
       )}
 

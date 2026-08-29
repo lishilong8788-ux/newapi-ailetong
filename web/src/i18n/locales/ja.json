@@ -2985,6 +2985,8 @@
     "No model mappings configured. Click \"Add Mapping\" to get started.": "モデルマッピングは設定されていません。「マッピングを追加」をクリックして開始してください。",
     "No model price changes to save": "保存するモデル価格の変更はありません",
     "No models available": "利用可能なモデルがありません",
+    "Generating video. This takes a few minutes...": "Generating video. This takes a few minutes...",
+    "Generation progress": "Generation progress",
     "Open video": "Open video",
     "Still generating. Check the task log for the result.": "Still generating. Check the task log for the result.",
     "No models available in this category": "このカテゴリにはモデルがありません",

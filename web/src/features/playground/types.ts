@@ -59,6 +59,15 @@ export interface Message {
    */
   videos?: string[]
   /**
+   * Marks a message whose reply comes from an async task rather than a response.
+   *
+   * Set at submit time, before any progress is known, so the waiting state can
+   * say "generating video" from the first frame. Inferring it from `taskProgress`
+   * instead would spend the first poll interval showing the chat wording and then
+   * visibly change its mind.
+   */
+  isTaskPending?: boolean
+  /**
    * Task progress, 0-100, while an async generation is running.
    *
    * Only meaningful on a pending message, and cleared when it settles. Undefined
