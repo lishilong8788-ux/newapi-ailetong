@@ -36,6 +36,14 @@ var defaultVendorRules = map[string]string{
 	"kling":    "快手",
 	"jimeng":   "即梦",
 	"vidu":     "Vidu",
+	// Matching breaks on the first hit and map iteration order is random, so a
+	// model must never match two patterns. Verified against the 114 models an
+	// aggregator upstream advertises: each of these is hit by exactly one rule.
+	"qwq":      "阿里巴巴", // Qwen team's reasoning line; "qwen" does not match "QwQ"
+	"z-image":  "阿里巴巴", // Tongyi Lab's open-source image model
+	"wan2":     "阿里巴巴", // Wan image/video line
+	"seedance": "字节跳动",
+	"fun-asr":  "阿里巴巴",
 }
 
 // 供应商默认图标映射

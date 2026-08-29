@@ -22,6 +22,19 @@ type Pricing struct {
 	Tags                   string                  `json:"tags,omitempty"`
 	VendorID               int                     `json:"vendor_id,omitempty"`
 	QuotaType              int                     `json:"quota_type"`
+	// PriceUnset reports that no price or ratio was ever configured for this
+	// model, so `ModelRatio` below is a fallback constant rather than a real
+	// rate.
+	//
+	// `GetModelRatio` returns `(37.5, false, name)` for an unconfigured model —
+	// a plausible-looking number alongside the flag that says to ignore it. Any
+	// caller that reads only the ratio bills, or displays, 37.5. This field
+	// carries that flag to the client, which otherwise cannot tell a configured
+	// 37.5 from the sentinel and ends up showing "$75 / M tokens" for a model
+	// the relay will refuse outright.
+	//
+	// Omitted when false so priced models keep their existing payload.
+	PriceUnset             bool                    `json:"price_unset,omitempty"`
 	ModelRatio             float64                 `json:"model_ratio"`
 	ModelPrice             float64                 `json:"model_price"`
 	OwnerBy                string                  `json:"owner_by"`
@@ -378,10 +391,14 @@ func updatePricing() {
 			pricing.ModelPrice = modelPrice
 			pricing.QuotaType = 1
 		} else {
-			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
+			// Keep the second return value: it is the difference between a
+			// configured ratio and the 37.5 fallback, and discarding it is what
+			// makes an unpriced model advertise a price to the client.
+			modelRatio, ratioFound, _ := ratio_setting.GetModelRatio(model)
 			pricing.ModelRatio = modelRatio
 			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
 			pricing.QuotaType = 0
+			pricing.PriceUnset = !ratioFound
 		}
 		if cacheRatio, ok := ratio_setting.GetCacheRatio(model); ok {
 			pricing.CacheRatio = &cacheRatio
