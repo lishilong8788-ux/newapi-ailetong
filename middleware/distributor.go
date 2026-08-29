@@ -319,7 +319,12 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			modelRequest.Model = getTaskOriginModelName(c)
 		}
 		c.Set("relay_mode", relayMode)
-	} else if strings.Contains(c.Request.URL.Path, "/v1/video/generations") {
+	} else if strings.Contains(c.Request.URL.Path, "/v1/video/generations") ||
+		strings.Contains(c.Request.URL.Path, "/pg/video/generations") {
+		// `/pg` is the playground's own prefix and carries the same contract as
+		// `/v1` here: POST submits, GET fetches by task id. Without this branch a
+		// playground video request reaches RelayTask with RelayModeUnknown and is
+		// rejected as an invalid relay mode.
 		relayMode := relayconstant.RelayModeUnknown
 		if c.Request.Method == http.MethodPost {
 			req, err := getModelFromRequest(c)

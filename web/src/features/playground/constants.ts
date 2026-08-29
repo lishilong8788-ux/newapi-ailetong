@@ -36,6 +36,12 @@ export const MESSAGE_STATUS = {
 export const API_ENDPOINTS = {
   CHAT_COMPLETIONS: '/pg/chat/completions',
   IMAGE_GENERATIONS: '/pg/images/generations',
+  /**
+   * Video submits a task and returns an id; the result is polled from
+   * `${VIDEO_GENERATIONS}/${taskId}`. Unlike chat and image, the response to the
+   * POST is never the result.
+   */
+  VIDEO_GENERATIONS: '/pg/video/generations',
   USER_MODELS: '/api/user/models',
   USER_GROUPS: '/api/user/self/groups',
   /** Catalog metadata (icon, description, vendor, endpoint types). */

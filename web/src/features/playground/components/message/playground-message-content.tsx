@@ -51,6 +51,7 @@ import { getMessageContentStyles } from '../../lib/message/message-styles'
 import type { Message } from '../../types'
 import { MessageError } from './message-error'
 import { MessageImages } from './message-images'
+import { MessageVideos } from './message-videos'
 import { MessageMetadata } from './message-metadata'
 
 type PlaygroundMessageContentProps = {
@@ -146,6 +147,10 @@ export function PlaygroundMessageContent({
           the only difference is which side produced them. */}
       {!isError && message.results && message.results.length > 0 && (
         <MessageImages className='mb-2' images={message.results} />
+      )}
+
+      {!isError && message.videos && message.videos.length > 0 && (
+        <MessageVideos className='mb-2' videos={message.videos} />
       )}
 
       {!isError && (showMessageContent || showMessageImages) && (

@@ -51,6 +51,22 @@ export interface Message {
     durationMs?: number
   }
   /**
+   * Generated videos on an assistant message, as playable URLs.
+   *
+   * Separate from `results` rather than reusing it: a video needs a `<video>`
+   * element with controls, and an image grid layout applied to one would render a
+   * thumbnail nobody can play.
+   */
+  videos?: string[]
+  /**
+   * Task progress, 0-100, while an async generation is running.
+   *
+   * Only meaningful on a pending message, and cleared when it settles. Undefined
+   * means the platform reports no progress — distinct from 0, which would claim
+   * the work has not started.
+   */
+  taskProgress?: number
+  /**
    * Generated images on an assistant message, as displayable URLs.
    *
    * Distinct from `images`, which is what the *user* attached. The upstream may
@@ -107,6 +123,53 @@ export interface ImageGenerationResponse {
     b64_json?: string
     revised_prompt?: string
   }>
+}
+
+export interface VideoGenerationRequest {
+  model: string
+  group?: string
+  prompt: string
+  /** Seconds. Billed per second, so this drives the cost directly. */
+  duration?: number
+  size?: string
+}
+
+/**
+ * The submit response. Only an id — the video does not exist yet.
+ *
+ * Shape varies by upstream platform, so every field is optional and the caller
+ * takes the first id it recognises.
+ */
+export interface VideoSubmitResponse {
+  task_id?: string
+  id?: string
+  data?: { task_id?: string; id?: string }
+}
+
+/** Terminal states end polling; the rest mean "keep waiting". */
+export type VideoTaskStatus =
+  | 'NOT_START'
+  | 'SUBMITTED'
+  | 'QUEUED'
+  | 'IN_PROGRESS'
+  | 'SUCCESS'
+  | 'FAILURE'
+  | 'UNKNOWN'
+
+/**
+ * The poll response, normalised by the backend into `TaskDto` regardless of
+ * which platform served it (`relay/relay_task.go`, `TaskModel2Dto`).
+ */
+export interface VideoTaskResponse {
+  code?: string
+  data?: {
+    task_id?: string
+    status?: VideoTaskStatus
+    /** 0-100. Some platforms send a bare number, others a "50%" string. */
+    progress?: number | string
+    result_url?: string
+    fail_reason?: string
+  }
 }
 
 export interface ChatCompletionChunk {

@@ -70,6 +70,12 @@ func SetRelayRouter(router *gin.Engine) {
 		playgroundRouter.POST("/images/generations", func(c *gin.Context) {
 			controller.Playground(c, types.RelayFormatOpenAIImage)
 		})
+		// Video is a task submission, not a response: the POST returns a task id
+		// and the GET is polled until the task reaches a terminal state. Both
+		// paths are matched by name in middleware/distributor.go, which is what
+		// assigns the video relay mode.
+		playgroundRouter.POST("/video/generations", controller.PlaygroundTask)
+		playgroundRouter.GET("/video/generations/:task_id", controller.PlaygroundTaskFetch)
 	}
 	relayV1Router := router.Group("/v1")
 	relayV1Router.Use(middleware.RouteTag("relay"))

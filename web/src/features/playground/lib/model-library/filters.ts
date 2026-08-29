@@ -40,10 +40,10 @@ export const MODALITY_TABS: Array<{
   { value: FILTER_ALL, labelKey: 'All' },
   { value: 'chat', labelKey: 'Chat' },
   { value: 'image', labelKey: 'Image' },
-  // Video and audio are absent by construction, not by oversight: their models
-  // are filtered out of the catalog (no backend route — see `routed` in the
-  // capability registry), so both tabs would only ever show an empty list.
-  // Re-add alongside the route.
+  { value: 'video', labelKey: 'Video' },
+  // Audio is absent by construction, not by oversight: its models are filtered
+  // out of the catalog (`routed: false` in the capability registry), so the tab
+  // would only ever show an empty list. Re-add alongside the route.
 ]
 
 export const MODALITY_LABELS: Record<PlaygroundModality, string> = {

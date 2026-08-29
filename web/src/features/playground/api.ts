@@ -28,6 +28,9 @@ import type {
   ImageGenerationResponse,
   ModelOption,
   GroupOption,
+  VideoGenerationRequest,
+  VideoSubmitResponse,
+  VideoTaskResponse,
 } from './types'
 
 /**
@@ -56,6 +59,43 @@ export async function sendImageGeneration(
     signal,
     skipErrorHandler: true,
   } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * Submit a video generation task. Returns an id, not a video.
+ *
+ * The task runs on the backend and outlives this request, which is why nothing
+ * here waits: the caller polls `fetchVideoTask` until a terminal status.
+ */
+export async function submitVideoTask(
+  payload: VideoGenerationRequest,
+  signal?: AbortSignal
+): Promise<VideoSubmitResponse> {
+  const res = await api.post(API_ENDPOINTS.VIDEO_GENERATIONS, payload, {
+    signal,
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * Read one task's current state.
+ *
+ * Ownership is enforced server-side from the session user, so a task id from
+ * another account resolves to `task_not_exist` rather than someone else's video.
+ */
+export async function fetchVideoTask(
+  taskId: string,
+  signal?: AbortSignal
+): Promise<VideoTaskResponse> {
+  const res = await api.get(
+    `${API_ENDPOINTS.VIDEO_GENERATIONS}/${encodeURIComponent(taskId)}`,
+    {
+      signal,
+      skipErrorHandler: true,
+    } as Record<string, unknown>
+  )
   return res.data
 }
 

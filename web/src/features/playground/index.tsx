@@ -24,6 +24,7 @@ import { ModelLibrary } from './components/model-library/model-library'
 import {
   useChatHandler,
   useImageHandler,
+  useVideoHandler,
   usePlaygroundConversation,
   usePlaygroundOptions,
   usePlaygroundState,
@@ -58,6 +59,12 @@ export function Playground() {
     onMessageUpdate: updateMessages,
   })
 
+  const { sendVideo, stopVideo, isGeneratingVideo } = useVideoHandler({
+    config,
+    paramChipValues,
+    onMessageUpdate: updateMessages,
+  })
+
   /**
    * Resolved here rather than deeper down because this is the only layer holding
    * both the model list and the active config. Undefined while the list loads,
@@ -66,30 +73,37 @@ export function Playground() {
   const selectedModelOption = models.find(
     (option) => option.value === config.model
   )
-  const isImageModel = selectedModelOption?.modality === 'image'
+  const modality = selectedModelOption?.modality
+  const isImageModel = modality === 'image'
+  const isVideoModel = modality === 'video'
 
   /**
    * Which pipeline a submission takes, decided by the selected model's modality.
    *
    * The conversation hook appends the user/assistant message pair and then hands
-   * the transcript to whatever this returns, so the two pipelines share every
+   * the transcript to whatever this returns, so all three pipelines share every
    * message-shaping concern (edit, regenerate, delete) and differ only in the
-   * request. Image generation takes the prompt alone — there is no multi-turn
+   * request. Image and video take the prompt alone — there is no multi-turn
    * context to send.
    */
   const sendForModality = useCallback(
     (nextMessages: Message[]) => {
-      if (!isImageModel) {
+      if (!isImageModel && !isVideoModel) {
         sendChat(nextMessages)
         return
       }
 
       const prompt = getLastUserMessageText(nextMessages)
-      if (prompt) {
-        void sendImage(prompt)
+      if (!prompt) return
+
+      if (isVideoModel) {
+        void sendVideo(prompt)
+        return
       }
+
+      void sendImage(prompt)
     },
-    [isImageModel, sendChat, sendImage]
+    [isImageModel, isVideoModel, sendChat, sendImage, sendVideo]
   )
 
   const {
@@ -155,8 +169,18 @@ export function Playground() {
     updateConfig,
   })
 
-  /** Either pipeline occupies the composer, so the button state is their union. */
-  const isBusy = isGenerating || isGeneratingImage
+  /** Any pipeline occupies the composer, so the button state is their union. */
+  const isBusy = isGenerating || isGeneratingImage || isGeneratingVideo
+
+  /**
+   * Stopping means different things per pipeline, so it is dispatched rather than
+   * unioned: for video it only stops *watching* — the task runs on regardless.
+   */
+  const stopForModality = isVideoModel
+    ? stopVideo
+    : isImageModel
+      ? stopImage
+      : stopGeneration
 
   return (
     <div className='relative flex size-full min-h-0 overflow-hidden'>
@@ -208,7 +232,7 @@ export function Playground() {
             onGroupChange={handleGroupChange}
             onClearMessages={handleClearMessages}
             onModelChange={handleSelectModel}
-            onStop={isImageModel ? stopImage : stopGeneration}
+            onStop={stopForModality}
             onSubmit={handleSendMessage}
             hasMessages={messages.length > 0}
             selectedModel={selectedModelOption}

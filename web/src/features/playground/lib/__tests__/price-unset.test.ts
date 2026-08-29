@@ -80,13 +80,18 @@ describe('buildModelCatalog / unpriced models', () => {
 })
 
 describe('buildModelCatalog / unrouted modalities', () => {
-  it('drops video models, whose /pg route does not exist', () => {
+  // Video is routed but not open: `/pg/video/generations` submits through the
+  // task pipeline, so these models are listed and reachable. Whether a given
+  // channel can serve them is a separate question — an aggregator cannot, for
+  // want of a task adaptor — and that is what `available: false` still says.
+  it('keeps video models, which now have a /pg route', () => {
     const result = buildModelCatalog(
       ['clip'],
       [pricing('clip', { supported_endpoint_types: ['openai-video'] })]
     )
 
-    expect(result).toEqual([])
+    expect(result.map((model) => model.value)).toEqual(['clip'])
+    expect(result[0].modality).toBe('video')
   })
 
   it('drops audio models, tagged rather than typed by endpoint', () => {

@@ -188,11 +188,21 @@ const VIDEO_CAPABILITY: PlaygroundCapability = {
     },
   ],
   billing: { unit: 'second' },
+  /**
+   * Routed, but not open.
+   *
+   * `/pg/video/generations` now exists and submits through the task pipeline, so
+   * video models are listed and reachable rather than 404ing. What is not
+   * established is that any *channel* can serve them: `GetTaskAdaptor` has no
+   * case for the aggregator channel types (59/60), so on an aggregator every
+   * submission fails at `invalid api platform` before a request goes upstream.
+   *
+   * A direct channel (Ali, Kling, Vidu, Sora, Gemini, MiniMax…) does have an
+   * adaptor and should work. Flip `available` once one has been exercised from
+   * the browser — the same bar image had to clear.
+   */
   available: false,
-  // No `/pg/video/generations` route exists. The async task pipeline this
-  // modality needs (`router/video-router.go`) was never wired into the `/pg`
-  // group, so submitting here would 404.
-  routed: false,
+  routed: true,
 }
 
 const AUDIO_CAPABILITY: PlaygroundCapability = {
