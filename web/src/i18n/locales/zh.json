@@ -5428,8 +5428,6 @@
     "Portrait": "纵向",
     "Widescreen": "宽屏",
     "Vertical": "竖屏",
-    "Quality": "图片质量",
-    "Higher quality takes longer and costs more. Auto picks a tier from how complex the prompt is.": "质量越高，生成耗时与消耗越高。自动会按描述复杂度选择档位。",
     "High": "高",
     "Medium": "中",
     "Low": "低",

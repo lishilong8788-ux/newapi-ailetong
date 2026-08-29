@@ -107,19 +107,21 @@ const IMAGE_CAPABILITY: PlaygroundCapability = {
         { value: '9:16', label: '9:16', hint: 'Vertical' },
       ],
     },
-    {
-      id: 'quality',
-      icon: 'Sparkles',
-      label: 'Quality',
-      description:
-        'Higher quality takes longer and costs more. Auto picks a tier from how complex the prompt is.',
-      options: [
-        { value: 'auto', label: 'Auto' },
-        { value: 'high', label: 'High' },
-        { value: 'medium', label: 'Medium' },
-        { value: 'low', label: 'Low' },
-      ],
-    },
+    /*
+     * No quality chip, though the parameter is real for some models.
+     *
+     * `dall-e-3` takes `quality` and is priced by it — `ImageRequest`'s token
+     * count meta resolves a size/quality tier for `dall-e` names specifically.
+     * But the qwen-image line, which is what this deployment carries, accepts
+     * only model/prompt/n/size/image/watermark, so a quality chip in front of
+     * those models is a dial connected to nothing.
+     *
+     * A chip cannot currently say which models it applies to: `params` is flat
+     * per modality, so anything listed here is offered for every image model.
+     * Re-add quality with that gating and the request-body wiring together —
+     * offering it uniformly is wrong in one direction or the other whichever way
+     * the majority of models happens to fall.
+     */
   ],
   billing: { unit: 'call' },
   // Verified end to end from the browser on 2026-08-29: prompt in, image back,

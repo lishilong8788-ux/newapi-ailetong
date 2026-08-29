@@ -5428,8 +5428,6 @@
     "Portrait": "Portrait",
     "Widescreen": "Widescreen",
     "Vertical": "Vertical",
-    "Quality": "Quality",
-    "Higher quality takes longer and costs more. Auto picks a tier from how complex the prompt is.": "Higher quality takes longer and costs more. Auto picks a tier from how complex the prompt is.",
     "High": "High",
     "Medium": "Medium",
     "Low": "Low",

@@ -45,7 +45,6 @@
   "Prefers the channel with the highest success rate": "Prefers the channel with the highest success rate",
   "Routes each request by price, success rate, latency and live congestion, steering around busy upstreams. A single channel can also be pinned.": "Routes each request by price, success rate, latency and live congestion, steering around busy upstreams. A single channel can also be pinned.",
   "Adaptive lets the model frame the shot from your description. With a fixed ratio, some channels drift slightly at the higher resolution tiers.": "Adaptive lets the model frame the shot from your description. With a fixed ratio, some channels drift slightly at the higher resolution tiers.",
-  "Higher quality takes longer and costs more. Auto picks a tier from how complex the prompt is.": "Higher quality takes longer and costs more. Auto picks a tier from how complex the prompt is.",
   "Higher resolutions cost more and take longer to generate.": "Higher resolutions cost more and take longer to generate.",
   "Billed per second, so length drives the cost directly.": "Billed per second, so length drives the cost directly.",
   "Text to image": "Text to image",

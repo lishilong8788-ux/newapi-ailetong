@@ -46,6 +46,6 @@ describe('resolveImageSize', () => {
   })
 
   test('ignores chips belonging to other parameters', () => {
-    expect(resolveImageSize({ quality: 'high', n: '4' })).toBe('1024x1024')
+    expect(resolveImageSize({ count: '4' })).toBe('1024x1024')
   })
 })
