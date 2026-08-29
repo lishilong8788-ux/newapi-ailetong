@@ -16,6 +16,11 @@ const (
 	EndpointTypeImageGeneration       EndpointType = "image-generation"
 	EndpointTypeEmbeddings            EndpointType = "embeddings"
 	EndpointTypeOpenAIVideo           EndpointType = "openai-video"
+	// EndpointTypeAudioTranscription covers speech-to-text (/v1/audio/transcriptions).
+	// It is distinct from speech synthesis: an ASR model consumes audio and
+	// emits text, so a client that can only render a player has nothing to do
+	// with it.
+	EndpointTypeAudioTranscription EndpointType = "audio-transcription"
 )
 
 // Finish reasons shared by the OpenAI-compatible response formats.

@@ -4,6 +4,19 @@ import "github.com/QuantumNous/new-api/constant"
 
 // GetEndpointTypesByChannelType 获取渠道最优先端点类型（所有的渠道都支持 OpenAI 端点）
 func GetEndpointTypesByChannelType(channelType int, modelName string) []constant.EndpointType {
+	// Task-video and ASR models return early instead of falling through to the
+	// per-channel switch: for these the channel's endpoint set is not merely
+	// incomplete, it is wrong. An aggregator channel advertises the same chat
+	// endpoints for everything it carries, so a video or speech-to-text model
+	// would otherwise claim to answer /v1/chat/completions — a promise nothing
+	// in the relay chain keeps.
+	if IsTaskVideoModel(modelName) {
+		return []constant.EndpointType{constant.EndpointTypeOpenAIVideo}
+	}
+	if IsAudioTranscriptionModel(modelName) {
+		return []constant.EndpointType{constant.EndpointTypeAudioTranscription}
+	}
+
 	var endpointTypes []constant.EndpointType
 	switch channelType {
 	case constant.ChannelTypeJina:
