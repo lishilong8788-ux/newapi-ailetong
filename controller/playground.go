@@ -12,7 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Playground(c *gin.Context) {
+// Playground relays a playground request under a temporary in-memory token.
+//
+// `relayFormat` is what the route is for: `/pg/chat/completions` passes
+// `RelayFormatOpenAI`, `/pg/images/generations` passes
+// `RelayFormatOpenAIImage`. It cannot be inferred here — `GenRelayInfo` derives
+// the relay *mode* from the request path (`Path2RelayMode`, which special-cases
+// each `/pg` path) but the *format* selects the request DTO and adaptor entry
+// point, and those are not interchangeable between chat and images.
+func Playground(c *gin.Context, relayFormat types.RelayFormat) {
 	var newAPIError *types.NewAPIError
 
 	defer func() {
@@ -29,7 +37,7 @@ func Playground(c *gin.Context) {
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAI, nil, nil)
+	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, nil, nil)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 		return
@@ -52,5 +60,5 @@ func Playground(c *gin.Context) {
 	}
 	_ = middleware.SetupContextForToken(c, tempToken)
 
-	Relay(c, types.RelayFormatOpenAI)
+	Relay(c, relayFormat)
 }
