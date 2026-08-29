@@ -285,8 +285,30 @@ function normalizeStoredMessageForLoad(message: Message): Message {
   const hasContent = hasMessageContent(normalized)
   const hasReasoning = normalized.reasoning?.content.trim()
 
+  /**
+   * A pending message with nothing in it lost its request when the page went
+   * away, and no duration for it is knowable.
+   *
+   * It still has to come back *final*. Left pending it was a trap: the next
+   * `completeAssistantMessage` — from the stop button, or from a model switch
+   * back when that stopped generation — stamped it with `Date.now()`, and
+   * `completeAssistantTiming` measured from a `startedAt` belonging to the
+   * previous session. That is where "response time: 48554.10s" came from: a
+   * request that died in one minute, wearing the 13.5 hours until someone next
+   * clicked something.
+   *
+   * `durationMs` stays undefined rather than 0, because 0 claims an instant
+   * reply. `MessageMetadata` renders no duration at all for undefined, which is
+   * the honest answer.
+   */
   if (!hasContent && !hasReasoning) {
-    return normalized
+    return {
+      ...normalized,
+      status: MESSAGE_STATUS.COMPLETE,
+      isReasoningStreaming: false,
+      durationMs: undefined,
+      completedAt: undefined,
+    }
   }
 
   const completedAt =

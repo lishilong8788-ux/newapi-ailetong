@@ -149,10 +149,29 @@ export function finalizeMessage(
 }
 
 export function completeAssistantMessage(message: Message): Message {
-  return completeAssistantTiming({
+  const finalized = {
     ...finalizeMessage(message),
     status: MESSAGE_STATUS.COMPLETE,
-  })
+  }
+
+  /**
+   * A message that already settled keeps the duration it has, including none.
+   *
+   * `completeAssistantTiming` defaults `completedAt` to the current time, which
+   * is the completion time only for a reply arriving right now. Applied to a
+   * message that finished earlier — in a previous session, say — it measures the
+   * wall clock since and calls that a response time: a request that died in one
+   * second was reported as 48554.10s, the 13.5 hours until someone next clicked
+   * something.
+   *
+   * Checked against the incoming message, because `finalized` above has already
+   * been given a final status and can no longer answer the question.
+   */
+  if (isAssistantMessageFinal(message)) {
+    return finalized
+  }
+
+  return completeAssistantTiming(finalized)
 }
 
 export function isAssistantMessageFinal(message: Message): boolean {
