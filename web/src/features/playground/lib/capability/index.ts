@@ -17,6 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 export { deriveModality, isPlaygroundModel } from './derive'
+export {
+  getModelGuide,
+  refineGuide,
+  type ModelGuide,
+  type ModelGuideExample,
+} from './model-guide'
 export { CAPABILITY_REGISTRY, getCapability } from './registry'
 export type {
   BillingSpec,

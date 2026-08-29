@@ -20,7 +20,22 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../../../constants'
+// The composer now reaches the model library (via the narrow-screen drawer),
+// which renders vendor marks through `getLobeIcon` — that transitively loads
+// `@lobehub/fluent-emoji`'s directory-style ES import the loader cannot resolve.
+// Stubbed at the same boundary the pricing and model-library suites use.
+vi.mock('@/lib/lobe-icon', () => ({
+  getLobeIcon: () => null,
+}))
+
+// The footer quotes the selected model's rate, which reads the shared status
+// query for the top-up and exchange rates. Stubbed rather than wrapped in a
+// `QueryClientProvider`: this suite is about paste-to-attach, and a real query
+// client would make it wait on a fetch it does not care about.
+vi.mock('@/hooks/use-status', () => ({
+  useStatus: () => ({ status: { price: 1, usd_exchange_rate: 1 } }),
+}))
+
 import { PlaygroundInput } from '../playground-input'
 
 const models = [{ label: 'gpt-4o', value: 'gpt-4o' }]
@@ -29,17 +44,15 @@ const groups = [{ label: 'default', value: 'default', ratio: 1 }]
 function renderInput(onSubmit: (text: string, images?: string[]) => void) {
   return render(
     <PlaygroundInput
-      config={DEFAULT_CONFIG}
       groups={groups}
       groupValue='default'
       modelValue='gpt-4o'
       models={models}
-      onConfigChange={() => undefined}
       onGroupChange={() => undefined}
       onModelChange={() => undefined}
-      onParameterEnabledChange={() => undefined}
+      onParamChipChange={() => undefined}
       onSubmit={onSubmit}
-      parameterEnabled={DEFAULT_PARAMETER_ENABLED}
+      paramChipValues={{}}
     />
   )
 }

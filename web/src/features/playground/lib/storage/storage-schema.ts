@@ -22,6 +22,14 @@ export const STORAGE_VERSION = 1
 export const MAX_STORED_MESSAGES = 100
 /** Raised from 1 MiB so image attachments do not evict the whole history. */
 export const MAX_STORED_MESSAGES_BYTES = 3 * 1024 * 1024
+/**
+ * How many models keep a transcript. Beyond this the least recently used are
+ * dropped: the model list runs to several hundred entries and a browsing session
+ * can touch dozens, but nobody returns to the twentieth one back. The cap is on
+ * transcripts rather than bytes because `MAX_STORED_MESSAGES_BYTES` already
+ * bounds the payload — this bounds how thinly that budget gets divided.
+ */
+export const MAX_STORED_CONVERSATIONS = 12
 export const MAX_LOADED_MESSAGES_CHARS = 120_000
 export const MAX_LOADED_MESSAGE_CHARS = 40_000
 /**
@@ -30,25 +38,16 @@ export const MAX_LOADED_MESSAGE_CHARS = 40_000
  */
 export const MAX_STORED_IMAGE_CHARS = 1_500_000
 
+/**
+ * `.strip()` (the default) matters here: rows written before the sampling block
+ * was removed still carry `temperature`, `top_p`, `max_tokens` and `seed`, and
+ * parsing drops them instead of failing, so a returning user's stored model and
+ * group survive.
+ */
 export const playgroundConfigSchema = z.object({
   model: z.string().optional(),
   group: z.string().optional(),
-  temperature: z.number().optional(),
-  top_p: z.number().optional(),
-  max_tokens: z.number().optional(),
-  frequency_penalty: z.number().optional(),
-  presence_penalty: z.number().optional(),
-  seed: z.number().nullable().optional(),
   stream: z.boolean().optional(),
-})
-
-export const parameterEnabledSchema = z.object({
-  temperature: z.boolean().optional(),
-  top_p: z.boolean().optional(),
-  max_tokens: z.boolean().optional(),
-  frequency_penalty: z.boolean().optional(),
-  presence_penalty: z.boolean().optional(),
-  seed: z.boolean().optional(),
 })
 
 const messageRoleSchema = z.enum(['user', 'assistant', 'system'])
@@ -82,6 +81,7 @@ const messageSchema = z.object({
   from: messageRoleSchema,
   versions: z.array(messageVersionSchema).min(1),
   images: z.array(z.string()).optional(),
+  results: z.array(z.string()).optional(),
   createdAt: z.number().optional(),
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),
@@ -96,3 +96,15 @@ const messageSchema = z.object({
 })
 
 export const messagesSchema = z.array(messageSchema)
+
+/**
+ * Model id -> transcript. A record rather than an array keyed by a `model`
+ * field: lookup on model switch is the only read this shape ever serves.
+ */
+export const conversationsSchema = z.record(
+  z.string(),
+  z.object({
+    messages: messagesSchema,
+    updatedAt: z.number(),
+  })
+)

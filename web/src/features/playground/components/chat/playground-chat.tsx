@@ -36,6 +36,7 @@ import {
 } from '../../lib'
 import type {
   Message as MessageType,
+  ModelOption,
   PlaygroundMessageLayoutMode,
 } from '../../types'
 import { MessageActions } from '../message/message-actions'
@@ -60,6 +61,8 @@ interface PlaygroundChatProps {
   onCancelEdit?: (open: boolean) => void
   onSaveEditAndSubmit?: (newContent: string) => void
   messageLayoutMode?: PlaygroundMessageLayoutMode
+  /** Forwarded to the empty state, which renders this model's guide. */
+  selectedModel?: ModelOption
 }
 
 export function PlaygroundChat({
@@ -76,6 +79,7 @@ export function PlaygroundChat({
   onCancelEdit,
   onSaveEditAndSubmit,
   messageLayoutMode = 'alternating',
+  selectedModel,
 }: PlaygroundChatProps) {
   const { t } = useTranslation()
   const [editText, setEditText] = useState('')
@@ -112,7 +116,54 @@ export function PlaygroundChat({
     setOriginalText(content)
   }, [editingKey, messages])
 
-  let chatContent = visibleMessages.map((message, visibleMessageIndex) => {
+  const centeredContainerClass = 'mx-auto w-full max-w-4xl px-4 py-4'
+  /**
+   * The states that opt out of `Conversation` still have to survive a short
+   * viewport, so they keep their own scroll rather than inheriting the sticky
+   * container's. `hover-scrollbar` matches the model library and pricing
+   * sidebar; `ScrollArea` is reserved for dialogs in this repo.
+   */
+  const staticStateClass = `hover-scrollbar min-h-0 flex-1 overflow-y-auto ${centeredContainerClass}`
+
+  /**
+   * The empty and loading states deliberately skip `Conversation`.
+   *
+   * `Conversation` is `StickToBottom` with `resize='smooth'`, which watches its
+   * content with a `ResizeObserver` and runs a spring animation whenever the
+   * height changes. There is nothing to scroll in either state, and the guide
+   * panel remounts at a different height on every model switch — which put a
+   * scroll animation on a path that has no scrolling in it, and let those
+   * animations pile up when models were switched faster than each spring
+   * settled. Messages still get the sticky container below.
+   */
+  if (isLoadingMessages) {
+    return (
+      <div className={staticStateClass}>
+        <div className='text-muted-foreground flex min-h-[min(520px,calc(100svh-18rem))] items-center justify-center gap-2 text-sm'>
+          <Loader />
+          <span>{t('Loading conversation...')}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (visibleMessages.length === 0 && onSelectPrompt) {
+    return (
+      <div className={staticStateClass}>
+        {/* Keyed by model, not a constant: switching models should read as
+            arriving at a new surface, so the guide is remounted (replaying its
+            entrance) rather than diffed field by field into the previous
+            model's panel. */}
+        <PlaygroundEmptyState
+          key={`empty:${selectedModel?.value ?? 'none'}`}
+          model={selectedModel}
+          onSelectPrompt={onSelectPrompt}
+        />
+      </div>
+    )
+  }
+
+  const chatContent = visibleMessages.map((message, visibleMessageIndex) => {
     const messageIndex = visibleMessageOffset + visibleMessageIndex
     const { alwaysShowActions, content, isEditing } = getChatMessageRenderState(
       messages,
@@ -193,29 +244,11 @@ export function PlaygroundChat({
     )
   })
 
-  if (visibleMessages.length === 0 && onSelectPrompt) {
-    chatContent = [
-      <PlaygroundEmptyState key='empty' onSelectPrompt={onSelectPrompt} />,
-    ]
-  }
-
-  if (isLoadingMessages) {
-    chatContent = [
-      <div
-        className='text-muted-foreground flex min-h-[min(520px,calc(100svh-18rem))] items-center justify-center gap-2 text-sm'
-        key='loading'
-      >
-        <Loader />
-        <span>{t('Loading conversation...')}</span>
-      </div>,
-    ]
-  }
-
   return (
     <Conversation>
       {/* Remove outer padding; apply padding to inner centered container to align with input */}
       <ConversationContent className='p-0'>
-        <div className='mx-auto w-full max-w-4xl px-4 py-4'>{chatContent}</div>
+        <div className={centeredContainerClass}>{chatContent}</div>
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>

@@ -58,6 +58,26 @@ export function hasMessageContent(message: Message): boolean {
 }
 
 /**
+ * The newest user message's text, which is the prompt for a single-shot
+ * modality.
+ *
+ * Chat sends the whole transcript; image generation has no multi-turn context,
+ * so it needs just the latest instruction. Searching backwards rather than
+ * taking `at(-2)`: the assistant placeholder is appended after the user message,
+ * but a regenerate or delete can leave a different tail shape.
+ */
+export function getLastUserMessageText(messages: Message[]): string {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message.from === 'user') {
+      return getMessageContent(message).trim()
+    }
+  }
+
+  return ''
+}
+
+/**
  * Update current version content in message
  */
 export function updateCurrentVersionContent(

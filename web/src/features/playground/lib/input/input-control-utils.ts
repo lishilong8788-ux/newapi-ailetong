@@ -16,23 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { GroupOption, ModelOption } from '../../types'
+import type { ModelOption } from '../../types'
 import { getAttachmentImageUrls } from './input-attachment-utils'
 
 type InputControlStateOptions = {
   attachmentCount?: number
   disabled?: boolean
-  groups: GroupOption[]
   hasStopHandler: boolean
   isGenerating?: boolean
-  isModelLoading?: boolean
   models: ModelOption[]
   text: string
 }
 
 type InputControlState = {
   canSubmit: boolean
-  isSelectorDisabled: boolean
   shouldShowStop: boolean
 }
 
@@ -67,13 +64,17 @@ export function getSubmittableInput(
   return { images, text }
 }
 
+/**
+ * `isSelectorDisabled` used to live here for the composer's group selector. The
+ * group moved to the model library sidebar, where it derives its own disabled
+ * state from the list's loading flag, so both it and the `groups` input are
+ * gone rather than left as a field nobody reads.
+ */
 export function getInputControlState({
   attachmentCount = 0,
   disabled,
-  groups,
   hasStopHandler,
   isGenerating,
-  isModelLoading,
   models,
   text,
 }: InputControlStateOptions): InputControlState {
@@ -82,7 +83,6 @@ export function getInputControlState({
 
   return {
     canSubmit: !disabled && hasModels && hasContent,
-    isSelectorDisabled: disabled || isModelLoading || groups.length === 0,
     shouldShowStop: Boolean(isGenerating && hasStopHandler),
   }
 }

@@ -236,6 +236,39 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
+/* A slimmer sibling of hover-scrollbar for tight surfaces like popovers, where
+   the 8px track reads as heavy. Same hover-reveal behavior, 5px rail, fully
+   rounded thumb. */
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+
+  &:hover {
+    scrollbar-color: var(--border) transparent;
+  }
+
+  &::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+  }
+
+  &:hover::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--border) 60%, transparent);
+  }
+}
+
 @utility faded-bottom {
   @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,_transparent_10%,_var(--background)_70%)] md:after:block;
 }
@@ -460,6 +493,74 @@ For commercial licensing, please contact support@quantumnous.com
 
 @media (prefers-reduced-motion: reduce) {
   [data-stream-fade] {
+    animation: none;
+  }
+}
+
+/* Playground model guide: a one-shot entrance replayed whenever the selected
+ * model changes. The panel is keyed by model name, so switching remounts it and
+ * restarts this animation — the point is to make the main area read as a fresh
+ * surface for the new model rather than a diff of the previous one.
+ *
+ * The children are staggered rather than the block being moved as one piece.
+ * Animating the whole panel meant every element travelled the same distance at
+ * the same time, which reads as a slab sliding in; letting the mark land first
+ * and the supporting copy follow gives the switch a direction to read in. The
+ * offsets are small (8px) and the whole sequence finishes inside ~380ms, so it
+ * stays out of the way of someone clicking through models quickly. */
+@keyframes playground-guide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The mark is the hero of the layout, so it scales in instead of translating —
+ * it arrives in place rather than travelling to it. */
+@keyframes playground-guide-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.playground-guide-animate > * {
+  animation: playground-guide-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Delays are additive but overlapping: each child starts before the previous one
+ * settles, which is what separates a sequence from a queue. */
+.playground-guide-animate > *:nth-child(2) {
+  animation-delay: 45ms;
+}
+.playground-guide-animate > *:nth-child(3) {
+  animation-delay: 85ms;
+}
+.playground-guide-animate > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+/* Reached only when the "not open yet" notice is present and shifts everything
+ * down one slot; without it the examples row would fall back to no delay and
+ * arrive before the copy above it. */
+.playground-guide-animate > *:nth-child(5) {
+  animation-delay: 150ms;
+}
+
+.playground-guide-mark {
+  animation: playground-guide-mark-in 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playground-guide-animate > *,
+  .playground-guide-mark {
     animation: none;
   }
 }

@@ -35,18 +35,13 @@ import {
   MAX_INPUT_IMAGE_BYTES,
   MAX_INPUT_IMAGES,
 } from '../../lib'
-import type {
-  ModelOption,
-  GroupOption,
-  ParameterEnabled,
-  PlaygroundConfig,
-} from '../../types'
+import type { ParamChipValues } from '../../lib/parameters/param-chip-values'
+import type { ModelOption, GroupOption } from '../../types'
 import { PlaygroundInputAttachments } from './playground-input-attachments'
 import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
 
 interface PlaygroundInputProps {
-  config: PlaygroundConfig
   onSubmit: (text: string, images?: string[]) => void
   onStop?: () => void
   disabled?: boolean
@@ -59,20 +54,14 @@ interface PlaygroundInputProps {
   groupValue: string
   onGroupChange: (value: string) => void
   hasMessages?: boolean
-  onConfigChange: <K extends keyof PlaygroundConfig>(
-    key: K,
-    value: PlaygroundConfig[K]
-  ) => void
   onClearMessages?: () => void
-  onParameterEnabledChange: (
-    key: keyof ParameterEnabled,
-    value: boolean
-  ) => void
-  parameterEnabled: ParameterEnabled
+  /** Drives the parameter chip bar's modality; absent while models load. */
+  selectedModel?: ModelOption
+  paramChipValues: ParamChipValues
+  onParamChipChange: (id: string, value: string) => void
 }
 
 export function PlaygroundInput({
-  config,
   onSubmit,
   onStop,
   disabled,
@@ -85,10 +74,10 @@ export function PlaygroundInput({
   groupValue,
   onGroupChange,
   hasMessages = false,
-  onConfigChange,
   onClearMessages,
-  onParameterEnabledChange,
-  parameterEnabled,
+  selectedModel,
+  paramChipValues,
+  onParamChipChange,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
@@ -129,24 +118,55 @@ export function PlaygroundInput({
         maxFileSize={MAX_INPUT_IMAGE_BYTES}
         multiple
         onError={handleAttachmentError}
-        groupClassName='bg-background/95 dark:bg-background/80 border-border/70 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] ring-1 ring-foreground/5 rounded-xl overflow-hidden transition-all duration-200 focus-within:border-primary/45 focus-within:ring-primary/15 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)]'
+        /*
+         * One border, not two.
+         *
+         * This carried `border-border/70` and `ring-1 ring-foreground/5`
+         * together: two near-identical hairlines 1px apart, which in light mode
+         * resolved as a single smudged grey edge rather than as either a border
+         * or a ring. Same failure as the model description card — an edge the eye
+         * can detect but cannot focus. The border is now full strength and alone,
+         * and depth comes from the shadow, which is what a shadow is for.
+         *
+         * Focus is a real state change (primary border plus a soft primary halo)
+         * rather than a 15% shift on an already-invisible ring.
+         */
+        groupClassName='bg-background/95 dark:bg-background/80 border-border rounded-2xl overflow-hidden shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] transition-all duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)]'
         onSubmit={handleSubmit}
       >
         <PlaygroundInputAttachments />
 
+        {/* 64px, down from 96px, and `max-h-[40svh]` up from the primitive's
+            192px cap.
+
+            The old floor held open a three-line box in front of a two-word
+            placeholder, so the composer opened with a block of dead space in it
+            — the tallest thing on the page saying the least. `field-sizing-content`
+            (set by the primitive) already grows the box as you type, so the floor
+            only ever needs to fit the first line; the ceiling is what matters for
+            long prompts, and a viewport fraction scales better than a fixed 192px
+            on tall screens.
+
+            The placeholder names the paste/drag path. Attachments have always
+            worked that way — `prompt-input.tsx` handles both — but nothing said
+            so, so for most people the feature did not exist. Now the upload chip
+            below says it too, and this says it at the moment of typing. */}
         <PromptInputTextarea
           autoComplete='off'
           autoCorrect='off'
           autoCapitalize='off'
           spellCheck={false}
-          className='min-h-20 px-5 pt-4 pb-3 leading-7 md:min-h-24 md:text-base'
+          className='max-h-[40svh] min-h-16 px-5 pt-4 pb-3 leading-7 md:text-base'
           disabled={disabled}
           onChange={(event) => setText(event.target.value)}
-          placeholder={t('Ask anything')}
+          placeholder={t('Describe your task, or paste and drag in images')}
           value={text}
         />
 
-        <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 border-t px-3 py-2.5 backdrop-blur'>
+        {/* `bg-muted/50`, up from `/20`. Composited over the card the old tint
+            was a sub-1% lightness step — the footer was not a distinct band, it
+            just had a line above it. */}
+        <PromptInputFooter className='border-border/60 bg-muted/50 dark:bg-muted/20 border-t px-3 py-2.5 backdrop-blur'>
           <PlaygroundInputControls
             disabled={disabled}
             groups={groups}
@@ -159,15 +179,14 @@ export function PlaygroundInput({
             onModelChange={onModelChange}
             onStop={onStop}
             text={text}
+            selectedModel={selectedModel}
+            paramChipValues={paramChipValues}
+            onParamChipChange={onParamChipChange}
             tools={
               <PlaygroundInputTools
-                config={config}
                 disabled={disabled}
                 hasMessages={hasMessages}
-                onConfigChange={onConfigChange}
                 onClearMessages={onClearMessages}
-                onParameterEnabledChange={onParameterEnabledChange}
-                parameterEnabled={parameterEnabled}
               />
             }
           />

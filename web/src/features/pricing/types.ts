@@ -37,6 +37,13 @@ export type PricingModel = {
   vendor_icon?: string
   vendor_description?: string
   quota_type: number
+  /**
+   * No price or ratio was ever configured for this model, so `model_ratio` is a
+   * fallback constant (37.5) rather than a real rate — read it and you display
+   * "$75 / M tokens" for a model the relay refuses outright. Absent on priced
+   * models.
+   */
+  price_unset?: boolean
   model_ratio: number
   completion_ratio: number
   model_price?: number

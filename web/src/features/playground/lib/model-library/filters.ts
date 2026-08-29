@@ -26,23 +26,31 @@ export const FILTER_ALL = 'all' as const
 
 export type ModalityFilter = PlaygroundModality | typeof FILTER_ALL
 
-/** Tab order is deliberate: chat first because it carries most of the traffic. */
+/**
+ * Tab order is deliberate: chat first because it carries most of the traffic.
+ *
+ * Labels here and in `MODALITY_LABELS` are English source strings used as
+ * i18next keys, matching the project convention — this module is plain data, so
+ * the consuming component resolves them through `t()`.
+ */
 export const MODALITY_TABS: Array<{
   value: ModalityFilter
-  label: string
+  labelKey: string
 }> = [
-  { value: FILTER_ALL, label: '全部' },
-  { value: 'chat', label: '聊天' },
-  { value: 'image', label: '图片' },
-  { value: 'video', label: '视频' },
-  { value: 'audio', label: '音频' },
+  { value: FILTER_ALL, labelKey: 'All' },
+  { value: 'chat', labelKey: 'Chat' },
+  { value: 'image', labelKey: 'Image' },
+  // Video and audio are absent by construction, not by oversight: their models
+  // are filtered out of the catalog (no backend route — see `routed` in the
+  // capability registry), so both tabs would only ever show an empty list.
+  // Re-add alongside the route.
 ]
 
 export const MODALITY_LABELS: Record<PlaygroundModality, string> = {
-  chat: '对话',
-  image: '图片',
-  video: '视频',
-  audio: '语音',
+  chat: 'Chat',
+  image: 'Image',
+  video: 'Video',
+  audio: 'Speech',
 }
 
 /**
@@ -162,7 +170,10 @@ export function buildVendorOptions(
   }
 
   return [
-    { value: FILTER_ALL, label: '全部厂商', count: scoped.length },
+    // The sentinel's label is an English source string resolved through `t()` by
+    // the filter component; every other label is a vendor name from the backend
+    // and must render verbatim.
+    { value: FILTER_ALL, label: 'All vendors', count: scoped.length },
     ...[...byVendor.values()].sort((a, b) => b.count - a.count),
   ]
 }

@@ -27,7 +27,6 @@ import {
 const PNG_DATA_URL = 'data:image/png;base64,AAAA'
 
 const controlStateBase = {
-  groups: [{ label: 'default', value: 'default', ratio: 1 }],
   hasStopHandler: false,
   models: [{ label: 'gpt-4o', value: 'gpt-4o' }],
 }

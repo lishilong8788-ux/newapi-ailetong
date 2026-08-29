@@ -37,6 +37,14 @@ describe('deriveModality', () => {
     expect(isPlaygroundModel(['embeddings'])).toBe(false)
   })
 
+  it('excludes speech-to-text, which is not the audio modality here', () => {
+    // The audio capability is synthesis (text in, player out). An ASR model
+    // runs the other way and has no surface, so it must not be mistaken for
+    // an audio model — nor fall through to chat.
+    expect(deriveModality(['audio-transcription'])).toBeNull()
+    expect(isPlaygroundModel(['audio-transcription'])).toBe(false)
+  })
+
   it('falls back to chat when endpoint metadata is absent', () => {
     // Deployments predating endpoint metadata would otherwise show an empty
     // library, which is worse than assuming the common case.
@@ -63,11 +71,21 @@ describe('capability registry', () => {
     ])
   })
 
-  it('opens only chat, the one modality with a reachable relay route', () => {
+  it('opens the modalities verified from the browser, and no others', () => {
     expect(getCapability('chat').available).toBe(true)
-    expect(getCapability('image').available).toBe(false)
+    expect(getCapability('image').available).toBe(true)
     expect(getCapability('video').available).toBe(false)
     expect(getCapability('audio').available).toBe(false)
+  })
+
+  // `routed` is what the library filters on, so an unrouted modality can never be
+  // open — that would list a model whose submit path 404s.
+  it('never marks a modality available without a route to reach it', () => {
+    for (const [modality, capability] of Object.entries(CAPABILITY_REGISTRY)) {
+      if (capability.available) {
+        expect(capability.routed, modality).toBe(true)
+      }
+    }
   })
 
   it('routes chat at the endpoint the playground already ships', () => {
@@ -80,9 +98,14 @@ describe('capability registry', () => {
     expect(getCapability('video').async).toBe(true)
   })
 
-  it('gives every modality a channel chip, since routing is shared', () => {
+  // Guards the removal documented in `registry.ts`: the backend exposes no
+  // routing strategy, so a chip offering one would be a promise the product
+  // cannot keep. Re-add it only alongside the field that carries it.
+  it('offers no channel-routing chip, since the backend has no such dial', () => {
     for (const capability of Object.values(CAPABILITY_REGISTRY)) {
-      expect(capability.params.map((param) => param.id)).toContain('channel')
+      expect(capability.params.map((param) => param.id)).not.toContain(
+        'channel'
+      )
     }
   })
 

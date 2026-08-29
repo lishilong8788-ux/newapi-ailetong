@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { PricingModel, PricingVendor } from '@/features/pricing/types'
 
 import type { ModelOption } from '../../types'
-import { deriveModality } from '../capability'
+import { CAPABILITY_REGISTRY, deriveModality } from '../capability'
 
 /**
  * Joins the two sources the model library needs.
@@ -43,33 +43,64 @@ export function buildModelCatalog(
   )
   const vendorsById = new Map(vendors.map((vendor) => [vendor.id, vendor]))
 
-  return allowedModelNames.map((name) => {
+  return allowedModelNames.flatMap<ModelOption>((name) => {
     const entry = catalog.get(name)
-    if (!entry) return { label: name, value: name }
+    if (!entry) return [{ label: name, value: name }]
+
+    // Unpriced models are dropped from the playground entirely.
+    //
+    // The relay rejects them before any upstream call, so there is no state in
+    // which one is useful here. They were the bulk of a 640-model list — mostly
+    // Cloudflare and Yi entries nobody had priced — and every one of them was a
+    // trap: pick it, type a prompt, get an error. Badging them made the list
+    // longer, not clearer.
+    //
+    // This is deliberately narrow. Only a model that appeared in `/api/pricing`
+    // *and* carried no configured rate is hidden. A model absent from the
+    // catalog keeps its bare-name entry above, because a failed catalog request
+    // must not empty the library — see `getUserModels`.
+    //
+    // `/api/user/models` still lists them and the API still serves them under
+    // the same rules as before; this only decides what the picker offers.
+    if (entry.price_unset) return []
+
+    const modality =
+      deriveModality(entry.supported_endpoint_types, entry.tags) ?? undefined
+
+    // Models whose modality has no backend route are dropped for the same
+    // reason as unpriced ones: the submit path 404s, so listing them offers a
+    // choice that cannot be taken. Video and audio are in this state.
+    //
+    // `routed` is checked, not `available`: a modality that is routed but not yet
+    // verified from the browser stays listed and carries the "coming soon" badge,
+    // because the choice can be taken even if nobody has confirmed the result.
+    if (modality && !CAPABILITY_REGISTRY[modality].routed) return []
 
     const vendor =
       entry.vendor_id === undefined
         ? undefined
         : vendorsById.get(entry.vendor_id)
 
-    return {
-      label: name,
-      value: name,
-      modality:
-        deriveModality(entry.supported_endpoint_types, entry.tags) ?? undefined,
-      description: entry.description,
-      // Most models carry no icon of their own; the vendor mark is the next
-      // best thing and is what makes the list scannable. Falling straight
-      // through to a letter placeholder wastes real metadata.
-      icon: entry.icon || vendor?.icon || entry.vendor_icon,
-      tags: parseTags(entry.tags),
-      vendorId: entry.vendor_id,
-      // `/api/pricing` denormalises vendor fields onto each model, but the
-      // top-level `vendors` array is the canonical copy, so prefer it.
-      vendorName: vendor?.name ?? entry.vendor_name,
-      vendorIcon: vendor?.icon ?? entry.vendor_icon,
-      endpointTypes: entry.supported_endpoint_types,
-    }
+    return [
+      {
+        label: name,
+        value: name,
+        modality,
+        description: entry.description,
+        // Most models carry no icon of their own; the vendor mark is the next
+        // best thing and is what makes the list scannable. Falling straight
+        // through to a letter placeholder wastes real metadata.
+        icon: entry.icon || vendor?.icon || entry.vendor_icon,
+        tags: parseTags(entry.tags),
+        vendorId: entry.vendor_id,
+        // `/api/pricing` denormalises vendor fields onto each model, but the
+        // top-level `vendors` array is the canonical copy, so prefer it.
+        vendorName: vendor?.name ?? entry.vendor_name,
+        vendorIcon: vendor?.icon ?? entry.vendor_icon,
+        endpointTypes: entry.supported_endpoint_types,
+        pricing: entry,
+      },
+    ]
   })
 }
 

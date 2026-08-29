@@ -16,75 +16,50 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { GlobeIcon, PaperclipIcon, Trash2Icon } from 'lucide-react'
+import { Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import {
-  PromptInputButton,
-  PromptInputTools,
-} from '@/components/ai-elements/prompt-input'
+import { PromptInputButton } from '@/components/ai-elements/prompt-input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-import {
-  ATTACHMENT_ACTIONS,
-  getAttachmentActionNotice,
-  getSearchActionNotice,
-} from '../../lib'
-import type { ParameterEnabled, PlaygroundConfig } from '../../types'
-import { PlaygroundParameterPanel } from './playground-parameter-panel'
-
 type PlaygroundInputToolsProps = {
-  config: PlaygroundConfig
   disabled?: boolean
   hasMessages?: boolean
   onClearMessages?: () => void
-  onConfigChange: <K extends keyof PlaygroundConfig>(
-    key: K,
-    value: PlaygroundConfig[K]
-  ) => void
-  onParameterEnabledChange: (
-    key: keyof ParameterEnabled,
-    value: boolean
-  ) => void
-  parameterEnabled: ParameterEnabled
 }
 
+/**
+ * Composer actions that are not parameters.
+ *
+ * Only clearing the history lives here. An attachment menu and a web-search
+ * toggle used to sit alongside it, both of which only ever raised a "feature in
+ * development" toast — the menu was a dead end in front of a working path, and
+ * the real one is now the `UploadChip` in the left cluster. The
+ * sampling-parameter button was a second trigger for the panel the composer's
+ * `Advanced settings` chip already opens, and is gone for the same reason: one
+ * control, one place.
+ *
+ * This used to render at the head of the footer row — the leftmost control in
+ * the composer, which is the slot every other chat UI gives to adding an
+ * attachment. Putting the only destructive action there meant the reach for
+ * "attach a file" landed on "delete everything". It now sits in the right
+ * cluster, behind a divider, next to the other thing that acts on the
+ * conversation as a whole.
+ */
 export function PlaygroundInputTools({
-  config,
   disabled,
   hasMessages = false,
   onClearMessages,
-  onConfigChange,
-  onParameterEnabledChange,
-  parameterEnabled,
 }: PlaygroundInputToolsProps) {
   const { t } = useTranslation()
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
-
-  const handleFileAction = (action: string) => {
-    const notice = getAttachmentActionNotice(action)
-    toast.info(t(notice.title), {
-      description: notice.description,
-    })
-  }
-
-  const handleSearchAction = () => {
-    const notice = getSearchActionNotice()
-    toast.info(t(notice.title))
-  }
 
   const handleClearMessages = () => {
     onClearMessages?.()
@@ -94,93 +69,35 @@ export function PlaygroundInputTools({
 
   return (
     <>
-      <PromptInputTools className='bg-background/70 border-border/60 rounded-lg border p-1 shadow-xs'>
-        <Tooltip>
-          <DropdownMenu>
-            <TooltipTrigger
-              render={
-                <DropdownMenuTrigger
-                  render={
-                    <PromptInputButton
-                      aria-label={t('Attach')}
-                      className='text-muted-foreground hover:text-foreground hover:bg-muted/70 font-medium'
-                      disabled={disabled}
-                      variant='ghost'
-                    />
-                  }
-                >
-                  <PaperclipIcon size={16} />
-                </DropdownMenuTrigger>
-              }
-            />
-            <TooltipContent>
-              <p>{t('Attach')}</p>
-            </TooltipContent>
-            <DropdownMenuContent align='start'>
-              {ATTACHMENT_ACTIONS.map(({ action, icon: Icon, label }) => (
-                <DropdownMenuItem
-                  key={action}
-                  onClick={() => handleFileAction(action)}
-                >
-                  <Icon className='mr-2' size={16} />
-                  {t(label)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <PromptInputButton
-                aria-label={t('Search')}
-                className='text-muted-foreground hover:text-foreground hover:bg-muted/70 font-medium'
-                disabled={disabled}
-                onClick={handleSearchAction}
-                variant='ghost'
-              >
-                <GlobeIcon size={16} />
-              </PromptInputButton>
-            }
-          />
-          <TooltipContent>
-            <p>{t('Search')}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <PlaygroundParameterPanel
-          config={config}
-          disabled={disabled}
-          onConfigChange={onConfigChange}
-          onParameterEnabledChange={onParameterEnabledChange}
-          parameterEnabled={parameterEnabled}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PromptInputButton
+              aria-label={t('Clear chat history')}
+              // `size-8` against the send button's `size-9`: deliberately the
+              // smaller of the two, so the pair reads as one secondary and one
+              // primary rather than as two peers.
+              className='text-muted-foreground hover:text-destructive hover:bg-destructive/10 size-8 rounded-full'
+              disabled={disabled || !hasMessages || !onClearMessages}
+              onClick={() => setClearConfirmOpen(true)}
+              variant='ghost'
+            >
+              <Trash2Icon size={15} />
+            </PromptInputButton>
+          }
         />
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <PromptInputButton
-                aria-label={t('Clear chat history')}
-                className='text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-medium'
-                disabled={disabled || !hasMessages || !onClearMessages}
-                onClick={() => setClearConfirmOpen(true)}
-                variant='ghost'
-              >
-                <Trash2Icon size={16} />
-              </PromptInputButton>
-            }
-          />
-          <TooltipContent>
-            <p>{t('Clear chat history')}</p>
-          </TooltipContent>
-        </Tooltip>
-      </PromptInputTools>
+        <TooltipContent>
+          <p>{t('Clear chat history')}</p>
+        </TooltipContent>
+      </Tooltip>
 
       <ConfirmDialog
         destructive
+        // Scoped to the selected model since transcripts became per-model:
+        // the old copy said "all playground messages", which now overstates
+        // what the button does by every other model's history.
         desc={t(
-          'All playground messages saved in this browser will be removed. This cannot be undone.'
+          "This model's saved messages will be removed. Other models keep their own history. This cannot be undone."
         )}
         confirmText={t('Clear')}
         handleConfirm={handleClearMessages}

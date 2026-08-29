@@ -74,17 +74,38 @@ export function MessageError({
   }
 
   if (errorState.kind === 'model-price') {
-    const content =
-      errorState.content === FALLBACK_ERROR_CONTENT
-        ? t(FALLBACK_ERROR_CONTENT)
-        : errorState.content
-
+    /*
+     * The backend text is deliberately dropped here.
+     *
+     * `relay/helper/price.go` returns Chinese and English concatenated in one
+     * string, with different wording for admins, and the transport appends a
+     * request id. Printed under a title that already says "no price set", that
+     * came out as five lines saying one thing twice in two languages — the
+     * screenshot that prompted this read as a stack trace.
+     *
+     * Classification does not depend on that prose: `errorCode` is
+     * `MODEL_PRICE_ERROR_CODE`, checked in `getMessageErrorState`, so the
+     * condition is known exactly and the sentence can be written for the
+     * reader instead of forwarded. i18n then picks the user's language rather
+     * than showing both.
+     *
+     * No request id in this branch either. It identifies one request, and the
+     * cause is configuration — the id is only noise on the way to Settings.
+     */
     return (
       <Alert variant='default' className={className}>
         <AlertTriangle className='text-orange-500' />
-        <AlertTitle>{t('Model Price Not Configured')}</AlertTitle>
+        <AlertTitle>{t('This model has no price set')}</AlertTitle>
         <AlertDescription className='space-y-2'>
-          <p>{content}</p>
+          <p>
+            {errorState.showSettingsLink
+              ? t(
+                  'Requests are rejected until a price is configured for this model.'
+                )
+              : t(
+                  'It cannot be used until an administrator configures its price.'
+                )}
+          </p>
           {errorState.showSettingsLink && (
             <Button
               variant='outline'
@@ -95,6 +116,31 @@ export function MessageError({
               {t('Go to Settings')}
             </Button>
           )}
+          {actions}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  /*
+   * Mapped codes get a written title and sentence, with the relay's own text
+   * kept below in a muted line.
+   *
+   * The raw text is not dropped the way the price branch drops it: for a missing
+   * channel or a rejected key it names the model and carries the request id,
+   * which is what an administrator needs in order to find the request in the
+   * logs. It is demoted rather than deleted.
+   */
+  if (errorState.explanation) {
+    return (
+      <Alert variant='destructive' className={className}>
+        <AlertCircle />
+        <AlertTitle>{t(errorState.explanation.title)}</AlertTitle>
+        <AlertDescription className='space-y-2'>
+          <p>{t(errorState.explanation.body)}</p>
+          <p className='text-muted-foreground/80 text-[11px] leading-relaxed break-all'>
+            {errorState.content}
+          </p>
           {actions}
         </AlertDescription>
       </Alert>

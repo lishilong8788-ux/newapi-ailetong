@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { PricingModel, PricingVendor } from '@/features/pricing/types'
 
 import { buildModelCatalog } from '../../catalog/model-catalog'
+import { deriveModality } from '../derive'
 
 function pricingModel(overrides: Partial<PricingModel>): PricingModel {
   return {
@@ -145,8 +146,12 @@ describe('buildModelCatalog', () => {
     ]
     const result = buildModelCatalog(['img', 'tts'], models, [])
 
+    // Only the image model survives: the audio tag is still derived correctly —
+    // asserted directly against `deriveModality` below — but audio has no `/pg`
+    // route, so the catalog drops it. See the `routed` flag in the registry.
+    expect(result.map((model) => model.value)).toEqual(['img'])
     expect(result[0].modality).toBe('image')
-    expect(result[1].modality).toBe('audio')
+    expect(deriveModality(['openai'], 'audio')).toBe('audio')
   })
 
   it('leaves modality undefined for non-interactive models', () => {

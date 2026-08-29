@@ -141,6 +141,13 @@ export function PlaygroundMessageContent({
         <MessageImages className='mb-2' images={images} />
       )}
 
+      {/* Generated images, reusing the attachment grid rather than a second
+          component: both render "a row of images belonging to this message", and
+          the only difference is which side produced them. */}
+      {!isError && message.results && message.results.length > 0 && (
+        <MessageImages className='mb-2' images={message.results} />
+      )}
+
       {!isError && (showMessageContent || showMessageImages) && (
         <>
           {showMessageContent && isSourceVisible && (

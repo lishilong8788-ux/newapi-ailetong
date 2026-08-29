@@ -42,15 +42,24 @@ const VIDEO_ENDPOINTS = new Set(['openai-video'])
  * Endpoint types that are real relay targets but have no place in the
  * playground: there is nothing for a person to look at.
  */
-const NON_INTERACTIVE_ENDPOINTS = new Set(['embeddings', 'jina-rerank'])
+const NON_INTERACTIVE_ENDPOINTS = new Set([
+  'embeddings',
+  'jina-rerank',
+  // Speech-to-text. Listed here rather than under audio because the audio
+  // modality in this playground is synthesis (text in, player out); an ASR
+  // model is the opposite direction and has no surface here.
+  'audio-transcription',
+])
 
 /**
  * Tag that marks a speech model.
  *
- * The backend has no audio endpoint type — `/v1/audio/speech` relays through
- * `RelayFormatOpenAIAudio` without one — so audio is classified by tag until
- * (and unless) a real endpoint type is added. Tags are plain config, so this
- * costs no backend change.
+ * The backend has no endpoint type for speech *synthesis* — `/v1/audio/speech`
+ * relays through `RelayFormatOpenAIAudio` without one — so synthesis is
+ * classified by tag. Tags are plain config, so this costs no backend change.
+ *
+ * `audio-transcription` above is the other direction (ASR) and does have a
+ * type; the two are not interchangeable.
  */
 const AUDIO_TAG = 'audio'
 

@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { PricingModel } from '@/features/pricing/types'
+
 import type { PlaygroundModality } from './lib/capability'
 
 // Message types
@@ -48,6 +50,14 @@ export interface Message {
     completedAt?: number
     durationMs?: number
   }
+  /**
+   * Generated images on an assistant message, as displayable URLs.
+   *
+   * Distinct from `images`, which is what the *user* attached. The upstream may
+   * answer with either a hosted `url` or inline `b64_json`; both are normalised
+   * to something an `<img src>` accepts before landing here.
+   */
+  results?: string[]
   isReasoningStreaming?: boolean
   isReasoningComplete?: boolean
   isContentComplete?: boolean
@@ -74,12 +84,29 @@ export interface ChatCompletionRequest {
   group?: string
   messages: ChatCompletionMessage[]
   stream: boolean
-  temperature?: number
-  top_p?: number
-  max_tokens?: number
-  frequency_penalty?: number
-  presence_penalty?: number
-  seed?: number
+}
+
+/**
+ * Mirrors the subset of `relaykit/dto.ImageRequest` this surface sends. `n`,
+ * `size` and `quality` are omitted unless a chip sets them, so the upstream
+ * default applies — same reasoning as `PlaygroundConfig`.
+ */
+export interface ImageGenerationRequest {
+  model: string
+  group?: string
+  prompt: string
+  n?: number
+  size?: string
+  quality?: string
+}
+
+export interface ImageGenerationResponse {
+  created?: number
+  data?: Array<{
+    url?: string
+    b64_json?: string
+    revised_prompt?: string
+  }>
 }
 
 export interface ChatCompletionChunk {
@@ -119,27 +146,37 @@ export interface ChatCompletionResponse {
   }
 }
 
-// Configuration types
+/**
+ * What the composer sends, and nothing more.
+ *
+ * A sampling block (`temperature`, `top_p`, `max_tokens`, `seed`, each behind
+ * its own enable flag) used to live here behind an `Advanced settings` panel.
+ * All four defaulted to off, so the panel's normal state was "changes nothing",
+ * and this surface exists to check that a model answers at all — the upstream
+ * default is the right sampling for that. Sending no field is also the only
+ * safe default across hundreds of heterogeneous models: Claude 4+ rejects
+ * `temperature` and `top_p` together, and `max_tokens` ceilings differ per
+ * model. Per-modality controls that change *what* is produced (aspect ratio,
+ * duration, count) are a different thing and stay in the capability registry.
+ */
 export interface PlaygroundConfig {
   model: string
   group: string
-  temperature: number
-  top_p: number
-  max_tokens: number
-  frequency_penalty: number
-  presence_penalty: number
-  seed: number | null
   stream: boolean
 }
 
-export interface ParameterEnabled {
-  temperature: boolean
-  top_p: boolean
-  max_tokens: boolean
-  frequency_penalty: boolean
-  presence_penalty: boolean
-  seed: boolean
+/**
+ * One model's transcript. Keyed by model id in storage and in state, so
+ * switching models swaps the canvas instead of appending to whatever was
+ * already there — a reply from `gpt-4o` is not context for `claude-sonnet-4`.
+ */
+export interface PlaygroundConversation {
+  messages: Message[]
+  /** Last write, used to evict the least recently used transcripts. */
+  updatedAt: number
 }
+
+export type PlaygroundConversations = Record<string, PlaygroundConversation>
 
 // Model and group options
 export interface ModelOption {
@@ -159,6 +196,13 @@ export interface ModelOption {
   vendorIcon?: string
   /** Endpoint types as reported by the backend, kept for debugging. */
   endpointTypes?: string[]
+  /**
+   * The raw `/api/pricing` row, kept whole rather than copied field by field:
+   * quoting a price needs `quota_type`, `model_ratio`, `completion_ratio`,
+   * `model_price` and the per-type ratios together, and `formatPrice` already
+   * takes the entry as its first argument.
+   */
+  pricing?: PricingModel
 }
 
 export interface GroupOption {

@@ -125,7 +125,7 @@ describe('buildVendorOptions', () => {
 
     expect(options[0]).toEqual({
       value: FILTER_ALL,
-      label: '全部厂商',
+      label: 'All vendors',
       count: 4,
     })
     expect(options.slice(1).map((o) => [o.label, o.count])).toEqual([

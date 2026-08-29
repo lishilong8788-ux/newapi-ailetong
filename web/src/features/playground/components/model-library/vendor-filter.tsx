@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Layers } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -39,8 +40,17 @@ type VendorFilterProps = {
 }
 
 export function VendorFilter({ options, value, onChange }: VendorFilterProps) {
+  const { t } = useTranslation()
   const selected = options.find((option) => option.value === value)
-  const label = selected?.label ?? '全部厂商'
+
+  /**
+   * Only the "all vendors" sentinel carries a translatable label; every other
+   * option is a vendor name straight from the backend and has to render as-is.
+   */
+  const resolveLabel = (option: VendorFilterOption) =>
+    option.value === FILTER_ALL ? t(option.label) : option.label
+
+  const label = selected ? resolveLabel(selected) : t('All vendors')
 
   return (
     <Popover>
@@ -64,40 +74,52 @@ export function VendorFilter({ options, value, onChange }: VendorFilterProps) {
         <ChevronDown className='size-3 opacity-50' />
       </PopoverTrigger>
 
-      <PopoverContent align='start' className='w-56 p-1'>
-        <div className='hover-scrollbar max-h-72 overflow-y-auto'>
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type='button'
-              onClick={() => onChange(option.value)}
-              className={cn(
-                'hover:bg-accent/60 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
-                option.value === value &&
-                  'bg-accent text-accent-foreground font-medium'
-              )}
-            >
-              {option.value === FILTER_ALL ? (
-                <span className='size-3.5 shrink-0' />
-              ) : (
-                <span className='shrink-0'>{getLobeIcon(option.icon, 14)}</span>
-              )}
-              <span className='flex-1 truncate'>{option.label}</span>
-              <span
+      <PopoverContent align='start' className='w-72 p-2'>
+        <div className='thin-scrollbar max-h-[22rem] space-y-0.5 overflow-y-auto pr-0.5'>
+          {options.map((option) => {
+            const isSelected = option.value === value
+
+            return (
+              <button
+                key={option.value}
+                type='button'
+                onClick={() => onChange(option.value)}
                 className={cn(
-                  'shrink-0 rounded px-1 text-[11px]',
-                  option.value === value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-foreground/8 text-muted-foreground'
+                  'hover:bg-accent/60 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors',
+                  isSelected && 'bg-accent text-accent-foreground font-medium'
                 )}
               >
-                {option.count}
-              </span>
-              {option.value === value ? (
-                <Check className='size-3 shrink-0' />
-              ) : null}
-            </button>
-          ))}
+                {/* Fixed 20px icon slot on every row — vendor logo, or a Layers
+                    glyph for the "all" sentinel — so labels line up and the row
+                    height stays even whether or not a mark is present. */}
+                <span className='flex size-5 shrink-0 items-center justify-center'>
+                  {option.value === FILTER_ALL ? (
+                    <Layers className='text-muted-foreground/70 size-4' />
+                  ) : (
+                    getLobeIcon(option.icon, 18)
+                  )}
+                </span>
+                <span className='min-w-0 flex-1 truncate'>
+                  {resolveLabel(option)}
+                </span>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums',
+                    isSelected
+                      ? 'text-accent-foreground/80'
+                      : 'bg-foreground/8 text-muted-foreground'
+                  )}
+                >
+                  {option.count}
+                </span>
+                {/* Reserved check column, so selecting a row does not nudge the
+                    count badge sideways. */}
+                <span className='flex size-4 shrink-0 items-center justify-center'>
+                  {isSelected ? <Check className='size-3.5' /> : null}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </PopoverContent>
     </Popover>

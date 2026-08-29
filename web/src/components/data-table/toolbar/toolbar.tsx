@@ -59,6 +59,11 @@ export type DataTableToolbarProps<TData> = {
    */
   searchDebounceMs?: number
   /**
+   * Width/spacing override for the default search input. Use when the
+   * placeholder is longer than the stock `sm:w-[200px] lg:w-[240px]` can show.
+   */
+  searchClassName?: string
+  /**
    * Column id to filter on. When provided, the search input filters
    * a specific column. When omitted, the search input updates the
    * table's `globalFilter`.
@@ -250,7 +255,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
       onChange={handleSearchChange}
       onCompositionStart={handleSearchCompositionStart}
       onCompositionEnd={handleSearchCompositionEnd}
-      className='w-full sm:w-[200px] lg:w-[240px]'
+      className={cn('w-full sm:w-[200px] lg:w-[240px]', props.searchClassName)}
     />
   )
 

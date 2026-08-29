@@ -27,8 +27,16 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import type { ModelOption } from '../../types'
+import { ModelGuidePanel } from './model-guide-panel'
+
 type PlaygroundEmptyStateProps = {
   onSelectPrompt: (prompt: string) => void
+  /**
+   * The currently selected model. Absent while the model list is still loading,
+   * or when a deployment has no models the user can reach.
+   */
+  model?: ModelOption
 }
 
 const starterPrompts = [
@@ -40,9 +48,16 @@ const starterPrompts = [
 
 export function PlaygroundEmptyState({
   onSelectPrompt,
+  model,
 }: PlaygroundEmptyStateProps) {
   const { t } = useTranslation()
 
+  if (model) {
+    return <ModelGuidePanel model={model} />
+  }
+
+  // No model yet — still loading, or none available. The generic prompts are a
+  // working surface in that window, so they stay rather than leaving a blank.
   return (
     <div className='flex min-h-[min(520px,calc(100svh-18rem))] items-center justify-center px-1 py-8 md:py-12'>
       <div className='grid w-full max-w-2xl gap-5 text-center'>

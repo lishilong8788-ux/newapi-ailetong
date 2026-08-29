@@ -46,11 +46,18 @@ export type CanvasKind =
  */
 export type UploadSpec =
   | { kind: 'attachments'; max: number }
+  /** `label` is an i18next key. */
   | { kind: 'reference-slot'; label: string; max: number }
   | { kind: 'voice-picker' }
   | null
 
-/** A single option inside a parameter popover. */
+/**
+ * A single option inside a parameter popover.
+ *
+ * `label` and `hint` are English source strings used as i18next keys, per the
+ * project convention. The registry is plain data with no React context, so the
+ * rendering component is what resolves them through `t()`.
+ */
 export type ParamOption = {
   value: string
   label: string
@@ -61,6 +68,8 @@ export type ParamOption = {
 /**
  * One inline chip in the composer footer. The chip always renders the current
  * value so users never have to open a panel to see how they are configured.
+ *
+ * `label` and `description` are i18next keys — see `ParamOption`.
  */
 export type ParamChipSpec = {
   id: string
@@ -77,7 +86,7 @@ export type ParamChipSpec = {
 /** How usage is quoted to the user for this modality. */
 export type BillingSpec = {
   unit: 'token' | 'call' | 'second' | 'char'
-  /** Extra clarification, e.g. how characters are counted for CJK text. */
+  /** Extra clarification (i18next key), e.g. how CJK characters are counted. */
   note?: string
 }
 
@@ -93,7 +102,10 @@ export type PlaygroundCapability = {
   /** Relay path used to submit work. */
   endpoint: string
   upload: UploadSpec
-  /** Left-edge icon rail in the composer, e.g. text-to-image vs. inpainting. */
+  /**
+   * Left-edge icon rail in the composer, e.g. text-to-image vs. inpainting.
+   * `label` is an i18next key.
+   */
   submodes?: Array<{ id: string; icon: string; label: string }>
   /** Array order is render order. */
   params: ParamChipSpec[]
@@ -103,4 +115,17 @@ export type PlaygroundCapability = {
    * browser yet, so the UI can show the model but explain it is not open.
    */
   available: boolean
+  /**
+   * Whether `endpoint` is actually served by the backend.
+   *
+   * Distinct from `available`, and the two are not redundant: `routed: false`
+   * means the path 404s, so a model of this modality can never do anything and
+   * is filtered out of the library entirely. `available: false` with
+   * `routed: true` means the route exists but the client side is unverified —
+   * the model stays listed and carries the "coming soon" badge.
+   *
+   * Checked against `router/relay-router.go`, where the `/pg` group registers
+   * `chat/completions` and `images/generations` only.
+   */
+  routed: boolean
 }

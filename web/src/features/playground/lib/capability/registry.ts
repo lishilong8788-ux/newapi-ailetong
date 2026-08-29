@@ -22,56 +22,56 @@ import type {
   PlaygroundModality,
 } from './types'
 
-/**
- * Channel routing is modality-independent: every model is dispatched through
- * the same upstream pool, so this chip is shared verbatim.
+/*
+ * There is deliberately no channel-routing chip here.
+ *
+ * One used to sit at the head of every modality, offering "best overall / price
+ * first / speed first / success rate first". No such dial exists on the backend:
+ * `middleware.Distribute` either honours a channel id pinned on the token
+ * (`ContextKeyTokenSpecificChannelId`) or picks within the group by priority and
+ * weight, and the playground's temporary token pins nothing. There is no request
+ * field, header or setting that reorders channels by price, latency or success
+ * rate — so the chip was not unwired, it was unimplementable, and it promised
+ * routing control the product does not have. If such a strategy is ever added
+ * upstream, add the chip back together with the field that carries it.
  */
-const CHANNEL_CHIP: ParamChipSpec = {
-  id: 'channel',
-  icon: 'Route',
-  label: '渠道',
-  description:
-    '综合价格、成功率、速度与实时拥堵情况智能分流，自动避开拥堵渠道。也可指定单一渠道。',
-  options: [
-    { value: 'balanced', label: '综合最优', hint: '价格、速度与成功率均衡' },
-    { value: 'price', label: '价格优先', hint: '优先选择单价最低的可用渠道' },
-    { value: 'speed', label: '速度优先', hint: '优先选择平均耗时最短的渠道' },
-    { value: 'success', label: '成功率优先', hint: '优先选择成功率最高的渠道' },
-  ],
-}
 
 /** Shared by every generative modality that can produce a batch in one go. */
 const COUNT_CHIP: ParamChipSpec = {
   id: 'count',
   icon: 'Layers',
-  label: '生成数量',
-  description: '单次提交生成的结果数量，数量越多消耗越高。',
+  label: 'Count',
+  description:
+    'How many results one submission generates. More results cost more.',
   options: [
-    { value: '1', label: '1 张' },
-    { value: '2', label: '2 张' },
-    { value: '4', label: '4 张' },
+    { value: '1', label: '1 image' },
+    { value: '2', label: '2 images' },
+    { value: '4', label: '4 images' },
   ],
   customInput: true,
 }
 
+/*
+ * Chat has no chips.
+ *
+ * It carried one, `Advanced settings`, opening a panel of `temperature`,
+ * `top_p`, `max_tokens` and `seed` sliders. All four shipped disabled, and an
+ * absent field is the correct request for a gateway fronting hundreds of models
+ * — so the panel's default state was a control surface that changed nothing,
+ * and its non-default state mostly produced upstream rejections (Claude 4+
+ * refuses `temperature` and `top_p` together). The chips that remain on the
+ * other modalities change *what* gets produced, not how it is sampled.
+ */
 const CHAT_CAPABILITY: PlaygroundCapability = {
   modality: 'chat',
   canvas: 'conversation',
   async: false,
   endpoint: '/pg/chat/completions',
   upload: { kind: 'attachments', max: 10 },
-  params: [
-    CHANNEL_CHIP,
-    {
-      id: 'advanced',
-      icon: 'SlidersHorizontal',
-      label: '高级设置',
-      description:
-        '采样与长度相关参数。未启用的参数不会写入请求，由上游使用默认值。',
-    },
-  ],
+  params: [],
   billing: { unit: 'token' },
   available: true,
+  routed: true,
 }
 
 const IMAGE_CAPABILITY: PlaygroundCapability = {
@@ -81,48 +81,56 @@ const IMAGE_CAPABILITY: PlaygroundCapability = {
   endpoint: '/pg/images/generations',
   upload: {
     kind: 'reference-slot',
-    label: '上传参考图',
+    label: 'Upload reference image',
     max: 4,
   },
   submodes: [
-    { id: 'text-to-image', icon: 'Type', label: '文生图' },
-    { id: 'image-to-image', icon: 'Images', label: '图生图' },
-    { id: 'inpaint', icon: 'Brush', label: '局部编辑' },
-    { id: 'blend', icon: 'Combine', label: '多图融合' },
+    { id: 'text-to-image', icon: 'Type', label: 'Text to image' },
+    { id: 'image-to-image', icon: 'Images', label: 'Image to image' },
+    { id: 'inpaint', icon: 'Brush', label: 'Inpaint' },
+    { id: 'blend', icon: 'Combine', label: 'Blend' },
   ],
   params: [
-    CHANNEL_CHIP,
     COUNT_CHIP,
     {
       id: 'aspect_ratio',
       icon: 'RectangleHorizontal',
-      label: '图片比例',
+      label: 'Aspect ratio',
       description:
-        '自适应会由模型根据描述自行判断构图。选择固定比例时，部分渠道在高分辨率档位下比例可能存在偏差。',
+        'Adaptive lets the model frame the shot from your description. With a fixed ratio, some channels drift slightly at the higher resolution tiers.',
       options: [
-        { value: 'auto', label: '自适应' },
-        { value: '1:1', label: '1:1', hint: '方形' },
-        { value: '3:2', label: '3:2', hint: '横向' },
-        { value: '2:3', label: '2:3', hint: '纵向' },
-        { value: '16:9', label: '16:9', hint: '宽屏' },
-        { value: '9:16', label: '9:16', hint: '竖屏' },
+        { value: 'auto', label: 'Adaptive' },
+        { value: '1:1', label: '1:1', hint: 'Square' },
+        { value: '3:2', label: '3:2', hint: 'Landscape' },
+        { value: '2:3', label: '2:3', hint: 'Portrait' },
+        { value: '16:9', label: '16:9', hint: 'Widescreen' },
+        { value: '9:16', label: '9:16', hint: 'Vertical' },
       ],
     },
     {
       id: 'quality',
       icon: 'Sparkles',
-      label: '图片质量',
-      description: '质量越高，生成耗时与消耗越高。自动会按描述复杂度选择档位。',
+      label: 'Quality',
+      description:
+        'Higher quality takes longer and costs more. Auto picks a tier from how complex the prompt is.',
       options: [
-        { value: 'auto', label: '自动' },
-        { value: 'high', label: '高' },
-        { value: 'medium', label: '中' },
-        { value: 'low', label: '低' },
+        { value: 'auto', label: 'Auto' },
+        { value: 'high', label: 'High' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'low', label: 'Low' },
       ],
     },
   ],
   billing: { unit: 'call' },
-  available: false,
+  // Verified end to end from the browser on 2026-08-29: prompt in, image back,
+  // against `qwen-image-2.0` on the aggregator channel.
+  //
+  // Getting there needed `size` on the request body (`resolveImageSize`), not a
+  // flag change. Channels that bill per resolution tier reject a request that
+  // omits it, and nothing local surfaces that first — these models are priced per
+  // call, so no local code path reads `size` at all.
+  available: true,
+  routed: true,
 }
 
 /**
@@ -139,27 +147,26 @@ const VIDEO_CAPABILITY: PlaygroundCapability = {
   endpoint: '/pg/video/generations',
   upload: {
     kind: 'reference-slot',
-    label: '上传首帧图',
+    label: 'Upload first frame',
     max: 1,
   },
   params: [
-    CHANNEL_CHIP,
     COUNT_CHIP,
     {
       id: 'aspect_ratio',
       icon: 'RectangleHorizontal',
-      label: '宽高比',
+      label: 'Aspect ratio',
       options: [
-        { value: '16:9', label: '16:9', hint: '横屏' },
-        { value: '9:16', label: '9:16', hint: '竖屏' },
-        { value: '1:1', label: '1:1', hint: '方形' },
+        { value: '16:9', label: '16:9', hint: 'Landscape' },
+        { value: '9:16', label: '9:16', hint: 'Vertical' },
+        { value: '1:1', label: '1:1', hint: 'Square' },
       ],
     },
     {
       id: 'resolution',
       icon: 'Monitor',
-      label: '画质',
-      description: '分辨率越高消耗越高，生成时间也更长。',
+      label: 'Resolution',
+      description: 'Higher resolutions cost more and take longer to generate.',
       options: [
         { value: '720p', label: '720P' },
         { value: '480p', label: '480P' },
@@ -168,18 +175,22 @@ const VIDEO_CAPABILITY: PlaygroundCapability = {
     {
       id: 'duration',
       icon: 'Clock',
-      label: '时长',
-      description: '按秒计费，时长直接决定消耗。',
+      label: 'Length',
+      description: 'Billed per second, so length drives the cost directly.',
       options: [
-        { value: '3', label: '3 秒' },
-        { value: '6', label: '6 秒' },
-        { value: '10', label: '10 秒' },
+        { value: '3', label: '3 seconds' },
+        { value: '6', label: '6 seconds' },
+        { value: '10', label: '10 seconds' },
       ],
       customInput: true,
     },
   ],
   billing: { unit: 'second' },
   available: false,
+  // No `/pg/video/generations` route exists. The async task pipeline this
+  // modality needs (`router/video-router.go`) was never wired into the `/pg`
+  // group, so submitting here would 404.
+  routed: false,
 }
 
 const AUDIO_CAPABILITY: PlaygroundCapability = {
@@ -189,11 +200,10 @@ const AUDIO_CAPABILITY: PlaygroundCapability = {
   endpoint: '/pg/audio/speech',
   upload: { kind: 'voice-picker' },
   params: [
-    CHANNEL_CHIP,
     {
       id: 'speed',
       icon: 'Gauge',
-      label: '语速',
+      label: 'Speaking rate',
       options: [
         { value: '0.75', label: '0.75x' },
         { value: '1', label: '1.0x' },
@@ -205,20 +215,24 @@ const AUDIO_CAPABILITY: PlaygroundCapability = {
     {
       id: 'emotion',
       icon: 'Smile',
-      label: '情绪',
+      label: 'Emotion',
       options: [
-        { value: 'auto', label: '自动' },
-        { value: 'neutral', label: '中性' },
-        { value: 'happy', label: '愉快' },
-        { value: 'sad', label: '低沉' },
+        { value: 'auto', label: 'Auto' },
+        { value: 'neutral', label: 'Neutral' },
+        { value: 'happy', label: 'Cheerful' },
+        { value: 'sad', label: 'Somber' },
       ],
     },
   ],
   billing: {
     unit: 'char',
-    note: '按字符计费，1 个汉字约等于 2 字符',
+    note: 'Billed per character; one CJK character counts as roughly two',
   },
   available: false,
+  // No `/pg/audio/speech` route. `/v1/audio/speech` exists
+  // (`router/relay-router.go:141`) but is token-authenticated and outside the
+  // playground group, so the browser cannot reach it as the playground does.
+  routed: false,
 }
 
 /**

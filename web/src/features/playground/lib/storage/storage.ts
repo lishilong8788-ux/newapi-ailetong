@@ -17,7 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { MESSAGE_STATUS, STORAGE_KEYS } from '../../constants'
-import type { PlaygroundConfig, ParameterEnabled, Message } from '../../types'
+import type {
+  PlaygroundConfig,
+  PlaygroundConversations,
+  Message,
+} from '../../types'
 import {
   finalizeMessage,
   isAssistantMessagePending,
@@ -28,12 +32,13 @@ import { hasMessageContent } from '../message/message-utils'
 import {
   MAX_LOADED_MESSAGE_CHARS,
   MAX_LOADED_MESSAGES_CHARS,
+  MAX_STORED_CONVERSATIONS,
   MAX_STORED_IMAGE_CHARS,
   MAX_STORED_MESSAGES,
   MAX_STORED_MESSAGES_BYTES,
   STORAGE_VERSION,
+  conversationsSchema,
   messagesSchema,
-  parameterEnabledSchema,
   playgroundConfigSchema,
 } from './storage-schema'
 
@@ -54,12 +59,12 @@ function readStoredValue(key: string): unknown | null {
   return JSON.parse(saved) as unknown
 }
 
-function readStoredMessagesValue(): unknown | null {
-  const saved = localStorage.getItem(STORAGE_KEYS.MESSAGES)
+function readBudgetedStoredValue(key: string): unknown | null {
+  const saved = localStorage.getItem(key)
   if (!saved) return null
 
   if (saved.length > MAX_STORED_MESSAGES_BYTES) {
-    localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    localStorage.removeItem(key)
     return null
   }
 
@@ -353,95 +358,168 @@ export function saveConfig(config: Partial<PlaygroundConfig>): void {
 }
 
 /**
- * Load parameter enabled state from localStorage
+ * Normalize one stored transcript the way a single flat history used to be:
+ * repair interrupted streams, drop over-long content, cap the message count.
  */
-export function loadParameterEnabled(): Partial<ParameterEnabled> {
-  try {
-    const saved = readStoredValue(STORAGE_KEYS.PARAMETER_ENABLED)
-    if (!saved) return {}
-
-    return parameterEnabledSchema.parse(unwrapStoredValue(saved))
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('Failed to load parameter enabled:', error)
-  }
-  return {}
+function normalizeLoadedMessages(messages: Message[]): Message[] {
+  const normalized = messages.map(normalizeStoredMessageForLoad)
+  return sanitizeMessagesOnLoad(
+    trimMessagesByContentSize(trimMessages(normalized))
+  )
 }
 
 /**
- * Save parameter enabled state to localStorage
+ * Read the pre-per-model `playground_messages` array, if it is still there.
+ *
+ * The old key held one history with no record of which model produced it, so the
+ * caller files it under whichever model is active — the same model the user was
+ * last talking to, since config and history were saved side by side. The key is
+ * removed either way: a second read would re-import an already-migrated
+ * transcript over a newer one.
  */
-export function saveParameterEnabled(
-  parameterEnabled: Partial<ParameterEnabled>
-): void {
+function takeLegacyMessages(): Message[] | null {
   try {
-    const parsed = parameterEnabledSchema.parse(parameterEnabled)
-    writeStoredValue(STORAGE_KEYS.PARAMETER_ENABLED, parsed)
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('Failed to save parameter enabled:', error)
-  }
-}
-
-/**
- * Load messages from localStorage
- */
-export function loadMessages(): Message[] | null {
-  try {
-    const saved = readStoredMessagesValue()
+    const saved = readBudgetedStoredValue(STORAGE_KEYS.LEGACY_MESSAGES)
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_MESSAGES)
     if (!saved) return null
 
     const parsed = messagesSchema.parse(unwrapStoredValue(saved)) as Message[]
-    const normalized = parsed.map(normalizeStoredMessageForLoad)
-    const normalizedChanged = normalized.some(
-      (message, index) => message !== parsed[index]
-    )
-    const trimmed = trimMessages(normalized)
-    const sizeTrimmed = trimMessagesByContentSize(trimmed)
-    const sanitized = sanitizeMessagesOnLoad(sizeTrimmed)
+    const normalized = normalizeLoadedMessages(parsed)
 
-    if (
-      normalizedChanged ||
-      trimmed !== normalized ||
-      sizeTrimmed !== trimmed ||
-      sanitized !== sizeTrimmed
-    ) {
-      saveMessages(sanitized)
-    }
-
-    return sanitized
+    return normalized.length > 0 ? normalized : null
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('Failed to load messages:', error)
+    console.error('Failed to migrate legacy messages:', error)
   }
   return null
 }
 
 /**
- * Save messages to localStorage
+ * Load every model's transcript, migrating the legacy single history into
+ * `activeModel` on first run.
  */
-export function saveMessages(messages: Message[]): void {
-  const trimmed = trimMessageImagesByBudget(trimMessages(messages))
+export function loadConversations(
+  activeModel: string
+): PlaygroundConversations {
+  let conversations: PlaygroundConversations = {}
 
   try {
-    const parsed = messagesSchema.parse(trimmed) as Message[]
-    writeStoredValue(STORAGE_KEYS.MESSAGES, parsed)
+    const saved = readBudgetedStoredValue(STORAGE_KEYS.CONVERSATIONS)
+    if (saved) {
+      const parsed = conversationsSchema.parse(
+        unwrapStoredValue(saved)
+      ) as PlaygroundConversations
+
+      for (const [model, conversation] of Object.entries(parsed)) {
+        const messages = normalizeLoadedMessages(conversation.messages)
+        if (messages.length === 0) continue
+
+        conversations[model] = { messages, updatedAt: conversation.updatedAt }
+      }
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to load conversations:', error)
+    conversations = {}
+  }
+
+  const legacyMessages = takeLegacyMessages()
+  if (legacyMessages && activeModel && !conversations[activeModel]) {
+    conversations[activeModel] = {
+      messages: legacyMessages,
+      updatedAt: Date.now(),
+    }
+  }
+
+  return conversations
+}
+
+/**
+ * Drop empty transcripts, keep the newest `MAX_STORED_CONVERSATIONS`, and trim
+ * each survivor's messages and attachments.
+ */
+function prepareConversationsForSave(
+  conversations: PlaygroundConversations
+): PlaygroundConversations {
+  const ordered = Object.entries(conversations)
+    .filter(([, conversation]) => conversation.messages.length > 0)
+    .sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_STORED_CONVERSATIONS)
+
+  const prepared: PlaygroundConversations = {}
+  for (const [model, conversation] of ordered) {
+    prepared[model] = {
+      messages: trimMessageImagesByBudget(trimMessages(conversation.messages)),
+      updatedAt: conversation.updatedAt,
+    }
+  }
+
+  return prepared
+}
+
+/**
+ * Persist every model's transcript under one key.
+ *
+ * Three attempts, each cheaper than the last, because attachments make the
+ * payload unpredictable and a quota rejection must not cost the whole history:
+ * as written, then with attachments stripped from all but the newest transcript,
+ * then with the newest transcript alone. The active conversation is the one the
+ * user is looking at, so it is the last thing given up.
+ */
+export function saveConversations(
+  conversations: PlaygroundConversations
+): void {
+  const prepared = prepareConversationsForSave(conversations)
+
+  try {
+    writeStoredValue(
+      STORAGE_KEYS.CONVERSATIONS,
+      conversationsSchema.parse(prepared)
+    )
     return
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('Failed to save messages:', error)
+    console.error('Failed to save conversations:', error)
   }
 
-  // The write most likely blew the storage quota. Retry without attachments so
-  // the conversation text still survives a reload.
+  const entries = Object.entries(prepared).sort(
+    ([, a], [, b]) => b.updatedAt - a.updatedAt
+  )
+  if (entries.length === 0) return
+
+  const [newestModel, newest] = entries[0]
+  const withoutOlderImages: PlaygroundConversations = { [newestModel]: newest }
+  for (const [model, conversation] of entries.slice(1)) {
+    withoutOlderImages[model] = {
+      messages: stripMessageImages(conversation.messages),
+      updatedAt: conversation.updatedAt,
+    }
+  }
+
   try {
-    const parsed = messagesSchema.parse(
-      stripMessageImages(trimmed)
-    ) as Message[]
-    writeStoredValue(STORAGE_KEYS.MESSAGES, parsed)
+    writeStoredValue(
+      STORAGE_KEYS.CONVERSATIONS,
+      conversationsSchema.parse(withoutOlderImages)
+    )
+    return
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('Failed to save messages without attachments:', error)
+    console.error('Failed to save conversations without older images:', error)
+  }
+
+  try {
+    writeStoredValue(
+      STORAGE_KEYS.CONVERSATIONS,
+      conversationsSchema.parse({
+        [newestModel]: {
+          messages: stripMessageImages(newest.messages),
+          updatedAt: newest.updatedAt,
+        },
+      })
+    )
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to save the active conversation:', error)
   }
 }
 
@@ -451,8 +529,8 @@ export function saveMessages(messages: Message[]): void {
 export function clearPlaygroundData(): void {
   try {
     localStorage.removeItem(STORAGE_KEYS.CONFIG)
-    localStorage.removeItem(STORAGE_KEYS.PARAMETER_ENABLED)
-    localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    localStorage.removeItem(STORAGE_KEYS.CONVERSATIONS)
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_MESSAGES)
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to clear playground data:', error)

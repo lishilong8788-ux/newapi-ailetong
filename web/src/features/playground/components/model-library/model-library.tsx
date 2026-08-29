@@ -17,12 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
+import { isAdminRole } from '../../lib/message/message-error-utils'
 import {
   INITIAL_FILTER_STATE,
   MODALITY_TABS,
@@ -31,7 +34,8 @@ import {
   countByModality,
   filterModels,
 } from '../../lib/model-library/filters'
-import type { ModelOption } from '../../types'
+import type { GroupOption, ModelOption } from '../../types'
+import { GroupRow } from './group-row'
 import { ModelCard } from './model-card'
 import { VendorFilter } from './vendor-filter'
 
@@ -40,7 +44,26 @@ type ModelLibraryProps = {
   selectedModel: string
   isLoading: boolean
   onSelectModel: (modelName: string) => void
+  /** Billing groups the user may use. Empty or single-entry hides the row. */
+  groups: GroupOption[]
+  groupValue: string
+  onGroupChange: (value: string) => void
 }
+
+/**
+ * How many cards are rendered before the reveal sentinel extends the list.
+ *
+ * A deployment can expose several hundred models, and mounting all of them costs
+ * a vendor logo (a fresh SVG tree from `getLobeIcon`) and one or two badges per
+ * card. Rendering the lot up front made the first paint of this column expensive
+ * and left the DOM heavy enough to make scrolling it jerky.
+ *
+ * Chosen to overfill the tallest realistic column so nothing appears to be
+ * missing before the sentinel takes over. The pricing grid solves the same
+ * problem with explicit pagination (`DEFAULT_PRICING_PAGE_SIZE`); a sidebar
+ * wants continuous scrolling, so it grows on scroll instead of on click.
+ */
+const MODEL_REVEAL_PAGE_SIZE = 30
 
 /**
  * The playground's primary entry point: people arrive knowing the capability
@@ -52,7 +75,13 @@ export function ModelLibrary({
   selectedModel,
   isLoading,
   onSelectModel,
+  groups,
+  groupValue,
+  onGroupChange,
 }: ModelLibraryProps) {
+  const { t } = useTranslation()
+  const user = useAuthStore((s) => s.auth.user)
+  const isAdmin = isAdminRole(user?.role)
   const [filters, setFilters] = useState(INITIAL_FILTER_STATE)
 
   const visibleModels = useMemo(
@@ -68,15 +97,87 @@ export function ModelLibrary({
     [models, filters]
   )
 
+  const [visibleCount, setVisibleCount] = useState(MODEL_REVEAL_PAGE_SIZE)
+  const revealSentinelRef = useRef<HTMLDivElement | null>(null)
+  const hasMoreToReveal = visibleCount < visibleModels.length
+
+  // A new filter result is a new list; keeping the old count would leave a
+  // narrowed search still paying for cards the user can no longer see.
+  useEffect(() => {
+    setVisibleCount(MODEL_REVEAL_PAGE_SIZE)
+  }, [filters])
+
+  useEffect(() => {
+    const sentinel = revealSentinelRef.current
+    if (!sentinel || !hasMoreToReveal) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+
+        setVisibleCount((current) =>
+          Math.min(current + MODEL_REVEAL_PAGE_SIZE, visibleModels.length)
+        )
+      },
+      // Fires while the sentinel is still below the fold, so the next batch is
+      // mounted before the user scrolls into empty space.
+      { rootMargin: '300px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMoreToReveal, visibleModels.length])
+
+  const renderedModels = useMemo(
+    () => visibleModels.slice(0, visibleCount),
+    [visibleModels, visibleCount]
+  )
+
   return (
     <div className='bg-canvas flex h-full min-h-0 w-full flex-col'>
-      <div className='border-border/60 space-y-3 border-b p-3.5'>
-        <div className='bg-muted/50 flex items-center gap-0.5 rounded-full p-0.5'>
+      {/* Two stacked blocks, not one flat `space-y`: the group row declares
+          which models exist at all, the tabs and filters narrow down within
+          that set. The rule between them is the only place in this column where
+          a horizontal line is doing semantic work rather than decoration, so it
+          gets its own spacing instead of a uniform gap. */}
+      <div className='border-border/60 border-b p-4'>
+        {/* A real title, not just a tab strip. The count tracks the active tab,
+            so the "how many" that used to sit inside the selected pill now lives
+            in a stable spot — which is also what freed the tabs to stop
+            wrapping their labels onto two lines in a 288px column. */}
+        <div className='flex items-baseline justify-between gap-2'>
+          <h2 className='text-foreground text-[15px] font-bold tracking-tight'>
+            {t('Model library')}
+          </h2>
+          {modalityCounts[filters.modality] > 0 ? (
+            <span className='text-muted-foreground/70 text-[12px] font-medium tabular-nums'>
+              {modalityCounts[filters.modality]}
+            </span>
+          ) : null}
+        </div>
+
+        {/* Renders nothing when the user has at most one usable group, in which
+            case the rule below it would be separating a heading from filters —
+            so the divider is conditional on the same test. */}
+        {groups.length > 1 ? (
+          <>
+            <div className='mt-3'>
+              <GroupRow
+                groups={groups}
+                value={groupValue}
+                onChange={onGroupChange}
+                disabled={isLoading}
+              />
+            </div>
+            <div className='bg-border/70 mt-4 h-px' aria-hidden='true' />
+          </>
+        ) : null}
+
+        <div className='bg-muted/50 mt-3 flex items-center gap-0.5 rounded-full p-0.5'>
           {MODALITY_TABS.map((tab) => (
             <ModalityTab
               key={tab.value}
-              label={tab.label}
-              count={modalityCounts[tab.value]}
+              label={t(tab.labelKey)}
               isActive={filters.modality === tab.value}
               onClick={() =>
                 setFilters((prev) => ({ ...prev, modality: tab.value }))
@@ -85,7 +186,7 @@ export function ModelLibrary({
           ))}
         </div>
 
-        <div className='flex items-center gap-2'>
+        <div className='mt-3 flex items-center gap-2'>
           <VendorFilter
             options={vendorOptions}
             value={filters.vendor}
@@ -98,7 +199,7 @@ export function ModelLibrary({
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, search: event.target.value }))
               }
-              placeholder='搜索模型'
+              placeholder={t('Search models')}
               className='h-8 pl-8 text-[13px]'
             />
           </div>
@@ -112,13 +213,20 @@ export function ModelLibrary({
       <div className='hover-scrollbar min-h-0 flex-1 overflow-y-auto'>
         <div className='space-y-2 p-2.5'>
           <ModelList
-            models={visibleModels}
+            models={renderedModels}
+            isAdmin={isAdmin}
             totalCount={models.length}
             selectedModel={selectedModel}
             activeModality={filters.modality}
             isLoading={isLoading}
             onSelectModel={onSelectModel}
           />
+
+          {/* Rendered only while something remains, so the observer has nothing
+              to watch once the list is fully revealed. */}
+          {hasMoreToReveal ? (
+            <div ref={revealSentinelRef} className='h-8' aria-hidden='true' />
+          ) : null}
         </div>
       </div>
     </div>
@@ -131,14 +239,18 @@ export function ModelLibrary({
  * These tabs switch one view between five states, so they read best as one
  * connected strip: an inactive tab is bare text and only the active one takes a
  * filled pill. Giving each its own border turned five buttons into five boxes
- * competing for attention — and the extra width wrapped the row onto two lines.
+ * competing for attention.
+ *
+ * Each tab claims an equal `flex-1` slice and keeps its label on one line
+ * (`whitespace-nowrap`): five two-character CJK labels do not fit a 288px column
+ * side by side otherwise, and the browser was breaking them mid-word into "聊 /
+ * 天". The per-tab count moved to the header for the same reason.
  *
  * `bg-primary` + `primary-foreground` is safe here (unlike `text-primary` on a
  * plain surface) because the pair is designed to be used together.
  */
 function ModalityTab(props: {
   label: string
-  count: number
   isActive: boolean
   onClick: () => void
 }) {
@@ -148,22 +260,14 @@ function ModalityTab(props: {
       onClick={props.onClick}
       aria-pressed={props.isActive}
       className={cn(
-        'inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[13px] transition-colors',
+        'inline-flex h-8 flex-1 items-center justify-center rounded-full px-1 text-[13px] whitespace-nowrap transition-colors',
         'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
         props.isActive
-          ? 'bg-primary text-primary-foreground font-semibold'
+          ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
           : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
       )}
     >
-      <span>{props.label}</span>
-      {/* Count only on the active tab. Showing it on all of them is what forced
-          the row to wrap, and an inactive tab's count is a number the user has
-          not asked for yet. */}
-      {props.isActive && props.count > 0 ? (
-        <span className='text-[11px] font-normal opacity-75'>
-          {props.count}
-        </span>
-      ) : null}
+      {props.label}
     </button>
   )
 }
@@ -172,6 +276,8 @@ type ModelListProps = {
   models: ModelOption[]
   /** Distinguishes "nothing available" from "nothing matched the filters". */
   totalCount: number
+  /** Only admins get the "unpriced models are hidden" hint; see `ModelList`. */
+  isAdmin: boolean
   selectedModel: string
   activeModality: ModalityFilter
   isLoading: boolean
@@ -179,6 +285,7 @@ type ModelListProps = {
 }
 
 function ModelList({
+  isAdmin,
   models,
   totalCount,
   selectedModel,
@@ -186,6 +293,8 @@ function ModelList({
   isLoading,
   onSelectModel,
 }: ModelListProps) {
+  const { t } = useTranslation()
+
   if (isLoading) {
     return Array.from({ length: 6 }, (_, index) => (
       <Skeleton key={index} className='h-16 w-full rounded-lg' />
@@ -194,9 +303,24 @@ function ModelList({
 
   if (models.length === 0) {
     return (
-      <p className='text-muted-foreground px-2 py-8 text-center text-xs'>
-        {totalCount === 0 ? '暂无可用模型' : '没有匹配的模型'}
-      </p>
+      <div className='px-2 py-8 text-center'>
+        <p className='text-muted-foreground text-xs'>
+          {totalCount === 0
+            ? t('No models available')
+            : t('No models match the filters')}
+        </p>
+        {/* An empty library is ambiguous to whoever can fix it.
+            Unpriced models are filtered out of the playground, so a site with
+            nothing priced yet shows "No models available" to an admin who knows
+            perfectly well the models exist — the list is empty *because* of a
+            setting they own. Non-admins get nothing extra: they cannot act on it
+            and "ask an administrator" adds no information to an empty list. */}
+        {totalCount === 0 && isAdmin ? (
+          <p className='text-muted-foreground/70 mx-auto mt-2 max-w-[16rem] text-[11px] leading-relaxed'>
+            {t('Models without a configured price are not shown here.')}
+          </p>
+        ) : null}
+      </div>
     )
   }
 

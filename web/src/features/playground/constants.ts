@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { PlaygroundConfig, ParameterEnabled } from './types'
+import type { PlaygroundConfig } from './types'
 
 // Message constants
 export const MESSAGE_ROLES = {
@@ -35,6 +35,7 @@ export const MESSAGE_STATUS = {
 // API endpoints
 export const API_ENDPOINTS = {
   CHAT_COMPLETIONS: '/pg/chat/completions',
+  IMAGE_GENERATIONS: '/pg/images/generations',
   USER_MODELS: '/api/user/models',
   USER_GROUPS: '/api/user/self/groups',
   /** Catalog metadata (icon, description, vendor, endpoint types). */
@@ -49,29 +50,21 @@ export const DEFAULT_GROUP = 'default' as const
 export const DEFAULT_CONFIG: PlaygroundConfig = {
   model: 'gpt-4o',
   group: DEFAULT_GROUP,
-  temperature: 0.7,
-  top_p: 1,
-  max_tokens: 4096,
-  frequency_penalty: 0,
-  presence_penalty: 0,
-  seed: null,
   stream: true,
-}
-
-export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
-  temperature: true,
-  top_p: true,
-  max_tokens: false,
-  frequency_penalty: true,
-  presence_penalty: true,
-  seed: false,
 }
 
 // Storage keys
 export const STORAGE_KEYS = {
   CONFIG: 'playground_config',
-  MESSAGES: 'playground_messages',
-  PARAMETER_ENABLED: 'playground_parameter_enabled',
+  /**
+   * Per-model transcripts, replacing the single flat `playground_messages`
+   * array. A separate key rather than a version bump on the old one: the shapes
+   * are incompatible (array vs. keyed record), and `loadConversations` migrates
+   * the old array into the active model's slot on first read, so nothing is lost.
+   */
+  CONVERSATIONS: 'playground_conversations',
+  /** Read once by the migration above, then removed. */
+  LEGACY_MESSAGES: 'playground_messages',
 } as const
 
 // Error messages
