@@ -183,6 +183,34 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.DELETE("/user_subscriptions/:id", controller.AdminDeleteUserSubscription)
 		}
 
+		// Invoicing (开票): reusable titles, applications, manual issuing
+		invoiceRoute := apiRouter.Group("/invoice")
+		invoiceRoute.Use(middleware.UserAuth())
+		{
+			invoiceRoute.GET("/profile", controller.GetInvoiceProfiles)
+			invoiceRoute.POST("/profile", middleware.CriticalRateLimit(), controller.CreateInvoiceProfile)
+			invoiceRoute.PUT("/profile/:id", middleware.CriticalRateLimit(), controller.UpdateInvoiceProfile)
+			invoiceRoute.DELETE("/profile/:id", middleware.CriticalRateLimit(), controller.DeleteInvoiceProfile)
+			invoiceRoute.GET("/invoiceable-orders", controller.GetInvoiceableOrders)
+			invoiceRoute.GET("/summary", controller.GetInvoiceAmountSummary)
+			invoiceRoute.POST("/request", middleware.CriticalRateLimit(), controller.CreateInvoiceRequestHandler)
+			invoiceRoute.GET("/self", controller.GetSelfInvoiceRequests)
+			invoiceRoute.GET("/self/:id", controller.GetSelfInvoiceRequestDetail)
+			invoiceRoute.POST("/self/:id/cancel", middleware.CriticalRateLimit(), controller.CancelSelfInvoiceRequest)
+			invoiceRoute.GET("/self/:id/download", controller.DownloadInvoicePdf)
+		}
+		invoiceAdminRoute := apiRouter.Group("/invoice/admin")
+		invoiceAdminRoute.Use(middleware.AdminAuth())
+		{
+			// export is registered before :id so gin matches the static segment
+			invoiceAdminRoute.GET("/export", controller.AdminExportInvoiceRequests)
+			invoiceAdminRoute.GET("", controller.AdminGetInvoiceRequests)
+			invoiceAdminRoute.GET("/:id", controller.AdminGetInvoiceRequestDetail)
+			invoiceAdminRoute.POST("/:id/issue", middleware.CriticalRateLimit(), controller.AdminIssueInvoice)
+			invoiceAdminRoute.POST("/:id/reject", middleware.CriticalRateLimit(), controller.AdminRejectInvoice)
+			invoiceAdminRoute.POST("/:id/resend", middleware.CriticalRateLimit(), controller.AdminResendInvoiceEmail)
+		}
+
 		// Subscription payment callbacks (no auth)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)

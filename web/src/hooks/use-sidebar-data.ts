@@ -27,6 +27,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  ReceiptText,
   ServerCog,
   Settings,
   Ticket,
@@ -109,6 +110,11 @@ export function useSidebarData(): SidebarData {
             icon: Wallet,
           },
           {
+            title: t('Invoices'),
+            url: '/invoices',
+            icon: ReceiptText,
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -143,6 +149,11 @@ export function useSidebarData(): SidebarData {
             title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Invoice Management'),
+            url: '/invoice-management',
+            icon: ReceiptText,
           },
           {
             title: t('System Info'),

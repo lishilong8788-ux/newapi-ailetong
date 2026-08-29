@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useNavigate } from '@tanstack/react-router'
 import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -82,6 +83,7 @@ export function BillingHistoryDialog({
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
   const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
+  const navigate = useNavigate()
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -258,17 +260,32 @@ export function BillingHistoryDialog({
                         </div>
                       </div>
 
-                      {/* Admin Actions */}
-                      {isAdmin && record.status === 'pending' && (
-                        <div className='mt-4 flex justify-end'>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setConfirmTradeNo(record.trade_no)}
-                            disabled={completing}
-                          >
-                            {t('Complete Order')}
-                          </Button>
+                      {/* Row Actions */}
+                      {(record.status === 'success' ||
+                        (isAdmin && record.status === 'pending')) && (
+                        <div className='mt-4 flex flex-wrap justify-end gap-2'>
+                          {record.status === 'success' && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => {
+                                onOpenChange(false)
+                                void navigate({ to: '/invoices' })
+                              }}
+                            >
+                              {t('Apply for Invoice')}
+                            </Button>
+                          )}
+                          {isAdmin && record.status === 'pending' && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setConfirmTradeNo(record.trade_no)}
+                              disabled={completing}
+                            >
+                              {t('Complete Order')}
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>
