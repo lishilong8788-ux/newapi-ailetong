@@ -20,6 +20,7 @@ import {
   Activity,
   Box,
   ChartNoAxesCombined,
+  CircleDollarSign,
   CreditCard,
   FileText,
   FlaskConical,
@@ -173,6 +174,11 @@ export function useSidebarData(): SidebarData {
             title: t('Distribution Analytics'),
             url: '/agent-analytics',
             icon: ChartNoAxesCombined,
+          },
+          {
+            title: t('Cost Analytics'),
+            url: '/cost-analytics',
+            icon: CircleDollarSign,
           },
           {
             title: t('System Info'),

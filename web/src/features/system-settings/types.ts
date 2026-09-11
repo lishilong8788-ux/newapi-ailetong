@@ -344,6 +344,19 @@ export type BillingSettings = {
   AgentAutoApprove: boolean
   AgentBalanceNeedAudit: boolean
   AgentSubscriptionCommission: boolean
+  // Cost & margin accounting (rates as fractions, thresholds chained
+  // disable_rate <= demote_rate <= alert_rate <= warn_rate).
+  'cost_setting.enabled': boolean
+  'cost_setting.guard_enabled': boolean
+  'cost_setting.warn_rate': number
+  'cost_setting.alert_rate': number
+  'cost_setting.demote_rate': number
+  'cost_setting.disable_rate': number
+  'cost_setting.window_minutes': number
+  'cost_setting.min_requests': number
+  'cost_setting.max_unknown_rate': number
+  'cost_setting.cooldown_minutes': number
+  'cost_setting.flush_interval_seconds': number
 }
 
 export type OperationsSettings = {

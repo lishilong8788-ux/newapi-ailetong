@@ -24,6 +24,7 @@ import {
   Boxes,
   CheckCircle2,
   Circle,
+  CircleDollarSign,
   ClipboardPaste,
   HelpCircle,
   KeyRound,
@@ -51,7 +52,7 @@ import {
   useCallback,
   useRef,
 } from 'react'
-import { type SubmitErrorHandler, useForm } from 'react-hook-form'
+import { type SubmitErrorHandler, useFieldArray, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -70,6 +71,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   Form,
   FormControl,
@@ -126,6 +132,10 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
+import {
+  SettingsFormGrid,
+} from '@/features/system-settings/components/settings-form-layout'
+import { safeNumberFieldProps } from '@/features/system-settings/utils/numeric-field'
 
 import {
   fetchModels,
@@ -716,6 +726,15 @@ export function ChannelMutateDrawer({
     resolver: zodResolver(channelFormSchema),
     defaultValues: CHANNEL_FORM_DEFAULT_VALUES,
   })
+
+  // Cost per-model price rows (structured cost pricing form).
+  const costModelsField = useFieldArray({
+    control: form.control,
+    name: 'cost_models',
+  })
+  const costModelRows = costModelsField.fields
+  const appendCostModelRow = () => costModelsField.append({ model: '' })
+  const removeCostModelRow = costModelsField.remove
 
   // Watch form values for conditional rendering
   const multiKeyMode = form.watch('multi_key_mode')
@@ -4723,6 +4742,210 @@ export function ChannelMutateDrawer({
                                   </FormItem>
                                 )}
                               />
+
+                              {/* ── Cost Pricing ── */}
+                              <div className={sideDrawerSectionClassName()}>
+                                <CardHeading
+                                  title={t('Cost Pricing')}
+                                  icon={<CircleDollarSign className='h-4 w-4' />}
+                                  iconTone='info'
+                                />
+                                <p className='text-muted-foreground text-xs'>
+                                  {t(
+                                    'Upstream cost in USD per 1M tokens. One markup number covers the whole channel; per-model prices override it.'
+                                  )}
+                                </p>
+
+                                <SettingsFormGrid>
+                                  <FormField
+                                    control={form.control}
+                                    name='cost_markup_percent'
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>
+                                          {t('Default markup (%)')}
+                                        </FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type='number'
+                                            min={0}
+                                            step={0.5}
+                                            {...safeNumberFieldProps(field)}
+                                          />
+                                        </FormControl>
+                                        <FormDescription>
+                                          {t(
+                                            'Sell at cost plus this. 30 means cost +30%; cost is back-computed from revenue.'
+                                          )}
+                                        </FormDescription>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+
+                                  <FormField
+                                    control={form.control}
+                                    name='cost_discount_percent'
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>
+                                          {t('Official price discount (%)')}
+                                        </FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type='number'
+                                            min={0}
+                                            max={100}
+                                            step={1}
+                                            {...safeNumberFieldProps(field)}
+                                          />
+                                        </FormControl>
+                                        <FormDescription>
+                                          {t(
+                                            'Fallback when no model price is set: official list price × this. 85 means paying 85% of list.'
+                                          )}
+                                        </FormDescription>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </SettingsFormGrid>
+
+                                <div>
+                                  <FormLabel className='mb-2'>
+                                    {t('Per-model prices (USD / 1M tokens)')}
+                                  </FormLabel>
+                                  <div className='space-y-2'>
+                                    {costModelRows.map((row, index) => (
+                                      <div
+                                        key={row.id}
+                                        className='flex items-center gap-2'
+                                      >
+                                        <FormField
+                                          control={form.control}
+                                          name={`cost_models.${index}.model`}
+                                          render={({ field }) => (
+                                            <FormItem className='flex-1'>
+                                              <FormControl>
+                                                <Input
+                                                  placeholder='model-name'
+                                                  {...field}
+                                                />
+                                              </FormControl>
+                                              <FormMessage />
+                                            </FormItem>
+                                          )}
+                                        />
+                                        <FormField
+                                          control={form.control}
+                                          name={`cost_models.${index}.input`}
+                                          render={({ field }) => (
+                                            <FormItem className='w-24'>
+                                              <FormControl>
+                                                <Input
+                                                  type='number'
+                                                  min={0}
+                                                  step={0.01}
+                                                  placeholder={t('Input')}
+                                                  {...safeNumberFieldProps(
+                                                    field
+                                                  )}
+                                                />
+                                              </FormControl>
+                                              <FormMessage />
+                                            </FormItem>
+                                          )}
+                                        />
+                                        <FormField
+                                          control={form.control}
+                                          name={`cost_models.${index}.output`}
+                                          render={({ field }) => (
+                                            <FormItem className='w-24'>
+                                              <FormControl>
+                                                <Input
+                                                  type='number'
+                                                  min={0}
+                                                  step={0.01}
+                                                  placeholder={t('Output')}
+                                                  {...safeNumberFieldProps(
+                                                    field
+                                                  )}
+                                                />
+                                              </FormControl>
+                                              <FormMessage />
+                                            </FormItem>
+                                          )}
+                                        />
+                                        <Button
+                                          type='button'
+                                          variant='ghost'
+                                          size='icon'
+                                          className='text-muted-foreground hover:text-destructive shrink-0'
+                                          aria-label={t('Remove model price')}
+                                          onClick={() =>
+                                            removeCostModelRow(index)
+                                          }
+                                        >
+                                          <Trash2
+                                            className='h-4 w-4'
+                                            aria-hidden='true'
+                                          />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                    <Button
+                                      type='button'
+                                      variant='outline'
+                                      size='sm'
+                                      onClick={appendCostModelRow}
+                                    >
+                                      <Plus
+                                        className='mr-1 h-3.5 w-3.5'
+                                        aria-hidden='true'
+                                      />
+                                      {t('Add model price')}
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <Collapsible>
+                                  <CollapsibleTrigger
+                                    render={
+                                      <button
+                                        type='button'
+                                        className='text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs font-medium'
+                                      />
+                                    }
+                                  >
+                                    {t('Advanced (raw JSON)')}
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent className='mt-2'>
+                                    <FormField
+                                      control={form.control}
+                                      name='cost_json'
+                                      render={({ field }) => (
+                                        <FormItem>
+                                          <FormDescription>
+                                            {t(
+                                              'Overrides the fields above when set. Full cost object: mode, default_markup, discount, models (per-kind unit prices), expr.'
+                                            )}
+                                          </FormDescription>
+                                          <FormControl>
+                                            <Textarea
+                                              rows={6}
+                                              className='font-mono text-xs'
+                                              placeholder='{}'
+                                              {...field}
+                                              value={field.value ?? ''}
+                                            />
+                                          </FormControl>
+                                          <FormMessage />
+                                        </FormItem>
+                                      )}
+                                    />
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              </div>
                               <div className='text-muted-foreground space-y-2 border-t pt-3 text-xs'>
                                 <div>
                                   <span className='text-foreground font-medium'>

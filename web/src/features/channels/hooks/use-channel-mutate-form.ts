@@ -55,6 +55,10 @@ const SENSITIVE_UPDATE_FIELDS = [
   'other',
 ] satisfies (keyof Channel)[]
 
+// cost_config lives inside the settings JSON payload; a change to it means the
+// settings blob changed, so the settings entry above already covers the
+// sensitive-update check. Listed separately for clarity of intent.
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }

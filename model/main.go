@@ -293,6 +293,8 @@ func migrateDB() error {
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&ChannelCostDaily{},
+		&ChannelPurchase{},
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},

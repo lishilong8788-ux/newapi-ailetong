@@ -20,6 +20,7 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
 
 import { AgentSettingsSection } from '../general/agent-settings-section'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
+import { CostSettingsSection } from '../general/cost-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
@@ -217,6 +218,35 @@ const BILLING_SECTIONS = [
           AgentAutoApprove: settings.AgentAutoApprove,
           AgentBalanceNeedAudit: settings.AgentBalanceNeedAudit,
           AgentSubscriptionCommission: settings.AgentSubscriptionCommission,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'cost',
+    titleKey: 'Cost & Margin',
+    build: (settings: BillingSettings) => (
+      <CostSettingsSection
+        defaultValues={{
+          'cost_setting.enabled': settings['cost_setting.enabled'] ?? false,
+          'cost_setting.guard_enabled':
+            settings['cost_setting.guard_enabled'] ?? false,
+          'cost_setting.warn_rate': settings['cost_setting.warn_rate'] ?? 0.2,
+          'cost_setting.alert_rate': settings['cost_setting.alert_rate'] ?? 0.1,
+          'cost_setting.demote_rate':
+            settings['cost_setting.demote_rate'] ?? 0.05,
+          'cost_setting.disable_rate':
+            settings['cost_setting.disable_rate'] ?? 0,
+          'cost_setting.window_minutes':
+            settings['cost_setting.window_minutes'] ?? 60,
+          'cost_setting.min_requests':
+            settings['cost_setting.min_requests'] ?? 100,
+          'cost_setting.max_unknown_rate':
+            settings['cost_setting.max_unknown_rate'] ?? 0.05,
+          'cost_setting.cooldown_minutes':
+            settings['cost_setting.cooldown_minutes'] ?? 30,
+          'cost_setting.flush_interval_seconds':
+            settings['cost_setting.flush_interval_seconds'] ?? 60,
         }}
       />
     ),

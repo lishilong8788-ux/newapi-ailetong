@@ -615,4 +615,13 @@ export const STATIC_I18N_KEYS = [
   'Reject reason must be at most {{max}} characters',
   'Selected orders use different currencies',
   'A special VAT invoice requires the bank name and bank account on the selected profile',
+
+  // Cost analytics (sidebar, section registry, settings tabs — dynamic keys
+  // from constants.ts and section-registry.tsx)
+  'Cost Analytics',
+  'Cost & Margin',
+  'Today',
+  'Last 7 days',
+  'Last 30 days',
+  'Last 90 days',
 ] as const

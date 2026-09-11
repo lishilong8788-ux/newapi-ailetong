@@ -370,6 +370,23 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/flow", middleware.AdminAuth(), controller.GetAllFlowQuotaDates)
 		dataRoute.GET("/flow/self", middleware.UserAuth(), controller.GetUserFlowQuotaDates)
 
+		// 成本毛利：查询类 AdminAuth，写类 RootAuth（性质等同 /option 与
+		// 渠道敏感写）。
+		costRoute := apiRouter.Group("/cost")
+		{
+			costRoute.GET("/overview", middleware.AdminAuth(), controller.CostOverview)
+			costRoute.GET("/trend", middleware.AdminAuth(), controller.CostTrend)
+			costRoute.GET("/channels", middleware.AdminAuth(), controller.CostChannels)
+			costRoute.GET("/models", middleware.AdminAuth(), controller.CostModels)
+			costRoute.GET("/channel/:id", middleware.AdminAuth(), controller.CostChannelDetail)
+			costRoute.GET("/purchase", middleware.AdminAuth(), controller.CostPurchaseList)
+			costRoute.GET("/inventory", middleware.AdminAuth(), controller.CostInventory)
+			costRoute.PUT("/channel/:id/price", middleware.RootAuth(), controller.CostUpdateChannelPrice)
+			costRoute.POST("/channel/batch-price", middleware.RootAuth(), controller.CostBatchPrice)
+			costRoute.POST("/purchase", middleware.RootAuth(), controller.CostCreatePurchase)
+			costRoute.POST("/recalculate", middleware.RootAuth(), controller.CostRecalculate)
+		}
+
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)

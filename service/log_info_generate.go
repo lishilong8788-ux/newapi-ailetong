@@ -85,8 +85,11 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 	if relayInfo.IsModelMapped {
 		other["is_model_mapped"] = true
-		other["upstream_model_name"] = relayInfo.UpstreamModelName
 	}
+	// upstream_model_name 必须无条件落库：成本核算按 (channel_id, upstream_model_name)
+	// 匹配成本价，adaptor 的后缀剥离等二次改写不设 IsModelMapped，门控会让这类请求
+	// 退化成 origin 名错配价目。
+	other["upstream_model_name"] = relayInfo.UpstreamModelName
 
 	isSystemPromptOverwritten := common.GetContextKeyBool(ctx, constant.ContextKeySystemPromptOverride)
 	if isSystemPromptOverwritten {
@@ -95,6 +98,13 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 
 	adminInfo := make(map[string]interface{})
 	adminInfo["use_channel"] = ctx.GetStringSlice("use_channel")
+
+	// traffic_source 标记请求来源（api|playground|channel_test），毛利统计按它
+	// 过滤：渠道测试与 playground 不进毛利分母，成本进运营成本桶。
+	if trafficSource := common.GetContextKeyString(ctx, constant.ContextKeyTrafficSource); trafficSource != "" {
+		other["traffic_source"] = trafficSource
+	}
+
 	isMultiKey := common.GetContextKeyBool(ctx, constant.ContextKeyChannelIsMultiKey)
 	if isMultiKey {
 		adminInfo["is_multi_key"] = true

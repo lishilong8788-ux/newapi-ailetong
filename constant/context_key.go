@@ -73,4 +73,10 @@ const (
 	// fallback in authHelper (finishAdminAudit) skips its record to avoid
 	// duplicate entries.
 	ContextKeyAuditLogged ContextKey = "audit_logged"
+
+	// ContextKeyTrafficSource marks where a relay request came from:
+	// "api" (default), "playground", or "channel_test". Margin accounting
+	// filters on it — channel tests and playground traffic are excluded
+	// from margin ratios (their cost goes to a separate ops-cost bucket).
+	ContextKeyTrafficSource ContextKey = "traffic_source"
 )

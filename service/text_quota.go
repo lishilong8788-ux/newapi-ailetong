@@ -483,6 +483,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if summary.ImageTokens != 0 {
 		other["image"] = true
 		other["image_ratio"] = summary.ImageRatio
+		// summary.ImageTokens 来自 PromptTokensDetails.ImageTokens，是输入侧
+		// 图片 token；旧键名 image_output 与语义相反，改为 image_input。
+		other["image_input"] = summary.ImageTokens
 		other["image_output"] = summary.ImageTokens
 	}
 	appendToolSurchargeLogInfo(other, summary.ToolSurchargeItems)
@@ -522,6 +525,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 
 	attachQuotaSaturation(ctx, relayInfo, other)
+	attachUpstreamCost(ctx, relayInfo, CostInputsFromUsage(billingUsage, summary.Quota), other)
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

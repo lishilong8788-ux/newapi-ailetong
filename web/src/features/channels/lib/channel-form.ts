@@ -27,7 +27,7 @@ import {
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
-import type { Channel } from '../types'
+import type { Channel, ChannelCostSettings } from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -282,6 +282,32 @@ export const channelFormSchema = z
     upstream_model_update_check_enabled: z.boolean().optional(),
     upstream_model_update_auto_sync_enabled: z.boolean().optional(),
     upstream_model_update_ignored_models: z.string().optional(),
+    // Cost pricing (stored in settings JSON under cost). Structured fields for
+    // the everyday form; cost_json is the escape hatch for power users.
+    cost_markup_percent: z
+      .number()
+      .min(0, 'Markup must be 0 or more')
+      .max(1000, 'Markup must be 1000 or less')
+      .optional(),
+    cost_discount_percent: z
+      .number()
+      .min(0, 'Discount must be 0 or more')
+      .max(100, 'Discount must be 100 or less')
+      .optional(),
+    cost_models: z
+      .array(
+        z.object({
+          model: z.string().min(1, 'Model name is required'),
+          input: z.number().min(0).optional(),
+          output: z.number().min(0).optional(),
+        })
+      )
+      .optional(),
+    cost_mode: z.enum(['ratio', 'per_call', 'expr']).optional(),
+    cost_json: z
+      .string()
+      .optional()
+      .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
   })
   .superRefine((data, ctx) => {
     if (
@@ -454,6 +480,11 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   upstream_model_update_auto_sync_enabled: false,
   upstream_model_update_ignored_models: '',
   advanced_custom: '',
+  cost_markup_percent: 0,
+  cost_discount_percent: 0,
+  cost_models: [],
+  cost_mode: 'ratio',
+  cost_json: '',
 }
 
 // ============================================================================
@@ -518,6 +549,7 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let costConfig: ChannelCostSettings | null = null
 
   if (channel.settings) {
     try {
@@ -545,6 +577,13 @@ export function transformChannelToFormDefaults(
         : ''
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
+      }
+      if (
+        parsed.cost &&
+        typeof parsed.cost === 'object' &&
+        !Array.isArray(parsed.cost)
+      ) {
+        costConfig = parsed.cost as ChannelCostSettings
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -597,6 +636,7 @@ export function transformChannelToFormDefaults(
     upstream_model_update_auto_sync_enabled: upstreamModelUpdateAutoSyncEnabled,
     upstream_model_update_ignored_models: upstreamModelUpdateIgnoredModels,
     advanced_custom: advancedCustom,
+    ...expandCostConfigToForm(costConfig),
   }
 }
 
@@ -763,7 +803,144 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.advanced_custom
   }
 
+  // Cost pricing: structured fields win; raw JSON is the escape hatch for
+  // anything the form does not expose (cache/audio/image unit prices, expr).
+  // When the raw JSON has content it is submitted verbatim.
+  const costFromJson = parseOptionalCostJSON(formData.cost_json)
+  const structuredCost = buildCostFromStructuredFields(formData)
+  if (costFromJson) {
+    settingsObj.cost = costFromJson
+  } else if (structuredCost) {
+    settingsObj.cost = structuredCost
+  } else if ('cost' in settingsObj) {
+    delete settingsObj.cost
+  }
+
   return JSON.stringify(settingsObj)
+}
+
+// parseOptionalCostJSON returns the parsed cost object or null when the raw
+// JSON is empty/invalid. Invalid JSON is blocked by the schema refine; here it
+// degrades to "no override" so the structured fields still apply.
+function parseOptionalCostJSON(
+  raw: string | undefined
+): Record<string, unknown> | null {
+  const trimmed = raw?.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// buildCostFromStructuredFields assembles the cost object from the everyday
+// form fields. Returns null when nothing is configured so the stored `cost`
+// key is removed and the channel falls back to default tiers.
+function buildCostFromStructuredFields(
+  formData: ChannelFormValues
+): Record<string, unknown> | null {
+  const markup = formData.cost_markup_percent ?? 0
+  const discount = formData.cost_discount_percent ?? 0
+  const models = (formData.cost_models ?? []).filter(
+    (row) => row.model?.trim()
+  )
+
+  const hasMarkup = markup > 0
+  const hasDiscount = discount > 0 && discount < 100
+  const hasModels = models.length > 0
+  if (!hasMarkup && !hasDiscount && !hasModels) {
+    return null
+  }
+
+  const cost: Record<string, unknown> = {}
+  if (hasMarkup) {
+    // Form holds percent (30 = 30%); storage is a fraction (0.3).
+    cost.default_markup = Math.round(markup * 100) / 10000
+  }
+  if (hasDiscount) {
+    cost.discount = Math.round(discount * 100) / 10000
+  }
+  if (hasModels) {
+    const modelMap: Record<string, Record<string, number>> = {}
+    for (const row of models) {
+      const entry: Record<string, number> = {}
+      if (row.input != null && row.input >= 0) entry.input = row.input
+      if (row.output != null && row.output >= 0) entry.output = row.output
+      modelMap[row.model.trim()] = entry
+    }
+    cost.models = modelMap
+  }
+  if (formData.cost_mode) {
+    cost.mode = formData.cost_mode
+  }
+  return cost
+}
+
+// expandCostConfigToForm flattens a stored cost object into the structured
+// form fields (percent round-trip: 0.3 → 30).
+function expandCostConfigToForm(
+  cost: ChannelCostSettings | null
+): Pick<
+  ChannelFormValues,
+  | 'cost_markup_percent'
+  | 'cost_discount_percent'
+  | 'cost_models'
+  | 'cost_mode'
+  | 'cost_json'
+> {
+  if (!cost) {
+    return {
+      cost_markup_percent: 0,
+      cost_discount_percent: 0,
+      cost_models: [],
+      cost_mode: 'ratio',
+      cost_json: '',
+    }
+  }
+  const markup =
+    typeof cost.default_markup === 'number' && cost.default_markup > 0
+      ? Math.round(cost.default_markup * 10000) / 100
+      : 0
+  const discount =
+    typeof cost.discount === 'number' && cost.discount > 0
+      ? Math.round(cost.discount * 10000) / 100
+      : 0
+  const models = Object.entries(cost.models ?? {}).map(([model, price]) => ({
+    model,
+    input: typeof price?.input === 'number' ? price.input : undefined,
+    output: typeof price?.output === 'number' ? price.output : undefined,
+  }))
+  const usesOnlyStructuredFields =
+    (cost.default_markup == null || typeof cost.default_markup === 'number') &&
+    (cost.discount == null || typeof cost.discount === 'number') &&
+    models.every(
+      (row) => row.input !== undefined || row.output !== undefined
+    ) &&
+    Object.values(cost.models ?? {}).every(
+      (price) =>
+        price &&
+        Object.keys(price).every((k) => k === 'input' || k === 'output')
+    ) &&
+    !cost.expr
+  // Anything beyond markup/discount/input/output stays in the raw JSON box so
+  // it is never silently dropped by a save from the structured form.
+  const json = usesOnlyStructuredFields
+    ? ''
+    : JSON.stringify(cost, null, 2)
+  const mode: ChannelFormValues['cost_mode'] =
+    cost.mode === 'per_call' || cost.mode === 'expr' ? cost.mode : 'ratio'
+  return {
+    cost_markup_percent: markup,
+    cost_discount_percent: discount,
+    cost_models: models,
+    cost_mode: mode,
+    cost_json: json,
+  }
 }
 
 function normalizeBaseUrl(value: string | undefined): string {

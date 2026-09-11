@@ -552,6 +552,8 @@ func settleTestQuota(info *relaycommon.RelayInfo, priceData hosttypes.PriceData,
 }
 
 func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult) map[string]interface{} {
+	// 渠道测试是纯运营成本，毛利统计按 traffic_source 把它排除出分母。
+	common.SetContextKey(c, constant.ContextKeyTrafficSource, "channel_test")
 	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
 		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
 	if tieredResult != nil {

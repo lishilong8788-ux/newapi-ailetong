@@ -29,6 +29,7 @@ import (
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	_ "github.com/QuantumNous/new-api/setting/cost_setting"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -243,6 +244,8 @@ func main() {
 	if common.DataExportEnabled {
 		model.SaveQuotaDataCache()
 	}
+	// 成本毛利日汇总的退出补刷（账务数据不丢数）。
+	service.FlushCostBucketsOnExit()
 	common.SysLog("server exited")
 }
 
@@ -348,6 +351,7 @@ func InitResources() error {
 	}
 
 	perfmetrics.Init()
+	service.StartCostFlushLoop()
 
 	// 启动系统监控
 	common.StartSystemMonitor()

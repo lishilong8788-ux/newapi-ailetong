@@ -55,6 +55,11 @@ type Channel struct {
 
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
+	// 成本毛利三列（近30天聚合，查询时按需填充，不落库）。
+	Cost30d      int64    `json:"cost_30d" gorm:"-"`
+	Margin30d    int64    `json:"margin_30d" gorm:"-"`
+	MarginRate30d *float64 `json:"margin_rate_30d" gorm:"-"`
+
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
 }
@@ -82,6 +87,9 @@ var channelSortColumns = map[string]string{
 	"balance":       "balance",
 	"response_time": "response_time",
 	"test_time":     "test_time",
+	// margin_rate 排序在 GetAllChannels 的后处理里做（数据来自
+	// channel_cost_daily 聚合，不是 channels 表的列）。
+	"margin_rate": "id",
 }
 
 func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) ChannelSortOptions {

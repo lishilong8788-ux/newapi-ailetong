@@ -115,6 +115,17 @@ const defaultBillingSettings: BillingSettings = {
   AgentAutoApprove: false,
   AgentBalanceNeedAudit: false,
   AgentSubscriptionCommission: false,
+  'cost_setting.enabled': false,
+  'cost_setting.guard_enabled': false,
+  'cost_setting.warn_rate': 0.2,
+  'cost_setting.alert_rate': 0.1,
+  'cost_setting.demote_rate': 0.05,
+  'cost_setting.disable_rate': 0,
+  'cost_setting.window_minutes': 60,
+  'cost_setting.min_requests': 100,
+  'cost_setting.max_unknown_rate': 0.05,
+  'cost_setting.cooldown_minutes': 30,
+  'cost_setting.flush_interval_seconds': 60,
 }
 
 export function BillingSettings() {

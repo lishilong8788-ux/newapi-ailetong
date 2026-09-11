@@ -52,7 +52,7 @@ import {
   formatQuotaWithCurrency,
   getCurrencyLabel,
 } from '@/lib/currency'
-import { formatTimestampToDate } from '@/lib/format'
+import { formatTimestampToDate, formatQuota } from '@/lib/format'
 import { truncateText } from '@/lib/utils'
 
 import { getCodexUsage, updateChannelBalance } from '../api'
@@ -1199,6 +1199,44 @@ export function useChannelsColumns(
         },
         size: 120,
         enableSorting: false,
+      },
+
+      // Cost/Margin column (last 30 days, from cost accounting)
+      {
+        accessorKey: 'margin_rate_30d',
+        header: t('Cost / Margin (30d)'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          const channel = row.original
+          if (channel.cost_30d == null && channel.margin_30d == null) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+          const cost = channel.cost_30d ?? 0
+          const rate = channel.margin_rate_30d
+          const rateText = rate == null ? '-' : `${(rate * 100).toFixed(1)}%`
+          return (
+            <div className='flex flex-col gap-0.5'>
+              <span className='text-muted-foreground text-xs tabular-nums'>
+                {formatQuota(cost)}
+              </span>
+              {rate != null && rate < 0 ? (
+                <StatusBadge
+                  label={rateText}
+                  variant='danger'
+                  size='sm'
+                  copyable={false}
+                  className='-ml-1.5'
+                />
+              ) : (
+                <span className='text-xs font-medium tabular-nums'>
+                  {rateText}
+                </span>
+              )}
+            </div>
+          )
+        },
+        size: 120,
+        enableSorting: true,
       },
 
       // Actions column

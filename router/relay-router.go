@@ -1,6 +1,7 @@
 package router
 
 import (
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
@@ -62,6 +63,13 @@ func SetRelayRouter(router *gin.Engine) {
 	playgroundRouter := router.Group("/pg")
 	playgroundRouter.Use(middleware.RouteTag("relay"))
 	playgroundRouter.Use(middleware.SystemPerformanceCheck())
+	// 毛利统计按 traffic_source 过滤，playground 流量不进毛利分母。
+	// middleware 里拿不到 common 包外的调用方，这里直接在 group 上挂一个
+	// 轻量 setter，走在 UserAuth/Distribute 之前。
+	playgroundRouter.Use(func(c *gin.Context) {
+		common.SetContextKey(c, constant.ContextKeyTrafficSource, "playground")
+		c.Next()
+	})
 	playgroundRouter.Use(middleware.UserAuth(), middleware.Distribute())
 	{
 		playgroundRouter.POST("/chat/completions", func(c *gin.Context) {

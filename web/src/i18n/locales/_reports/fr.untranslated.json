@@ -181,5 +181,11 @@
   "How the reviewer reaches you about a payout.": "How the reviewer reaches you about a payout.",
   "Saved accounts are shown with the last four digits only, so re-enter the full number to change it.": "Saved accounts are shown with the last four digits only, so re-enter the full number to change it.",
   "The referral program is turned off": "The referral program is turned off",
-  "An administrator has disabled it. Commission already earned is kept, and both accrual and withdrawal resume once the program is turned back on.": "An administrator has disabled it. Commission already earned is kept, and both accrual and withdrawal resume once the program is turned back on."
+  "An administrator has disabled it. Commission already earned is kept, and both accrual and withdrawal resume once the program is turned back on.": "An administrator has disabled it. Commission already earned is kept, and both accrual and withdrawal resume once the program is turned back on.",
+  "Upstream cost in USD per 1M tokens. One markup number covers the whole channel; per-model prices override it.": "Upstream cost in USD per 1M tokens. One markup number covers the whole channel; per-model prices override it.",
+  "Overrides the fields above when set. Full cost object: mode, default_markup, discount, models (per-kind unit prices), expr.": "Overrides the fields above when set. Full cost object: mode, default_markup, discount, models (per-kind unit prices), expr.",
+  "Markup must be 0 or more": "Markup must be 0 or more",
+  "Markup must be 1000 or less": "Markup must be 1000 or less",
+  "Discount must be 0 or more": "Discount must be 0 or more",
+  "Discount must be 100 or less": "Discount must be 100 or less"
 }

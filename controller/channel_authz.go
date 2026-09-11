@@ -88,6 +88,11 @@ var channelReadOnlyFields = map[string]struct{}{
 	"balance":              {},
 	"balance_updated_time": {},
 	"used_quota":           {},
+	// Cost/margin aggregates are computed from channel_cost_daily on read;
+	// they are response-only and never accepted from a client.
+	"cost_30d":        {},
+	"margin_30d":      {},
+	"margin_rate_30d": {},
 }
 
 func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]any) {

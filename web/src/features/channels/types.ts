@@ -71,6 +71,11 @@ export const channelSchema = z.object({
     multi_key_mode: 'random',
   }),
   settings: z.string().default('{}'), // other_settings JSON
+  // Cost/margin aggregates for the last 30 days (present when cost accounting
+  // is enabled; absent/null otherwise).
+  cost_30d: z.number().nullish(),
+  margin_30d: z.number().nullish(),
+  margin_rate_30d: z.number().nullish(),
 })
 
 export type Channel = z.infer<typeof channelSchema>
@@ -109,6 +114,35 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
+  cost?: ChannelCostSettings
+}
+
+// ============================================================================
+// Cost Settings Types (upstream cost pricing for margin accounting)
+// ============================================================================
+
+export interface ModelCostPrice {
+  input?: number
+  output?: number
+  cache_read?: number
+  cache_write_5m?: number
+  cache_write_1h?: number
+  audio_in?: number
+  audio_out?: number
+  image_in?: number
+  image_out?: number
+  reasoning?: number
+  per_call?: number
+}
+
+export interface ChannelCostSettings {
+  mode?: 'ratio' | 'per_call' | 'expr' | ''
+  default_markup?: number
+  discount?: number
+  models?: Record<string, ModelCostPrice>
+  expr?: string
+  currency?: string
+  updated_at?: number
 }
 
 export interface AdvancedCustomConfig {
@@ -263,6 +297,7 @@ export type ChannelSortBy =
   | 'balance'
   | 'response_time'
   | 'test_time'
+  | 'margin_rate'
 
 export type ChannelSortOrder = 'asc' | 'desc'
 

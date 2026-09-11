@@ -79,6 +79,7 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'balance',
   'response_time',
   'test_time',
+  'margin_rate',
 ])
 
 function isDisabledChannelRow(channel: Channel) {

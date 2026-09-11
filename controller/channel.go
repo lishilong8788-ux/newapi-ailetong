@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	costsetting "github.com/QuantumNous/new-api/setting/cost_setting"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -167,6 +170,52 @@ func GetAllChannels(c *gin.Context) {
 
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
+	}
+
+	// 成本毛利三列：一次批量查询渠道在近 30 天的聚合，避免 N+1。核算开关
+	// 关闭时跳过（返回空字段）。
+	if costsetting.GetSetting().Enabled {
+		channelIds := make([]int, 0, len(channelData))
+		for _, datum := range channelData {
+			channelIds = append(channelIds, datum.Id)
+		}
+		endTs := time.Now().Unix()
+		startTs := endTs - 30*86400
+		aggMap, err := model.GetCostDailyByChannelList(channelIds, startTs, endTs)
+		if err != nil {
+			common.SysError("failed to get channel cost aggregates: " + err.Error())
+		} else {
+			for _, datum := range channelData {
+				agg, ok := aggMap[datum.Id]
+				if !ok {
+					continue
+				}
+				datum.Cost30d = agg.CostQuota
+				datum.Margin30d = agg.RevenueQuota - agg.CostQuota
+				if agg.RevenueQuota > 0 {
+					rate := float64(agg.RevenueQuota-agg.CostQuota) / float64(agg.RevenueQuota)
+					datum.MarginRate30d = &rate
+				}
+			}
+			// margin_rate 排序：聚合数据不在 SQL 里，这里在内存中排。
+			if strings.EqualFold(sortOptions.SortBy, "margin_rate") {
+				sort.Slice(channelData, func(i, j int) bool {
+					rate := func(ch *model.Channel) float64 {
+						if ch.MarginRate30d == nil {
+							if sortOptions.SortOrder == "asc" {
+								return math.Inf(1) // 无数据的排最后
+							}
+							return math.Inf(-1)
+						}
+						return *ch.MarginRate30d
+					}
+					if sortOptions.SortOrder == "asc" {
+						return rate(channelData[i]) < rate(channelData[j])
+					}
+					return rate(channelData[i]) > rate(channelData[j])
+				})
+			}
+		}
 	}
 
 	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)

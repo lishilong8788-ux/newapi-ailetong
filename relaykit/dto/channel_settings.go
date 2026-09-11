@@ -85,6 +85,36 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
+	Cost                                  *ChannelCostSettings  `json:"cost,omitempty"` // 上游成本配置（毛利核算用）
+}
+
+// ChannelCostSettings is the per-channel upstream cost configuration stored
+// inside ChannelOtherSettings. All scalars are pointers so "not configured"
+// stays distinguishable from an explicit zero (free models are a legal $0).
+type ChannelCostSettings struct {
+	Mode          string                    `json:"mode,omitempty"`           // ratio|per_call|expr
+	DefaultMarkup *float64                  `json:"default_markup,omitempty"` // 加价率，如 0.3 = 成本上加 30%
+	Discount      *float64                  `json:"discount,omitempty"`       // 相对官方价的折扣，如 0.85
+	Models        map[string]ModelCostPrice `json:"models,omitempty"`         // upstream_model -> 单价
+	Expr          string                    `json:"expr,omitempty"`
+	Currency      string                    `json:"currency,omitempty"` // 预留，默认 USD
+	UpdatedAt     int64                     `json:"updated_at,omitempty"`
+}
+
+// ModelCostPrice holds per-token-kind unit prices. Unit: USD per 1M tokens,
+// matching provider list prices so operators can copy them verbatim.
+type ModelCostPrice struct {
+	Input        *float64 `json:"input,omitempty"`
+	Output       *float64 `json:"output,omitempty"`
+	CacheRead    *float64 `json:"cache_read,omitempty"`
+	CacheWrite5m *float64 `json:"cache_write_5m,omitempty"`
+	CacheWrite1h *float64 `json:"cache_write_1h,omitempty"`
+	AudioIn      *float64 `json:"audio_in,omitempty"`
+	AudioOut     *float64 `json:"audio_out,omitempty"`
+	ImageIn      *float64 `json:"image_in,omitempty"`
+	ImageOut     *float64 `json:"image_out,omitempty"`
+	Reasoning    *float64 `json:"reasoning,omitempty"`
+	PerCall      *float64 `json:"per_call,omitempty"` // USD per request（per_call 模式）
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

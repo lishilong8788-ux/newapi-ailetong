@@ -49,9 +49,14 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	}
 	if info.IsModelMapped {
 		other["is_model_mapped"] = true
-		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	// upstream_model_name 必须无条件落库：成本核算按 (channel_id, upstream_model_name)
+	// 匹配成本价，adaptor 的后缀剥离等二次改写不设 IsModelMapped，门控会让这类请求
+	// 退化成 origin 名错配价目。
+	other["upstream_model_name"] = info.UpstreamModelName
 	attachQuotaSaturation(c, info, other)
+	// 任务提交按次计费居多，token 明细大多为空；成本按 per_call/加价率解析。
+	attachUpstreamCost(c, info, CostInputs{Revenue: info.PriceData.Quota}, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
@@ -136,6 +141,10 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 	props := task.Properties
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
 		other["is_model_mapped"] = true
+	}
+	// upstream_model_name 无条件落库，成本核算按 (channel_id, upstream_model_name)
+	// 匹配成本价，mapping 之外 adaptor 二次改写不设 is_model_mapped 标记。
+	if props.UpstreamModelName != "" {
 		other["upstream_model_name"] = props.UpstreamModelName
 	}
 	return other
