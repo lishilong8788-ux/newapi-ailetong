@@ -334,6 +334,16 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  AgentEnabled: boolean
+  // Commission rates are stored as fractions (0.05 = 5%).
+  AgentDefaultRate: number
+  AgentMaxRate: number
+  AgentFreezeDays: number
+  AgentMinWithdrawal: number
+  AgentWithdrawalFeeRate: number
+  AgentAutoApprove: boolean
+  AgentBalanceNeedAudit: boolean
+  AgentSubscriptionCommission: boolean
 }
 
 export type OperationsSettings = {

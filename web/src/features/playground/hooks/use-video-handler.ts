@@ -260,9 +260,7 @@ export function useVideoHandler({
         }
 
         if (!isVideoTaskSuccessful(settled)) {
-          reportError(
-            settled.failReason ?? t(ERROR_MESSAGES.API_REQUEST_ERROR)
-          )
+          reportError(settled.failReason ?? t(ERROR_MESSAGES.API_REQUEST_ERROR))
           return
         }
 

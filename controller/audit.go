@@ -49,6 +49,13 @@ var auditContentTemplates = map[string]string{
 
 	"subscription.plan_reset":      "Reset active subscriptions for plan ${plan_id}",
 	"subscription.user_plan_reset": "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
+
+	// 代理分销：涉及资金与信任的人工操作，必须留痕（设计方案 13.4）
+	"agent.profile_audit":       "Audited agent profile ${profile_id} (${from_status} -> ${to_status}), reason: ${reason}",
+	"agent.rate_change":         "Changed agent ${target_user_id} commission rate from ${from_rate} to ${to_rate}",
+	"agent.profile_create":      "Designated user ${target_user_id} as agent (status ${status}, rate ${from_rate} -> ${to_rate})",
+	"agent.commission_adjust":   "Adjusted agent ${target_user_id} commission by ${amount}, reason: ${reason}",
+	"agent.withdrawal_complete": "Marked withdrawal ${withdrawal_id} paid (${actual_amount} via ${method}), voucher ${voucher}",
 }
 
 // auditContentEN 按 action 模板渲染英文兜底文本；未登记的 action 退回 action 本身。

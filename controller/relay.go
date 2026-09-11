@@ -469,6 +469,12 @@ func RelayNotFound(c *gin.Context) {
 		Param:   "",
 		Code:    "",
 	}
+	// A route that does not exist today may exist in the next build, so this
+	// answer must never be cached. Set it here rather than relying on the
+	// caller: this is the shared not-found responder for /v1, /api and /assets,
+	// and a cached 404 makes the new route look broken with no request reaching
+	// the server to show why.
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusNotFound, gin.H{
 		"error": err,
 	})

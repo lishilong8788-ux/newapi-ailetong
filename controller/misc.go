@@ -123,6 +123,11 @@ func GetStatus(c *gin.Context) {
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
+		// Lets the console hide the agent workbench entry and refuse the route
+		// while the programme is off, instead of routing to a page whose every
+		// request requireAgentProgramme rejects. The admin console is
+		// deliberately not gated on this - see controller/agent_admin.go.
+		"agent_enabled": setting.AgentEnabled,
 	}
 
 	// 根据启用状态注入可选内容

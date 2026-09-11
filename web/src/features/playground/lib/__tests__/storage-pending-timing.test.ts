@@ -39,9 +39,7 @@ function pendingAssistant(): Message {
   }
 }
 
-function conversation(
-  messages: Message[]
-): PlaygroundConversations[string] {
+function conversation(messages: Message[]): PlaygroundConversations[string] {
   return { messages, updatedAt: STARTED_AT }
 }
 

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -360,6 +361,37 @@ func UpdateOption(c *gin.Context) {
 				"success": false,
 				"message": err.Error(),
 			})
+			return
+		}
+	case "AgentDefaultRate", "AgentMaxRate", "AgentWithdrawalFeeRate":
+		// Commission rates are stored as fractions. A rate above 1 would make
+		// every top-up a net loss, so the ceiling is enforced here and not only
+		// in the admin form.
+		rate, parseErr := strconv.ParseFloat(strings.TrimSpace(option.Value.(string)), 64)
+		if parseErr != nil || math.IsNaN(rate) {
+			common.ApiErrorI18n(c, i18n.MsgAgentRateInvalid)
+			return
+		}
+		if rate < 0 || rate > 1 {
+			common.ApiErrorI18n(c, i18n.MsgAgentRateOutOfRange)
+			return
+		}
+		if option.Key == "AgentDefaultRate" && rate > setting.AgentMaxRate {
+			common.ApiErrorI18n(c, i18n.MsgAgentDefaultRateAboveMax, map[string]any{
+				"Max": strconv.FormatFloat(setting.AgentMaxRate, 'f', -1, 64),
+			})
+			return
+		}
+	case "AgentFreezeDays":
+		days, parseErr := strconv.Atoi(strings.TrimSpace(option.Value.(string)))
+		if parseErr != nil || days < 0 {
+			common.ApiErrorI18n(c, i18n.MsgAgentFreezeDaysInvalid)
+			return
+		}
+	case "AgentMinWithdrawal":
+		amount, parseErr := strconv.ParseFloat(strings.TrimSpace(option.Value.(string)), 64)
+		if parseErr != nil || !(amount > 0) || math.IsInf(amount, 0) {
+			common.ApiErrorI18n(c, i18n.MsgAgentMinWithdrawalInvalid)
 			return
 		}
 	}

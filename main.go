@@ -128,6 +128,14 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 
+	// Wire the distributor commission engine into the top-up settlement paths
+	// (breaks the model -> service import cycle). Must run before the HTTP
+	// server accepts payment callbacks, otherwise early top-ups earn nothing.
+	service.InitAgentCommissionHook()
+
+	// Freeze-window worker: promotes matured pending commission to settled.
+	service.StartAgentCommissionSettleTask()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()

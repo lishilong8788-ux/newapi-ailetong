@@ -45,7 +45,13 @@ export const api = axios.create({
   baseURL: '',
   withCredentials: true,
   headers: {
-    'Cache-Control': 'no-store',
+    // `no-cache` rather than `no-store`: both stop the response being written to
+    // the cache, but only `no-cache` forces a stored entry to be revalidated
+    // before it is reused. That difference matters because the server used to
+    // serve route-not-found 404s with a week-long `max-age`, so a browser that
+    // called an endpoint before its route existed keeps answering from disk
+    // until the entry expires. Revalidating turns those into a real request.
+    'Cache-Control': 'no-cache',
   },
 })
 

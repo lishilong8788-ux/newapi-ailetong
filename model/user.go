@@ -101,6 +101,16 @@ type User struct {
 	AffQuota         int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
 	AffHistoryQuota  int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
 	InviterId        int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	// Agent commission summaries are denormalized for list sorting and the
+	// dashboard only. Every funds decision re-aggregates the agent_commission
+	// ledger under a row lock instead of trusting these columns.
+	// Plain float columns, not decimal-typed: the glebarez SQLite migrator
+	// cannot re-parse CREATE TABLE DDL containing decimal(...) during
+	// re-migration (same reason SubscriptionPlan skips AutoMigrate on SQLite).
+	// Money math happens in code via shopspring/decimal.
+	AgentCommissionTotal     float64 `json:"agent_commission_total" gorm:"default:0;column:agent_commission_total"`
+	AgentCommissionAvailable float64 `json:"agent_commission_available" gorm:"default:0;column:agent_commission_available"`
+	AgentWithdrawnTotal      float64 `json:"agent_withdrawn_total" gorm:"default:0;column:agent_withdrawn_total"`
 	DeletedAt        gorm.DeletedAt             `gorm:"index"`
 	LinuxDOId        string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting          string                     `json:"setting" gorm:"type:text;column:setting"`

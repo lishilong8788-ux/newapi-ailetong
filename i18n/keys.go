@@ -326,6 +326,15 @@ const (
 	MsgDistributorInvalidParseModel       = "distributor.invalid_request_parse_model"
 )
 
+// Agent (distributor programme) setting related messages
+const (
+	MsgAgentRateInvalid          = "agent.rate_invalid"
+	MsgAgentRateOutOfRange       = "agent.rate_out_of_range"
+	MsgAgentDefaultRateAboveMax  = "agent.default_rate_above_max"
+	MsgAgentFreezeDaysInvalid    = "agent.freeze_days_invalid"
+	MsgAgentMinWithdrawalInvalid = "agent.min_withdrawal_invalid"
+)
+
 // Custom OAuth provider related messages
 const (
 	MsgCustomOAuthNotFound          = "custom_oauth.not_found"

@@ -51,8 +51,8 @@ import { getMessageContentStyles } from '../../lib/message/message-styles'
 import type { Message } from '../../types'
 import { MessageError } from './message-error'
 import { MessageImages } from './message-images'
-import { MessageVideos } from './message-videos'
 import { MessageMetadata } from './message-metadata'
+import { MessageVideos } from './message-videos'
 
 type PlaygroundMessageContentProps = {
   actions: ReactNode

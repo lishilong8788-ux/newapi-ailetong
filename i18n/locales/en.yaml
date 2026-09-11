@@ -275,6 +275,13 @@ distributor.no_available_channel: "No available channel for model {{.Model}} und
 distributor.invalid_midjourney_request: "Invalid Midjourney request: {{.Error}}"
 distributor.invalid_request_parse_model: "Invalid request, unable to parse model"
 
+# Agent (distributor programme) setting messages
+agent.rate_invalid: "Commission rate must be a number"
+agent.rate_out_of_range: "Commission rate must be between 0 and 1 (0% to 100%)"
+agent.default_rate_above_max: "Default commission rate cannot exceed the maximum commission rate ({{.Max}})"
+agent.freeze_days_invalid: "Commission freeze days must be an integer of 0 or more"
+agent.min_withdrawal_invalid: "Minimum withdrawal amount must be greater than 0"
+
 # Custom OAuth provider messages
 custom_oauth.not_found: "Custom OAuth provider not found"
 custom_oauth.slug_empty: "Slug cannot be empty"

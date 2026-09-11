@@ -388,8 +388,16 @@ export function useDataTable<TData>(options: UseDataTableOptions<TData>) {
       columnSizing,
       rowSelection,
       expanded,
-      columnFilters: options.columnFilters,
-      globalFilter: options.globalFilter,
+      // Only present when the caller actually controls them. TanStack merges
+      // `state` over its own defaults, so writing the keys unconditionally sends
+      // `columnFilters: undefined` for every table that has no column filters —
+      // and the shared toolbar reads `.length` off it.
+      ...(options.columnFilters !== undefined && {
+        columnFilters: options.columnFilters,
+      }),
+      ...(options.globalFilter !== undefined && {
+        globalFilter: options.globalFilter,
+      }),
       pagination,
     },
     enableRowSelection: options.enableRowSelection,

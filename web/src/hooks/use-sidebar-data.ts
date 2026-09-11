@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Activity,
   Box,
+  ChartNoAxesCombined,
   CreditCard,
   FileText,
   FlaskConical,
@@ -30,8 +31,10 @@ import {
   ReceiptText,
   ServerCog,
   Settings,
+  Share2,
   Ticket,
   User,
+  UserCog,
   Users,
   Wallet,
 } from 'lucide-react'
@@ -115,6 +118,12 @@ export function useSidebarData(): SidebarData {
             icon: ReceiptText,
           },
           {
+            title: t('Referral Program'),
+            url: '/agent',
+            icon: Share2,
+            requiredStatusFlag: 'agent_enabled',
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -154,6 +163,16 @@ export function useSidebarData(): SidebarData {
             title: t('Invoice Management'),
             url: '/invoice-management',
             icon: ReceiptText,
+          },
+          {
+            title: t('Agent Management'),
+            url: '/agent-management',
+            icon: UserCog,
+          },
+          {
+            title: t('Distribution Analytics'),
+            url: '/agent-analytics',
+            icon: ChartNoAxesCombined,
           },
           {
             title: t('System Info'),

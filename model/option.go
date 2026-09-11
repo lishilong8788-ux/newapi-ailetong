@@ -135,6 +135,15 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
+	common.OptionMap["AgentEnabled"] = strconv.FormatBool(setting.AgentEnabled)
+	common.OptionMap["AgentDefaultRate"] = strconv.FormatFloat(setting.AgentDefaultRate, 'f', -1, 64)
+	common.OptionMap["AgentMaxRate"] = strconv.FormatFloat(setting.AgentMaxRate, 'f', -1, 64)
+	common.OptionMap["AgentFreezeDays"] = strconv.Itoa(setting.AgentFreezeDays)
+	common.OptionMap["AgentMinWithdrawal"] = strconv.FormatFloat(setting.AgentMinWithdrawal, 'f', -1, 64)
+	common.OptionMap["AgentWithdrawalFeeRate"] = strconv.FormatFloat(setting.AgentWithdrawalFeeRate, 'f', -1, 64)
+	common.OptionMap["AgentAutoApprove"] = strconv.FormatBool(setting.AgentAutoApprove)
+	common.OptionMap["AgentBalanceNeedAudit"] = strconv.FormatBool(setting.AgentBalanceNeedAudit)
+	common.OptionMap["AgentSubscriptionCommission"] = strconv.FormatBool(setting.AgentSubscriptionCommission)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
 	common.OptionMap["ModelRequestRateLimitDurationMinutes"] = strconv.Itoa(setting.ModelRequestRateLimitDurationMinutes)
@@ -538,6 +547,24 @@ func updateOptionMap(key string, value string) (err error) {
 		common.QuotaForInvitee, _ = strconv.Atoi(value)
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
+	case "AgentEnabled":
+		setting.AgentEnabled = value == "true"
+	case "AgentDefaultRate":
+		setting.AgentDefaultRate, _ = strconv.ParseFloat(value, 64)
+	case "AgentMaxRate":
+		setting.AgentMaxRate, _ = strconv.ParseFloat(value, 64)
+	case "AgentFreezeDays":
+		setting.AgentFreezeDays, _ = strconv.Atoi(value)
+	case "AgentMinWithdrawal":
+		setting.AgentMinWithdrawal, _ = strconv.ParseFloat(value, 64)
+	case "AgentWithdrawalFeeRate":
+		setting.AgentWithdrawalFeeRate, _ = strconv.ParseFloat(value, 64)
+	case "AgentAutoApprove":
+		setting.AgentAutoApprove = value == "true"
+	case "AgentBalanceNeedAudit":
+		setting.AgentBalanceNeedAudit = value == "true"
+	case "AgentSubscriptionCommission":
+		setting.AgentSubscriptionCommission = value == "true"
 	case "PreConsumedQuota":
 		common.PreConsumedQuota, _ = strconv.Atoi(value)
 	case "ModelRequestRateLimitCount":

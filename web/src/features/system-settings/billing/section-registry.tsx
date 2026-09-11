@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
+import { AgentSettingsSection } from '../general/agent-settings-section'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
@@ -197,6 +198,25 @@ const BILLING_SECTIONS = [
           enabled: settings['checkin_setting.enabled'],
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'agent',
+    titleKey: 'Agent Distribution',
+    build: (settings: BillingSettings) => (
+      <AgentSettingsSection
+        defaultValues={{
+          AgentEnabled: settings.AgentEnabled,
+          AgentDefaultRate: settings.AgentDefaultRate,
+          AgentMaxRate: settings.AgentMaxRate,
+          AgentFreezeDays: settings.AgentFreezeDays,
+          AgentMinWithdrawal: settings.AgentMinWithdrawal,
+          AgentWithdrawalFeeRate: settings.AgentWithdrawalFeeRate,
+          AgentAutoApprove: settings.AgentAutoApprove,
+          AgentBalanceNeedAudit: settings.AgentBalanceNeedAudit,
+          AgentSubscriptionCommission: settings.AgentSubscriptionCommission,
         }}
       />
     ),

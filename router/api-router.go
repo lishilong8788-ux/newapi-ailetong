@@ -211,6 +211,47 @@ func SetApiRouter(router *gin.Engine) {
 			invoiceAdminRoute.POST("/:id/resend", middleware.CriticalRateLimit(), controller.AdminResendInvoiceEmail)
 		}
 
+		// Agent distribution (代理分销): promotion, commission ledger, withdrawals.
+		// Every agent-side handler derives the agent id from the auth context; the
+		// group never accepts a user id from the request (设计方案 13.4).
+		agentRoute := apiRouter.Group("/agent")
+		agentRoute.Use(middleware.UserAuth())
+		{
+			agentRoute.GET("/profile", controller.GetAgentProfile)
+			agentRoute.POST("/profile", middleware.CriticalRateLimit(), controller.SubmitAgentProfile)
+			agentRoute.GET("/customers", controller.GetAgentCustomers)
+			agentRoute.GET("/customers/export", controller.GetAgentCustomersExport)
+			agentRoute.GET("/commissions", controller.GetAgentCommissions)
+			agentRoute.GET("/stats", controller.GetAgentStats)
+			// The withdrawal gets a per-user limit on top of the IP limit: it is the
+			// one endpoint that moves money, and an IP limit alone is defeated by a
+			// proxy rotation.
+			agentRoute.POST("/withdrawal", middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("agent-withdrawal"), controller.CreateAgentWithdrawal)
+			agentRoute.GET("/withdrawals", controller.GetAgentWithdrawals)
+			agentRoute.POST("/withdrawals/:id/cancel", middleware.CriticalRateLimit(), controller.CancelAgentWithdrawal)
+		}
+		agentAdminRoute := apiRouter.Group("/agent/admin")
+		agentAdminRoute.Use(middleware.AdminAuth())
+		{
+			// export is registered before :id so gin matches the static segment
+			agentAdminRoute.GET("/export", controller.AdminExportAgents)
+			agentAdminRoute.GET("/analytics", controller.AdminGetAgentAnalytics)
+			agentAdminRoute.GET("/profiles", controller.AdminGetAgentProfiles)
+			agentAdminRoute.POST("/profiles", middleware.CriticalRateLimit(), controller.AdminCreateAgentProfile)
+			agentAdminRoute.GET("/profiles/:id", controller.AdminGetAgentProfileDetail)
+			agentAdminRoute.POST("/profiles/:id/audit", middleware.CriticalRateLimit(), controller.AdminAuditAgentProfile)
+			agentAdminRoute.POST("/profiles/:id/rate", middleware.CriticalRateLimit(), controller.AdminSetAgentRate)
+			agentAdminRoute.POST("/profiles/:id/status", middleware.CriticalRateLimit(), controller.AdminSetAgentStatus)
+			agentAdminRoute.GET("/withdrawals", controller.AdminGetWithdrawals)
+			agentAdminRoute.GET("/withdrawals/:id", controller.AdminGetWithdrawalDetail)
+			agentAdminRoute.POST("/withdrawals/:id/approve", middleware.CriticalRateLimit(), controller.AdminApproveWithdrawal)
+			agentAdminRoute.POST("/withdrawals/:id/reject", middleware.CriticalRateLimit(), controller.AdminRejectWithdrawal)
+			agentAdminRoute.POST("/withdrawals/:id/complete", middleware.CriticalRateLimit(), controller.AdminCompleteWithdrawal)
+			agentAdminRoute.POST("/withdrawals/:id/fail", middleware.CriticalRateLimit(), controller.AdminFailWithdrawal)
+			agentAdminRoute.GET("/commissions", controller.AdminGetCommissions)
+			agentAdminRoute.POST("/commissions/adjust", middleware.CriticalRateLimit(), controller.AdminAdjustCommission)
+		}
+
 		// Subscription payment callbacks (no auth)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)

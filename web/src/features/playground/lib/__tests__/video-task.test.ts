@@ -77,12 +77,12 @@ describe('parseVideoTaskState / progress', () => {
 
 describe('parseVideoTaskState / terminal states', () => {
   test('SUCCESS and FAILURE end polling', () => {
-    expect(parseVideoTaskState({ data: { status: 'SUCCESS' } }).isTerminal).toBe(
-      true
-    )
-    expect(parseVideoTaskState({ data: { status: 'FAILURE' } }).isTerminal).toBe(
-      true
-    )
+    expect(
+      parseVideoTaskState({ data: { status: 'SUCCESS' } }).isTerminal
+    ).toBe(true)
+    expect(
+      parseVideoTaskState({ data: { status: 'FAILURE' } }).isTerminal
+    ).toBe(true)
   })
 
   test('in-flight states do not', () => {

@@ -106,6 +106,15 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
+  AgentEnabled: false,
+  AgentDefaultRate: 0.05,
+  AgentMaxRate: 0.3,
+  AgentFreezeDays: 7,
+  AgentMinWithdrawal: 100,
+  AgentWithdrawalFeeRate: 0,
+  AgentAutoApprove: false,
+  AgentBalanceNeedAudit: false,
+  AgentSubscriptionCommission: false,
 }
 
 export function BillingSettings() {

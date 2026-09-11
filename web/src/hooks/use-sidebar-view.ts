@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { useSidebarConfig } from './use-sidebar-config'
 import { useSidebarData } from './use-sidebar-data'
+import { useStatus } from './use-status'
 
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
@@ -38,7 +39,8 @@ const ROOT_VIEW_KEY = '__root'
  *   groups) when the URL belongs to a registered drill-in workspace.
  * - Otherwise returns the root navigation, narrowed by:
  *     · admin-only group visibility (role-based);
- *     · `useSidebarConfig` (admin × user `sidebar_modules` overlay).
+ *     · `useSidebarConfig` (admin × user `sidebar_modules` overlay);
+ *     · `requiredStatusFlag` (features an operator has switched off).
  *
  * Nested views are intentionally NOT passed through `useSidebarConfig`
  * — those filters target known dashboard URLs only, and gating is
@@ -48,6 +50,7 @@ export function useSidebarView(): ResolvedSidebarView {
   const { t } = useTranslation()
   const pathname = useLocation({ select: (l) => l.pathname })
   const userRole = useAuthStore((s) => s.auth.user?.role)
+  const { status } = useStatus()
   const rootSidebarData = useSidebarData()
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
 
@@ -57,12 +60,21 @@ export function useSidebarView(): ResolvedSidebarView {
     return configFilteredRoot
       .filter((group) => (group.id === 'admin' ? isAdmin : true))
       .map((group) => {
-        const items = group.items.filter(
-          (item) => item.requiredRole === undefined || role >= item.requiredRole
-        )
+        const items = group.items.filter((item) => {
+          if (item.requiredRole !== undefined && role < item.requiredRole) {
+            return false
+          }
+          // A missing flag reads as off. Status may not have arrived yet, but
+          // showing an entry that leads to a page the route guard bounces is
+          // worse than showing it a beat late.
+          return (
+            item.requiredStatusFlag === undefined ||
+            status?.[item.requiredStatusFlag] === true
+          )
+        })
         return items.length === group.items.length ? group : { ...group, items }
       })
-  }, [configFilteredRoot, userRole])
+  }, [configFilteredRoot, status, userRole])
 
   const view = resolveSidebarView(pathname)
 

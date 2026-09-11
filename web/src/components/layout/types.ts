@@ -34,6 +34,16 @@ type BaseNavItem = {
    * `useSidebarView`). Route-level guards still enforce access independently.
    */
   requiredRole?: number
+  /**
+   * Key of a boolean `/api/status` flag that must be true for this item to
+   * appear (see `useSidebarView`). Use it for whole features an operator can
+   * switch off, where the backend rejects every request while it is off — the
+   * `sidebar_modules` config in `useSidebarConfig` is a different axis: it is
+   * an operator/user display preference over features that do work.
+   *
+   * Route-level guards still enforce access independently.
+   */
+  requiredStatusFlag?: string
 }
 
 /**

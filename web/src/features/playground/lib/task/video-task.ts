@@ -66,7 +66,9 @@ export type VideoTaskState = {
  * `width: "50%%"` — a silently broken bar rather than a crash, which is why this
  * is normalised at the boundary instead of at the point of use.
  */
-function parseProgress(progress: number | string | undefined): number | undefined {
+function parseProgress(
+  progress: number | string | undefined
+): number | undefined {
   if (typeof progress === 'number' && Number.isFinite(progress)) {
     return clampPercent(progress)
   }
