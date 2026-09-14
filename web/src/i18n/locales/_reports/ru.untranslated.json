@@ -3,7 +3,6 @@
   "Attach images, or paste and drag them in": "Attach images, or paste and drag them in",
   "Describe your task, or paste and drag in images": "Describe your task, or paste and drag in images",
   "Enter to send · Shift+Enter for a new line": "Enter to send · Shift+Enter for a new line",
-  "List price": "List price",
   "Generating video. This takes a few minutes...": "Generating video. This takes a few minutes...",
   "Generation progress": "Generation progress",
   "Open video": "Open video",
@@ -633,5 +632,17 @@
   "Markup must be 0 or more": "Markup must be 0 or more",
   "Markup must be 1000 or less": "Markup must be 1000 or less",
   "Discount must be 0 or more": "Discount must be 0 or more",
-  "Discount must be 100 or less": "Discount must be 100 or less"
+  "Discount must be 100 or less": "Discount must be 100 or less",
+  "Official price": "Official price",
+  "Platform price vs. official price": "Platform price vs. official price",
+  "Official price sync": "Official price sync",
+  "Fetches vendor list prices so the model catalog can show them beside your platform price and label the difference as a discount. Display only — these values are never used for billing, and your own pricing ratios are left untouched.": "Fetches vendor list prices so the model catalog can show them beside your platform price and label the difference as a discount. Display only — these values are never used for billing, and your own pricing ratios are left untouched.",
+  "Last synced: {{time}}": "Last synced: {{time}}",
+  "Never synced": "Never synced",
+  "Sync official prices now": "Sync official prices now",
+  "Daily auto sync": "Daily auto sync",
+  "Refresh official prices once a day in the background.": "Refresh official prices once a day in the background.",
+  "Failed to sync official prices": "Failed to sync official prices",
+  "Some sources failed: {{errorMsg}}": "Some sources failed: {{errorMsg}}",
+  "Official prices synced for {{count}} models": "Official prices synced for {{count}} models"
 }

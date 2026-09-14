@@ -2545,7 +2545,6 @@
     "LinuxDO Client Secret": "LinuxDO Bí mật máy khách",
     "List of models supported by this channel. Use comma to separate multiple models.": "Danh sách các mô hình được hỗ trợ bởi kênh này. Sử dụng dấu phẩy để phân tách nhiều mô hình.",
     "List of origins (one per line) allowed for Passkey registration and authentication.": "Danh sách các nguồn gốc (mỗi dòng một mục) được phép đăng ký và xác thực Passkey.",
-    "List price": "List price",
     "List view": "Xem dạng danh sách",
     "Live refresh pauses when no task is running": "Tự động làm mới tạm dừng khi không có tác vụ nào đang chạy",
     "LLM Leaderboard": "Bảng xếp hạng LLM",
@@ -6110,6 +6109,18 @@
     "Markup must be 0 or more": "Markup must be 0 or more",
     "Markup must be 1000 or less": "Markup must be 1000 or less",
     "Discount must be 0 or more": "Discount must be 0 or more",
-    "Discount must be 100 or less": "Discount must be 100 or less"
+    "Discount must be 100 or less": "Discount must be 100 or less",
+    "Official price": "Official price",
+    "Platform price vs. official price": "Platform price vs. official price",
+    "Official price sync": "Official price sync",
+    "Fetches vendor list prices so the model catalog can show them beside your platform price and label the difference as a discount. Display only — these values are never used for billing, and your own pricing ratios are left untouched.": "Fetches vendor list prices so the model catalog can show them beside your platform price and label the difference as a discount. Display only — these values are never used for billing, and your own pricing ratios are left untouched.",
+    "Last synced: {{time}}": "Last synced: {{time}}",
+    "Never synced": "Never synced",
+    "Sync official prices now": "Sync official prices now",
+    "Daily auto sync": "Daily auto sync",
+    "Refresh official prices once a day in the background.": "Refresh official prices once a day in the background.",
+    "Failed to sync official prices": "Failed to sync official prices",
+    "Some sources failed: {{errorMsg}}": "Some sources failed: {{errorMsg}}",
+    "Official prices synced for {{count}} models": "Official prices synced for {{count}} models"
   }
 }

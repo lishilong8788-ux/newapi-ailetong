@@ -48,6 +48,8 @@ const defaultBillingSettings: BillingSettings = {
   AudioRatio: '',
   AudioCompletionRatio: '',
   ExposeRatioEnabled: false,
+  OfficialRatioAutoSyncEnabled: false,
+  OfficialRatioSyncedAt: 0,
   'billing_setting.billing_mode': '{}',
   'billing_setting.billing_expr': '{}',
   'tool_price_setting.prices': '{}',

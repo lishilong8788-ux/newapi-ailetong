@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 // RegisterScheduledSystemTasks wires the periodic channel test, upstream model
@@ -22,6 +23,35 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(officialRatioSyncHandler{})
+}
+
+// officialRatioSyncHandler refreshes the vendor list prices shown next to the
+// platform price in the model catalog.
+//
+// Disabled by default. The sync reaches public pricing endpoints, and an upgrade
+// should not start making outbound requests on its own — an admin opts in next to
+// the manual sync button, at which point a daily refresh is enough for data that
+// changes when a vendor announces new pricing.
+type officialRatioSyncHandler struct{}
+
+func (officialRatioSyncHandler) Type() string { return model.SystemTaskTypeOfficialRatio }
+
+func (officialRatioSyncHandler) Enabled() bool {
+	return ratio_setting.IsOfficialRatioAutoSyncEnabled()
+}
+
+func (officialRatioSyncHandler) Interval() time.Duration { return 24 * time.Hour }
+
+func (officialRatioSyncHandler) NewPayload() any { return nil }
+
+func (officialRatioSyncHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	result, err := runOfficialRatioSync(ctx)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, result, nil)
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

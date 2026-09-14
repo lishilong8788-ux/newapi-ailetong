@@ -42,6 +42,11 @@ const getModelDefaults = (settings: BillingSettings) => ({
   BillingExpr: settings['billing_setting.billing_expr'],
 })
 
+const getOfficialRatioDefaults = (settings: BillingSettings) => ({
+  autoSyncEnabled: settings.OfficialRatioAutoSyncEnabled ?? false,
+  syncedAt: settings.OfficialRatioSyncedAt ?? 0,
+})
+
 const getGroupDefaults = (settings: BillingSettings) => ({
   TopupGroupRatio: settings.TopupGroupRatio,
   GroupRatio: settings.GroupRatio,
@@ -113,6 +118,7 @@ const BILLING_SECTIONS = [
         modelDefaults={getModelDefaults(settings)}
         groupDefaults={getGroupDefaults(settings)}
         toolPricesDefault={settings['tool_price_setting.prices']}
+        officialRatioDefaults={getOfficialRatioDefaults(settings)}
         visibleTabs={['models', 'unset-models', 'tool-prices', 'upstream-sync']}
       />
     ),
@@ -126,6 +132,7 @@ const BILLING_SECTIONS = [
         modelDefaults={getModelDefaults(settings)}
         groupDefaults={getGroupDefaults(settings)}
         toolPricesDefault={settings['tool_price_setting.prices']}
+        officialRatioDefaults={getOfficialRatioDefaults(settings)}
         visibleTabs={['groups']}
       />
     ),

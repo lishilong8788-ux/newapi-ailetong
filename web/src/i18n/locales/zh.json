@@ -2545,7 +2545,6 @@
     "LinuxDO Client Secret": "LinuxDO 客户端密钥",
     "List of models supported by this channel. Use comma to separate multiple models.": "此渠道支持的模型列表。使用逗号分隔多个模型。",
     "List of origins (one per line) allowed for Passkey registration and authentication.": "允许用于 Passkey 注册和身份验证的来源列表（每行一个）。",
-    "List price": "官方价",
     "List view": "列表视图",
     "Live refresh pauses when no task is running": "无任务运行时暂停自动刷新",
     "LLM Leaderboard": "LLM 排行榜",
@@ -6110,6 +6109,18 @@
     "Markup must be 0 or more": "加价率必须不小于 0",
     "Markup must be 1000 or less": "加价率必须不大于 1000",
     "Discount must be 0 or more": "折扣必须不小于 0",
-    "Discount must be 100 or less": "折扣必须不大于 100"
+    "Discount must be 100 or less": "折扣必须不大于 100",
+    "Official price": "官方价",
+    "Platform price vs. official price": "平台价 ÷ 官方价",
+    "Official price sync": "官方价同步",
+    "Fetches vendor list prices so the model catalog can show them beside your platform price and label the difference as a discount. Display only — these values are never used for billing, and your own pricing ratios are left untouched.": "抓取厂商官方原厂价，在模型广场与平台价并列展示，并把差额标为折扣。仅用于展示：这些数值不参与任何计费，也不会改动你自己的定价倍率。",
+    "Last synced: {{time}}": "上次同步：{{time}}",
+    "Never synced": "尚未同步",
+    "Sync official prices now": "立即同步官方价",
+    "Daily auto sync": "每日自动同步",
+    "Refresh official prices once a day in the background.": "每天在后台刷新一次官方价。",
+    "Failed to sync official prices": "同步官方价失败",
+    "Some sources failed: {{errorMsg}}": "部分数据源失败：{{errorMsg}}",
+    "Official prices synced for {{count}} models": "已同步 {{count}} 个模型的官方价"
   }
 }

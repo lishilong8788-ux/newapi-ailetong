@@ -155,6 +155,35 @@ function applyRechargeRate(
 }
 
 /**
+ * The number `formatGroupPrice` renders, before currency conversion: one token
+ * unit's worth of this price type, in system USD.
+ *
+ * Exposed so the discount column can be computed from the same arithmetic the
+ * price columns print. Deriving it separately is how a card ends up claiming a
+ * discount its own two numbers do not support.
+ *
+ * NaN when the model has no ratio for this price type, which
+ * `formatCurrencyFromUSD` renders as `-`.
+ */
+export function getTokenUnitPrice(
+  model: PricingModel,
+  type: PriceType,
+  tokenUnit: TokenUnit,
+  showWithRecharge: boolean,
+  priceRate: number,
+  usdExchangeRate: number,
+  groupRatio: number
+): number {
+  const priceInUSD = applyRechargeRate(
+    calculateTokenPrice(model, type, groupRatio),
+    showWithRecharge,
+    priceRate,
+    usdExchangeRate
+  )
+  return priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+}
+
+/**
  * Format token-based price for display
  */
 export function formatPrice(
@@ -170,22 +199,17 @@ export function formatPrice(
     return '-'
   }
 
-  const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
-
-  let priceInUSD = calculateTokenPrice(model, type, displayGroupRatio)
-  priceInUSD = applyRechargeRate(
-    priceInUSD,
-    showWithRecharge,
-    priceRate,
-    usdExchangeRate
+  return formatTokenUnitPrice(
+    getTokenUnitPrice(
+      model,
+      type,
+      tokenUnit,
+      showWithRecharge,
+      priceRate,
+      usdExchangeRate,
+      getDisplayGroupRatio(model, selectedGroup)
+    )
   )
-
-  const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
-  return formatCurrencyFromUSD(price, {
-    digitsLarge: 4,
-    digitsSmall: 6,
-    abbreviate: false,
-  })
 }
 
 /**
@@ -205,22 +229,74 @@ export function formatGroupPrice(
     return '-'
   }
 
-  const ratio = getConfiguredGroupRatio(groupRatio, group)
-  let priceInUSD = calculateTokenPrice(model, type, ratio)
-
-  priceInUSD = applyRechargeRate(
-    priceInUSD,
-    showWithRecharge,
-    priceRate,
-    usdExchangeRate
+  return formatTokenUnitPrice(
+    getTokenUnitPrice(
+      model,
+      type,
+      tokenUnit,
+      showWithRecharge,
+      priceRate,
+      usdExchangeRate,
+      getConfiguredGroupRatio(groupRatio, group)
+    )
   )
+}
 
-  const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+/**
+ * Render a per-token-unit price the way every price column in the catalog does.
+ * NaN and null come out as `-`.
+ */
+export function formatTokenUnitPrice(price: number): string {
   return formatCurrencyFromUSD(price, {
     digitsLarge: 4,
     digitsSmall: 6,
     abbreviate: false,
   })
+}
+
+/**
+ * The same model priced at the vendor's published rates, or null when there is
+ * no official price to compare against.
+ *
+ * Official ratios are stored in the same unit as the platform ones, so swapping
+ * the three fields in lets the whole existing pipeline — output/cache
+ * multipliers, token unit, currency — produce the official column with no second
+ * implementation.
+ *
+ * A missing official completion or cache ratio becomes NaN rather than falling
+ * back to 1 or to the platform value: the vendor published no rate for that row,
+ * and NaN renders as `-`. A `1` there would silently assert "official output
+ * costs the same as official input", and the platform value would price an
+ * official row off our own multiplier.
+ */
+export function toOfficiallyPricedModel(
+  model: PricingModel
+): PricingModel | null {
+  // Per-request billing has no official counterpart: the sync collects token
+  // prices, and `model_price` is a number this site chose.
+  if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) return null
+
+  const officialModelRatio = model.official_model_ratio
+  if (
+    officialModelRatio == null ||
+    !Number.isFinite(officialModelRatio) ||
+    officialModelRatio <= 0
+  ) {
+    return null
+  }
+
+  return {
+    ...model,
+    model_ratio: officialModelRatio,
+    completion_ratio: model.official_completion_ratio ?? Number.NaN,
+    cache_ratio: model.official_cache_ratio ?? null,
+    // Ratios the official sync does not carry: left unset so a row that has no
+    // official rate reads as `-` instead of borrowing the platform multiplier.
+    create_cache_ratio: null,
+    image_ratio: null,
+    audio_ratio: null,
+    audio_completion_ratio: null,
+  }
 }
 
 /**

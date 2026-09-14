@@ -39,8 +39,8 @@ import {
   normalizeCatalogItems,
 } from '../lib/catalog-fields'
 import { parseTags } from '../lib/filters'
-import { getDisplayGroupRatio } from '../lib/model-helpers'
-import type { PricingModel } from '../types'
+import { getPriceComparison } from '../lib/price-comparison'
+import type { PricingModel, TokenUnit } from '../types'
 import { FieldPlaceholder, ModalityLabels } from './model-details-shared'
 import { PromoBadge } from './promo-badge'
 
@@ -240,6 +240,16 @@ export interface ModelDetailsHeaderProps {
   model: PricingModel
   /** Active group filter, so the headline discount matches the price table. */
   selectedGroup?: string
+  /**
+   * The same display settings the price tables below are rendered with. The
+   * headline discount is platform ÷ official, and the recharge rate moves the
+   * platform side — without these the badge would quote a different discount
+   * from the table it sits above.
+   */
+  tokenUnit: TokenUnit
+  priceRate: number
+  usdExchangeRate: number
+  showRechargePrice?: boolean
 }
 
 /**
@@ -257,11 +267,18 @@ export function ModelDetailsHeader(props: ModelDetailsHeaderProps) {
   const modelIconKey = model.icon || model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 22) : null
   const tags = parseTags(model.tags)
-  const ratio = getDisplayGroupRatio(model, props.selectedGroup)
+  // Platform ÷ official, not the group ratio: the group ratio compares this
+  // group against this site's own standard price, which says nothing about
+  // whether the model is cheaper here than from the vendor.
+  const discountRatio = getPriceComparison(model, {
+    tokenUnit: props.tokenUnit,
+    showRechargePrice: props.showRechargePrice,
+    priceRate: props.priceRate,
+    usdExchangeRate: props.usdExchangeRate,
+    selectedGroup: props.selectedGroup,
+  }).officialDiscountRatio
   const discountText =
-    Number.isFinite(ratio) && ratio > 0 && ratio < 1
-      ? formatDiscount(ratio, t)
-      : null
+    discountRatio == null ? null : formatDiscount(discountRatio, t)
 
   return (
     <header>
@@ -297,7 +314,7 @@ export function ModelDetailsHeader(props: ModelDetailsHeaderProps) {
                 label={discountText}
                 variant='orange'
                 flow
-                title={`${ratio}x`}
+                title={t('Platform price vs. official price')}
               />
             )}
             {tags.map((tag) => (

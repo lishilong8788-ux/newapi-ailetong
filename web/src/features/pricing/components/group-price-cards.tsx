@@ -133,6 +133,9 @@ export function GroupPriceCards(props: GroupPriceCardsProps) {
         const unitLabel = comparison.isPerRequest
           ? t('Platform price')
           : `${t('Platform price')}/${props.tokenUnit}`
+        const officialLabel = comparison.isPerRequest
+          ? t('Official price')
+          : `${t('Official price')}/${props.tokenUnit}`
 
         return (
           <div
@@ -187,6 +190,7 @@ export function GroupPriceCards(props: GroupPriceCardsProps) {
             <PriceComparisonTable
               comparison={comparison}
               unitLabel={unitLabel}
+              officialLabel={officialLabel}
               className='mt-2'
             />
 

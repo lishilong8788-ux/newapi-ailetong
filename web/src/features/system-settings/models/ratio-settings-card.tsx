@@ -34,6 +34,10 @@ import { useUpdateOption } from '../hooks/use-update-option'
 import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
+import {
+  OfficialRatioSync,
+  type OfficialRatioSyncProps,
+} from './official-ratio-sync'
 import { ToolPriceSettings } from './tool-price-settings'
 import { UpstreamRatioSync } from './upstream-ratio-sync'
 import {
@@ -149,6 +153,12 @@ type RatioSettingsCardProps = {
   modelDefaults: ModelFormValues
   groupDefaults: GroupFormValues
   toolPricesDefault: string
+  /**
+   * State of the display-only official price sync. Read straight from the saved
+   * options rather than held in a form: the switch commits immediately and the
+   * timestamp is written by the backend, so there is nothing here to stage.
+   */
+  officialRatioDefaults: OfficialRatioSyncProps
   titleKey?: string
   visibleTabs?: RatioTabId[]
 }
@@ -157,6 +167,7 @@ export function RatioSettingsCard({
   modelDefaults,
   groupDefaults,
   toolPricesDefault,
+  officialRatioDefaults,
   titleKey = 'Pricing Ratios',
   visibleTabs = ['models', 'groups', 'tool-prices', 'upstream-sync'],
 }: RatioSettingsCardProps) {
@@ -446,20 +457,26 @@ export function RatioSettingsCard({
       return <ToolPriceSettings defaultValue={toolPricesDefault} />
     }
     return (
-      <UpstreamRatioSync
-        modelRatios={{
-          ModelPrice: modelDefaults.ModelPrice,
-          ModelRatio: modelDefaults.ModelRatio,
-          CompletionRatio: modelDefaults.CompletionRatio,
-          CacheRatio: modelDefaults.CacheRatio,
-          CreateCacheRatio: modelDefaults.CreateCacheRatio,
-          ImageRatio: modelDefaults.ImageRatio,
-          AudioRatio: modelDefaults.AudioRatio,
-          AudioCompletionRatio: modelDefaults.AudioCompletionRatio,
-          'billing_setting.billing_mode': modelDefaults.BillingMode,
-          'billing_setting.billing_expr': modelDefaults.BillingExpr,
-        }}
-      />
+      <div className='space-y-6'>
+        {/* Official prices are a display-only reference for the catalog's
+            discount column, so they sit above the upstream comparison rather
+            than inside it: that tool edits the ratios billing actually uses. */}
+        <OfficialRatioSync {...officialRatioDefaults} />
+        <UpstreamRatioSync
+          modelRatios={{
+            ModelPrice: modelDefaults.ModelPrice,
+            ModelRatio: modelDefaults.ModelRatio,
+            CompletionRatio: modelDefaults.CompletionRatio,
+            CacheRatio: modelDefaults.CacheRatio,
+            CreateCacheRatio: modelDefaults.CreateCacheRatio,
+            ImageRatio: modelDefaults.ImageRatio,
+            AudioRatio: modelDefaults.AudioRatio,
+            AudioCompletionRatio: modelDefaults.AudioCompletionRatio,
+            'billing_setting.billing_mode': modelDefaults.BillingMode,
+            'billing_setting.billing_expr': modelDefaults.BillingExpr,
+          }}
+        />
+      </div>
     )
   }
 

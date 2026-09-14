@@ -26,18 +26,23 @@ import type { PriceComparison } from '../lib/price-comparison'
 
 export interface PriceComparisonTableProps {
   comparison: PriceComparison
-  /** Rendered in the header of the price-type column, e.g. `平台价/M`. */
+  /** Rendered in the header of the platform price column, e.g. `平台价/M`. */
   unitLabel: string
+  /** Rendered in the header of the official price column, e.g. `官方价/M`. */
+  officialLabel: string
   className?: string
 }
 
 /**
- * Compact three-column price breakdown: what the customer pays, the
- * undiscounted reference price, and the discount between them.
+ * Compact price breakdown: what the customer pays, what the vendor charges, and
+ * the discount between them.
  *
- * When the model has no group discount (`hasDiscount === false`) the reference
- * and discount columns are dropped rather than filled with placeholders — a
- * two-column table reads as "this is the price", which is the truth.
+ * When no row has a known official price (`hasOfficialPrice === false`) the
+ * official and discount columns are dropped rather than filled with
+ * placeholders — a two-column table reads as "this is the price", which is the
+ * truth for a model the official-price sync has never seen. Rows that
+ * individually lack an official rate still show `-`, because the columns are
+ * meaningful for their neighbours.
  */
 export const PriceComparisonTable = memo(function PriceComparisonTable(
   props: PriceComparisonTableProps
@@ -67,10 +72,7 @@ export const PriceComparisonTable = memo(function PriceComparisonTable(
     return null
   }
 
-  const showComparison = comparison.hasDiscount
-  const discountText = showComparison
-    ? formatDiscount(comparison.ratio, t)
-    : null
+  const showComparison = comparison.hasOfficialPrice
 
   // A real <table>, not a grid per row: the header and the body have to share
   // one set of column widths. As separate grids the label column sized itself
@@ -122,7 +124,7 @@ export const PriceComparisonTable = memo(function PriceComparisonTable(
                   scope='col'
                   className={cn('px-2 text-right font-medium', cellY)}
                 >
-                  {t('List price')}
+                  {props.officialLabel}
                 </th>
                 <th
                   scope='col'
@@ -163,18 +165,28 @@ export const PriceComparisonTable = memo(function PriceComparisonTable(
               </td>
               {showComparison && (
                 <>
+                  {/* Struck through only when the platform price actually beats
+                      it. A strikethrough on a price we do not undercut would
+                      claim a saving that is not there. */}
                   <td
                     className={cn(
-                      'text-muted-foreground/45 px-2 text-right font-mono text-[13px] tabular-nums line-through',
+                      'text-muted-foreground/45 px-2 text-right font-mono text-[13px] tabular-nums',
+                      row.discountRatio != null && 'line-through',
                       cellY
                     )}
                   >
-                    {row.list}
+                    {row.official}
                   </td>
                   <td className={cn('pr-3 pl-2 text-center', cellY)}>
-                    <span className='inline-flex items-center rounded-md bg-orange-500/12 px-2 py-0.5 text-[13px] font-semibold text-orange-600 tabular-nums dark:bg-orange-400/15 dark:text-orange-400'>
-                      {discountText}
-                    </span>
+                    {row.discountRatio == null ? (
+                      <span className='text-muted-foreground/45 font-mono text-[13px]'>
+                        -
+                      </span>
+                    ) : (
+                      <span className='inline-flex items-center rounded-md bg-orange-500/12 px-2 py-0.5 text-[13px] font-semibold text-orange-600 tabular-nums dark:bg-orange-400/15 dark:text-orange-400'>
+                        {formatDiscount(row.discountRatio, t)}
+                      </span>
+                    )}
                   </td>
                 </>
               )}

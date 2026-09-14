@@ -215,6 +215,8 @@ export type ModelSettings = {
   AudioRatio: string
   AudioCompletionRatio: string
   ExposeRatioEnabled: boolean
+  OfficialRatioAutoSyncEnabled: boolean
+  OfficialRatioSyncedAt: number
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
   'tool_price_setting.prices': string
@@ -274,6 +276,8 @@ export type BillingSettings = {
   AudioRatio: string
   AudioCompletionRatio: string
   ExposeRatioEnabled: boolean
+  OfficialRatioAutoSyncEnabled: boolean
+  OfficialRatioSyncedAt: number
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
   'tool_price_setting.prices': string
@@ -472,5 +476,29 @@ export type UpstreamRatiosResponse = {
   data: {
     differences: DifferencesMap
     test_results: TestResult[]
+  }
+}
+
+export type OfficialRatioSyncSource = {
+  name: string
+  models: number
+  skipped?: number
+  error?: string
+}
+
+/**
+ * Result of one official-price sync pass. These prices are display-only — they
+ * feed the catalog's "official price" column and its discount label, and nothing
+ * about billing changes when they do.
+ */
+export type OfficialRatioSyncResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    model_ratio_count: number
+    completion_ratio_count: number
+    cache_ratio_count: number
+    synced_at: number
+    sources: OfficialRatioSyncSource[]
   }
 }

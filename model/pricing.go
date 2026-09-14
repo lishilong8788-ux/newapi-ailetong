@@ -16,12 +16,12 @@ import (
 )
 
 type Pricing struct {
-	ModelName              string                  `json:"model_name"`
-	Description            string                  `json:"description,omitempty"`
-	Icon                   string                  `json:"icon,omitempty"`
-	Tags                   string                  `json:"tags,omitempty"`
-	VendorID               int                     `json:"vendor_id,omitempty"`
-	QuotaType              int                     `json:"quota_type"`
+	ModelName   string `json:"model_name"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	Tags        string `json:"tags,omitempty"`
+	VendorID    int    `json:"vendor_id,omitempty"`
+	QuotaType   int    `json:"quota_type"`
 	// PriceUnset reports that no price or ratio was ever configured for this
 	// model, so `ModelRatio` below is a fallback constant rather than a real
 	// rate.
@@ -34,21 +34,32 @@ type Pricing struct {
 	// the relay will refuse outright.
 	//
 	// Omitted when false so priced models keep their existing payload.
-	PriceUnset             bool                    `json:"price_unset,omitempty"`
-	ModelRatio             float64                 `json:"model_ratio"`
-	ModelPrice             float64                 `json:"model_price"`
-	OwnerBy                string                  `json:"owner_by"`
-	CompletionRatio        float64                 `json:"completion_ratio"`
-	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
-	CreateCacheRatio       *float64                `json:"create_cache_ratio,omitempty"`
-	ImageRatio             *float64                `json:"image_ratio,omitempty"`
-	AudioRatio             *float64                `json:"audio_ratio,omitempty"`
-	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
-	EnableGroup            []string                `json:"enable_groups"`
-	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
-	BillingMode            string                  `json:"billing_mode,omitempty"`
-	BillingExpr            string                  `json:"billing_expr,omitempty"`
-	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	PriceUnset           bool     `json:"price_unset,omitempty"`
+	ModelRatio           float64  `json:"model_ratio"`
+	ModelPrice           float64  `json:"model_price"`
+	OwnerBy              string   `json:"owner_by"`
+	CompletionRatio      float64  `json:"completion_ratio"`
+	CacheRatio           *float64 `json:"cache_ratio,omitempty"`
+	CreateCacheRatio     *float64 `json:"create_cache_ratio,omitempty"`
+	ImageRatio           *float64 `json:"image_ratio,omitempty"`
+	AudioRatio           *float64 `json:"audio_ratio,omitempty"`
+	AudioCompletionRatio *float64 `json:"audio_completion_ratio,omitempty"`
+	// Official vendor list prices, in the same unit as ModelRatio above
+	// (ratio 1 == $0.002 / 1K tokens). Display-only: the catalog renders them as
+	// the struck-through "official price" column and derives the discount badge
+	// from platform ÷ official. No billing path reads these.
+	//
+	// Omitted when unset, which is the honest state for a model the official
+	// price sync has never seen; the client shows "-" for it rather than
+	// inventing a comparison.
+	OfficialModelRatio      float64                 `json:"official_model_ratio,omitempty"`
+	OfficialCompletionRatio float64                 `json:"official_completion_ratio,omitempty"`
+	OfficialCacheRatio      *float64                `json:"official_cache_ratio,omitempty"`
+	EnableGroup             []string                `json:"enable_groups"`
+	SupportedEndpointTypes  []constant.EndpointType `json:"supported_endpoint_types"`
+	BillingMode             string                  `json:"billing_mode,omitempty"`
+	BillingExpr             string                  `json:"billing_expr,omitempty"`
+	PricingVersion          string                  `json:"pricing_version,omitempty"`
 }
 
 type PricingVendor struct {
@@ -416,6 +427,18 @@ func updatePricing() {
 		if ratio_setting.ContainsAudioCompletionRatio(model) {
 			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
+		}
+		// Official list prices are attached regardless of quota type: a
+		// per-request model can still have a token-based vendor price, and the
+		// client decides per row whether a comparison is meaningful.
+		if officialModelRatio, ok := ratio_setting.GetOfficialModelRatio(model); ok {
+			pricing.OfficialModelRatio = officialModelRatio
+		}
+		if officialCompletionRatio, ok := ratio_setting.GetOfficialCompletionRatio(model); ok {
+			pricing.OfficialCompletionRatio = officialCompletionRatio
+		}
+		if officialCacheRatio, ok := ratio_setting.GetOfficialCacheRatio(model); ok {
+			pricing.OfficialCacheRatio = &officialCacheRatio
 		}
 		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
 			if expr, ok := billing_setting.GetBillingExpr(model); ok && strings.TrimSpace(expr) != "" {

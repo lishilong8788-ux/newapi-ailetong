@@ -117,7 +117,13 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
 
   return (
     <div className='@container/details space-y-5'>
-      <ModelDetailsHeader model={props.model} />
+      <ModelDetailsHeader
+        model={props.model}
+        tokenUnit={props.tokenUnit}
+        priceRate={props.priceRate}
+        usdExchangeRate={props.usdExchangeRate}
+        showRechargePrice={showRechargePrice}
+      />
 
       <Tabs
         value={tab}

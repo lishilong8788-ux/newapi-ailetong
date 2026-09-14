@@ -83,22 +83,33 @@ function applyRechargeRate(
   return (price * priceRate) / usdExchangeRate
 }
 
+/**
+ * The number `formatDynamicUnitPrice` renders, before currency conversion: one
+ * token unit's worth of a tier's per-1M price, in system USD.
+ *
+ * Exposed so the official-price comparison can put a tiered platform price on the
+ * same basis as a flat official price and divide them.
+ */
+export function getDynamicUnitPrice(
+  valuePerMillionTokens: number,
+  options: DynamicPriceOptions
+): number {
+  const priceUSD =
+    (valuePerMillionTokens * (options.groupRatioMultiplier ?? 1)) /
+    TOKEN_UNIT_DIVISORS[options.tokenUnit]
+  return applyRechargeRate(
+    priceUSD,
+    options.showRechargePrice ?? false,
+    options.priceRate ?? 1,
+    options.usdExchangeRate ?? 1
+  )
+}
+
 export function formatDynamicUnitPrice(
   valuePerMillionTokens: number,
   options: DynamicPriceOptions
 ): string {
-  const groupRatio = options.groupRatioMultiplier ?? 1
-  const priceRate = options.priceRate ?? 1
-  const usdExchangeRate = options.usdExchangeRate ?? 1
-  const priceUSD =
-    (valuePerMillionTokens * groupRatio) /
-    TOKEN_UNIT_DIVISORS[options.tokenUnit]
-  const displayPrice = applyRechargeRate(
-    priceUSD,
-    options.showRechargePrice ?? false,
-    priceRate,
-    usdExchangeRate
-  )
+  const displayPrice = getDynamicUnitPrice(valuePerMillionTokens, options)
 
   return formatBillingCurrencyFromUSD(displayPrice, {
     digitsLarge: 4,

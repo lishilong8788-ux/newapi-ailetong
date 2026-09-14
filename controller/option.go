@@ -77,12 +77,27 @@ func buildCompletionRatioMetaValue(optionValues map[string]string) string {
 	return string(jsonBytes)
 }
 
+// bulkOptionKeys hold machine-written data too large to be worth shipping to the
+// settings page, which reads none of them.
+//
+// The official price maps cover every model the public pricing sources publish —
+// currently a few thousand, a few hundred KB of JSON — because the catalog has to
+// be able to price any model an admin later enables. The settings UI only shows
+// the sync timestamp and the auto-sync switch, so sending the maps themselves
+// would add that payload to every settings load for nothing. They remain
+// editable through PUT /api/option, which does not consult this list.
+var bulkOptionKeys = map[string]bool{
+	"OfficialModelRatio":      true,
+	"OfficialCompletionRatio": true,
+	"OfficialCacheRatio":      true,
+}
+
 func GetOptions(c *gin.Context) {
 	var options []*model.Option
 	optionValues := make(map[string]string)
 	common.OptionMapRWMutex.Lock()
 	for k, v := range common.OptionMap {
-		if k == "theme.frontend" {
+		if k == "theme.frontend" || bulkOptionKeys[k] {
 			continue
 		}
 		value := common.Interface2String(v)

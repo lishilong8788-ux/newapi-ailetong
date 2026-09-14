@@ -160,6 +160,11 @@ func InitOptionMap() {
 	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
 	common.OptionMap["AudioRatio"] = ratio_setting.AudioRatio2JSONString()
 	common.OptionMap["AudioCompletionRatio"] = ratio_setting.AudioCompletionRatio2JSONString()
+	common.OptionMap["OfficialModelRatio"] = ratio_setting.OfficialModelRatio2JSONString()
+	common.OptionMap["OfficialCompletionRatio"] = ratio_setting.OfficialCompletionRatio2JSONString()
+	common.OptionMap["OfficialCacheRatio"] = ratio_setting.OfficialCacheRatio2JSONString()
+	common.OptionMap["OfficialRatioAutoSyncEnabled"] = strconv.FormatBool(ratio_setting.IsOfficialRatioAutoSyncEnabled())
+	common.OptionMap["OfficialRatioSyncedAt"] = strconv.FormatInt(ratio_setting.GetOfficialRatioSyncedAt(), 10)
 	common.OptionMap["TopUpLink"] = common.TopUpLink
 	//common.OptionMap["ChatLink"] = common.ChatLink
 	//common.OptionMap["ChatLink2"] = common.ChatLink2
@@ -603,6 +608,19 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateAudioRatioByJSONString(value)
 	case "AudioCompletionRatio":
 		err = ratio_setting.UpdateAudioCompletionRatioByJSONString(value)
+	case "OfficialModelRatio":
+		err = ratio_setting.UpdateOfficialModelRatioByJSONString(value)
+	case "OfficialCompletionRatio":
+		err = ratio_setting.UpdateOfficialCompletionRatioByJSONString(value)
+	case "OfficialCacheRatio":
+		err = ratio_setting.UpdateOfficialCacheRatioByJSONString(value)
+	case "OfficialRatioAutoSyncEnabled":
+		ratio_setting.SetOfficialRatioAutoSyncEnabled(value == "true")
+	case "OfficialRatioSyncedAt":
+		syncedAt, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr == nil {
+			ratio_setting.SetOfficialRatioSyncedAt(syncedAt)
+		}
 	case "TopUpLink":
 		common.TopUpLink = value
 	//case "ChatLink":

@@ -52,6 +52,20 @@ export type PricingModel = {
   image_ratio?: number | null
   audio_ratio?: number | null
   audio_completion_ratio?: number | null
+  /**
+   * Vendor list prices, in the same unit as `model_ratio` above (ratio 1 ==
+   * $0.002 / 1K tokens), synced from public pricing sources by the backend's
+   * official-price sync.
+   *
+   * Display-only: they drive the struck-through "official price" column and the
+   * discount badge, and no billing ever reads them. Absent when the sync has
+   * never seen this model — show `-` rather than deriving a comparison from the
+   * group ratio, which measures something else entirely (see
+   * `lib/price-comparison.ts`).
+   */
+  official_model_ratio?: number
+  official_completion_ratio?: number
+  official_cache_ratio?: number | null
   enable_groups: string[]
   tags?: string
   supported_endpoint_types?: string[]

@@ -76,6 +76,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const unitLabel = comparison.isPerRequest
     ? t('Platform price')
     : `${t('Platform price')}/${tokenUnit}`
+  const officialLabel = comparison.isPerRequest
+    ? t('Official price')
+    : `${t('Official price')}/${tokenUnit}`
 
   // Offer tags lead the row and animate; capability tags follow, unanimated.
   // Sorting by promo-ness rather than filtering keeps every tag visible.
@@ -84,12 +87,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const visibleTags = [...promoTags, ...plainTags].slice(0, MAX_CARD_TAGS)
   const hiddenTagCount = Math.max(tags.length - MAX_CARD_TAGS, 0)
 
-  // Same ratio the platform column was priced with, so the pill and the table
-  // can never disagree.
-  const displayRatio = comparison.ratio
-  const discountText = comparison.hasDiscount
-    ? formatDiscount(displayRatio, t)
-    : null
+  // The same discount the table's own input row shows, taken from the same
+  // comparison, so the pill and the table can never disagree. Absent when this
+  // model has no official price to be cheaper than — a card that badged the group
+  // ratio instead would be advertising a number measured against this site's own
+  // standard price, not against the vendor.
+  const discountRatio = comparison.officialDiscountRatio
+  const discountText =
+    discountRatio == null ? null : formatDiscount(discountRatio, t)
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -166,7 +171,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                   label={discountText}
                   variant='orange'
                   flow
-                  title={`${displayRatio}x`}
+                  title={t('Platform price vs. official price')}
                 />
               )}
               {visibleTags.map((tag) => (
@@ -202,6 +207,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       <PriceComparisonTable
         comparison={comparison}
         unitLabel={unitLabel}
+        officialLabel={officialLabel}
         className='group-hover:border-primary/25 mt-4 transition-colors duration-200'
       />
 
