@@ -16,11 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type QueryClient } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 
-import { updateModelStatus, deleteModel as deleteModelAPI } from '../api'
+import {
+  updateModelStatus,
+  deleteModel as deleteModelAPI,
+  batchUpdateModelTags,
+} from '../api'
 import { modelsQueryKeys } from './query-keys'
 
 // ============================================================================
@@ -268,5 +272,93 @@ export async function handleBatchDisableModels(
     }
   } catch (error: unknown) {
     toast.error((error as Error)?.message || i18next.t('Batch disable failed'))
+  }
+}
+
+// ============================================================================
+// Batch Tag Actions
+// ============================================================================
+
+/** Mirrors `maxBatchTagModelIds` in `controller/model_meta.go`, so an oversized
+ *  selection is refused here with a translated message instead of coming back
+ *  from the server as a raw Chinese string. */
+export const MAX_BATCH_TAG_MODELS = 200
+
+/**
+ * Add and/or remove tags on the selected models.
+ *
+ * Deliberately one request, unlike the status actions above: see
+ * `batchUpdateModelTags`. That also means there is a single result to report,
+ * so no partial-success bookkeeping is needed on this side.
+ */
+export async function handleBatchUpdateModelTags(
+  ids: number[],
+  addTags: string[],
+  removeTags: string[],
+  queryClient?: QueryClient,
+  onSuccess?: () => void
+): Promise<void> {
+  if (ids.length === 0) {
+    toast.error(i18next.t('Please select at least one model'))
+    return
+  }
+  if (addTags.length === 0 && removeTags.length === 0) {
+    toast.error(i18next.t('Add or remove at least one tag'))
+    return
+  }
+  if (ids.length > MAX_BATCH_TAG_MODELS) {
+    toast.error(
+      i18next.t('At most {{max}} models can be tagged at once', {
+        max: MAX_BATCH_TAG_MODELS,
+      })
+    )
+    return
+  }
+
+  try {
+    const response = await batchUpdateModelTags({
+      ids,
+      add_tags: addTags,
+      remove_tags: removeTags,
+    })
+
+    if (!response.success) {
+      toast.error(response.message || i18next.t('Failed to update tags'))
+      return
+    }
+
+    // A run where nothing changed is a normal outcome — every selected model
+    // already had the tags — so it is reported, not treated as a failure.
+    const updated = response.data?.updated ?? 0
+    if (updated > 0) {
+      toast.success(
+        i18next.t('Updated tags on {{count}} model(s)', { count: updated })
+      )
+    } else {
+      toast.info(i18next.t('No models needed a tag change'))
+    }
+
+    // The server reports failures as a list of rows, not a count, so a partial
+    // failure can name the models that did not take the edit — an operator who
+    // sees only a number has no way to find them in a 200-row selection.
+    const failures = response.data?.failures ?? []
+    if (failures.length > 0) {
+      const names = failures
+        .map((failure) => failure.model_name || String(failure.id))
+        .join(', ')
+      toast.error(
+        i18next.t('Failed to update tags on {{count}} model(s): {{names}}', {
+          count: failures.length,
+          names,
+        })
+      )
+    }
+
+    // Tags change row content, so detail queries an open drawer may hold are
+    // stale too, not just the list.
+    queryClient?.invalidateQueries({ queryKey: modelsQueryKeys.all })
+    onSuccess?.()
+  } catch (error: unknown) {
+    toast.error((error as Error)?.message || i18next.t('Failed to update tags'))
   }
 }

@@ -16,9 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type TFunction } from 'i18next'
+import type { TFunction } from 'i18next'
 
+import type { TagInputValidator } from '@/components/tag-input'
 import { formatTimestampToDate } from '@/lib/format'
+import { validateTagInput, type TagRejection } from '@/lib/model-tags'
 
 import { getNameRuleConfig, getQuotaTypeConfig } from '../constants'
 import type { NameRule, Model } from '../types'
@@ -57,25 +59,51 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 // ============================================================================
-// Tags Parsing
+// Tags
 // ============================================================================
+//
+// Parsing and formatting live in `@/lib/model-tags`, which the public catalog
+// reads too. There used to be a second comma splitter here; having two meant
+// they could disagree, and they did.
 
 /**
- * Parse tags string to array
+ * Turn a `validateTagInput` rejection into a message for the operator.
+ *
+ * Shared because two editors apply the same rules: the model drawer's tag field
+ * and the bulk tagging dialog. `t` is passed in so React callers keep the
+ * `useTranslation` binding that re-renders on a language switch.
  */
-export function parseModelTags(tags: string | undefined): string[] {
-  if (!tags) return []
-  return tags
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean)
+export function describeTagRejection(
+  rejection: TagRejection,
+  t: TFunction
+): string {
+  switch (rejection.reason) {
+    case 'empty':
+      return t('Tag cannot be empty')
+    case 'forbidden-char':
+      return t('Tags cannot contain "{{char}}"', { char: rejection.char })
+    case 'too-long':
+      return t('Tags are limited to {{max}} characters', {
+        max: rejection.max,
+      })
+    case 'duplicate':
+      return t('This tag is already added')
+    case 'too-many':
+      return t('At most {{max}} tags per model', { max: rejection.max })
+  }
 }
 
 /**
- * Format tags array to string
+ * Validator for `TagInput` in every model-tag editor.
+ *
+ * Built once per caller from its `t`, so the widget stays generic: prefill
+ * groups hold arbitrary values and pass no validator at all.
  */
-export function formatTagsString(tags: string[]): string {
-  return tags.join(',')
+export function createModelTagValidator(t: TFunction): TagInputValidator {
+  return (candidate, current) => {
+    const rejection = validateTagInput(candidate, current)
+    return rejection ? describeTagRejection(rejection, t) : null
+  }
 }
 
 // ============================================================================

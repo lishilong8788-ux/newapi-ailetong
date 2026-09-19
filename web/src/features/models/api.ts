@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  BatchModelTagsResponse,
   GetModelsParams,
   GetModelsResponse,
   GetModelResponse,
@@ -108,6 +109,23 @@ export async function deleteModel(
   id: number
 ): Promise<{ success: boolean; message?: string }> {
   const res = await api.delete(`/api/models/${id}`)
+  return res.data
+}
+
+/**
+ * Add and/or remove tags across several models in one request.
+ *
+ * One call, not a fan-out of `updateModel` like the other batch actions: tags
+ * are a read-modify-write on a single comma-joined column, so N concurrent
+ * full-row updates would each write the row as they last read it and drop every
+ * edit but the last.
+ */
+export async function batchUpdateModelTags(payload: {
+  ids: number[]
+  add_tags: string[]
+  remove_tags: string[]
+}): Promise<BatchModelTagsResponse> {
+  const res = await api.post('/api/models/batch_tags', payload)
   return res.data
 }
 

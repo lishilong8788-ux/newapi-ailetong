@@ -130,6 +130,32 @@ export interface GetModelResponse {
 }
 
 /**
+ * Batch tag update response.
+ *
+ * `skipped` covers models the tags already matched — asking for a tag a model
+ * has is not a failure — and `failed` a row the server could not write. Both are
+ * optional because a server that only reports `updated` still works here.
+ */
+export interface BatchModelTagsResponse {
+  success: boolean
+  message?: string
+  data?: {
+    updated?: number
+    skipped?: number
+    /** Per-model failures, not a count. The server sends the rows it could not
+     *  write so the toast can name them; `failures.length` is the count. */
+    failures?: ModelTagBatchFailure[]
+  }
+}
+
+/** One row the batch could not write, from `model.ModelTagBatchFailure`. */
+export interface ModelTagBatchFailure {
+  id: number
+  model_name: string
+  message: string
+}
+
+/**
  * Get vendors response
  */
 export interface GetVendorsResponse {

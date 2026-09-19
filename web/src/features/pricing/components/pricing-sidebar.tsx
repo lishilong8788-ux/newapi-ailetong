@@ -27,7 +27,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { useTagRegistry } from '@/hooks/use-tag-registry'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import { resolveTag, resolveTagList } from '@/lib/model-tags'
 import { cn } from '@/lib/utils'
 
 import {
@@ -38,7 +40,6 @@ import {
   getEndpointTypeLabels,
   getQuotaTypeLabels,
 } from '../constants'
-import { parseTags } from '../lib/filters'
 import { formatGroupRatio } from '../lib/price'
 import type { PricingModel, PricingVendor } from '../types'
 
@@ -71,6 +72,7 @@ export interface PricingSidebarProps {
   vendors: PricingVendor[]
   groups: string[]
   groupRatios?: Record<string, number>
+  /** Canonical tag slugs, from `extractAllTags`. Resolved to labels here. */
   tags: string[]
   models: PricingModel[]
   hasActiveFilters: boolean
@@ -185,6 +187,7 @@ function FilterSection(props: FilterSectionProps) {
 
 export function PricingSidebar(props: PricingSidebarProps) {
   const { t } = useTranslation()
+  const tagRegistry = useTagRegistry()
   const quotaTypeLabels = getQuotaTypeLabels(t)
   const endpointTypeLabels = getEndpointTypeLabels(t)
 
@@ -242,21 +245,34 @@ export function PricingSidebar(props: PricingSidebarProps) {
     },
   ]
 
+  // Counted in one pass keyed by slug, rather than re-scanning the catalog per
+  // chip: the chips and the tag filter now agree on slug as the tag's identity,
+  // so a model tagged `Hot` counts towards the `hot` chip.
+  const tagCounts = new Map<string, number>()
+  for (const model of props.models) {
+    for (const tag of resolveTagList(model.tags, tagRegistry)) {
+      tagCounts.set(tag.slug, (tagCounts.get(tag.slug) ?? 0) + 1)
+    }
+  }
+
   const tagOptions: FilterOption[] = [
     {
       value: FILTER_ALL,
       label: t('All Tags'),
       count: props.models.length,
     },
-    ...props.tags.map((tag) => ({
-      value: tag,
-      label: tag,
-      count: countBy(props.models, (model) =>
-        parseTags(model.tags)
-          .map((item) => item.toLowerCase())
-          .includes(tag.toLowerCase())
-      ),
-    })),
+    // Slug in, label out: the value is what the filter state carries and what
+    // `filterByTag` matches against, while the label follows the interface
+    // language, so a `hot` tag reads as "热门" on a Chinese install instead of
+    // showing whichever spelling the operator happened to type first.
+    ...props.tags
+      .map((slug) => resolveTag(slug, tagRegistry))
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((tag) => ({
+        value: tag.slug,
+        label: tag.label,
+        count: tagCounts.get(tag.slug) ?? 0,
+      })),
   ]
 
   const endpointOptions: FilterOption[] = [

@@ -16,9 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type TFunction } from 'i18next'
-
-import type { StatusVariant } from '@/components/status-badge'
+import type { TFunction } from 'i18next'
 
 import type { TokenUnit } from './types'
 
@@ -107,73 +105,6 @@ export const FILTER_SECTIONS = {
   GROUP: 'group',
   TAG: 'tag',
 } as const
-
-/** Maximum number of tags to display in model row */
-export const MAX_TAGS_DISPLAY = 5
-
-/**
- * Colors for well-known operational tags (from the `models.tags` column).
- *
- * Keys are matched case-insensitively against the parsed tag. Tags absent from
- * this map fall back to `DEFAULT_TAG_VARIANT`, so operators can add arbitrary
- * tags without a code change — they just render in the neutral style.
- */
-export const TAG_VARIANTS: Record<string, StatusVariant> = {
-  // Promotion / attention
-  热门: 'red',
-  hot: 'red',
-  popular: 'red',
-  推荐: 'orange',
-  recommended: 'orange',
-  新: 'success',
-  新品: 'success',
-  new: 'success',
-  限时: 'pink',
-  // Capability
-  推理: 'violet',
-  reasoning: 'violet',
-  视觉: 'cyan',
-  vision: 'cyan',
-  多模态: 'cyan',
-  multimodal: 'cyan',
-  长文本: 'blue',
-  'long-context': 'blue',
-  联网: 'teal',
-  // Lifecycle
-  免费: 'success',
-  free: 'success',
-  测试: 'warning',
-  beta: 'warning',
-  实验性: 'warning',
-  即将下线: 'danger',
-  deprecated: 'danger',
-}
-
-/** Style used for tags with no explicit entry in `TAG_VARIANTS`. */
-export const DEFAULT_TAG_VARIANT: StatusVariant = 'neutral'
-
-/**
- * Tags that describe a commercial offer rather than a capability. These are the
- * ones a buyer scans for, so the model card renders them with a travelling
- * highlight and floats them ahead of the capability tags.
- *
- * Capability tags (`推理`, `视觉`, `长文本`) are deliberately excluded: they are
- * useful, but animating them would spend the card's one attention-grabbing
- * device on something nobody is hunting for.
- */
-export const PROMO_TAGS = new Set([
-  '热门',
-  'hot',
-  'popular',
-  '推荐',
-  'recommended',
-  '限时',
-  '新',
-  '新品',
-  'new',
-  '免费',
-  'free',
-])
 
 /** Maximum operational tags shown on a model card before collapsing to "+N". */
 export const MAX_CARD_TAGS = 3

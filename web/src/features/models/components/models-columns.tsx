@@ -31,15 +31,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useTagRegistry } from '@/hooks/use-tag-registry'
 import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import { resolveTagList } from '@/lib/model-tags'
 
 import {
   getModelStatusConfig,
   getNameRuleConfig,
   getQuotaTypeConfig,
 } from '../constants'
-import { parseModelTags, formatEndpointsDisplay } from '../lib'
+import { formatEndpointsDisplay } from '../lib'
 import type { Model, Vendor } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
@@ -55,6 +57,7 @@ function getCompactModelIcon(iconKey: string) {
  */
 export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
   const { t } = useTranslation()
+  const tagOptions = useTagRegistry()
 
   // Get translated configs
   const NAME_RULE_CONFIG = getNameRuleConfig(t)
@@ -284,12 +287,20 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
       header: t('Tags'),
       meta: { mobileHidden: true },
       cell: ({ row }) => {
-        const tags = row.getValue('tags') as string
-        const tagArray = parseModelTags(tags)
+        // Resolved, not hashed: `autoColor` ran the tag text through
+        // `stringToColor`, which put `免费` on red and `即将下线` on teal, and
+        // disagreed with the public catalog's lookup table for every tag.
+        const tags = resolveTagList(row.getValue('tags') as string, tagOptions)
         return (
           <BadgeListCell
-            items={tagArray.map((tag) => (
-              <StatusBadge key={tag} label={tag} autoColor={tag} size='sm' />
+            items={tags.map((tag) => (
+              <StatusBadge
+                key={tag.slug || tag.raw}
+                label={tag.label}
+                variant={tag.variant}
+                copyText={tag.raw}
+                size='sm'
+              />
             ))}
           />
         )

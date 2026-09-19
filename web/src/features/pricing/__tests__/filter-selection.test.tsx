@@ -16,9 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 
 import type { PricingModel, PricingVendor } from '../types'
@@ -80,6 +81,21 @@ function ControlledSidebar(props: PricingSidebarProps) {
   )
 }
 
+/**
+ * The rail resolves tag chips through `useTagRegistry`, which reads the operator
+ * registry off the shared `/api/status` query. An empty client is enough — with
+ * no cached entry the hook falls through to the built-in tag vocabulary — but
+ * the provider itself is mandatory, or `useQuery` throws.
+ */
+function queryWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+}
+
 function renderSidebar(
   overrides: Partial<PricingSidebarProps> = {},
   options: { controlled?: boolean } = {}
@@ -105,10 +121,11 @@ function renderSidebar(
     ...overrides,
   }
 
+  const wrapper = queryWrapper()
   if (options.controlled) {
-    return render(<ControlledSidebar {...props} />)
+    return render(<ControlledSidebar {...props} />, { wrapper })
   }
-  return render(<PricingSidebar {...props} />)
+  return render(<PricingSidebar {...props} />, { wrapper })
 }
 
 /** Scopes to one facet: "All Vendors" also names the section's own trigger. */

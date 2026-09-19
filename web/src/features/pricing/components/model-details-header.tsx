@@ -28,17 +28,17 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
+import { useTagRegistry } from '@/hooks/use-tag-registry'
 import { formatDiscount } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import { resolveTagList } from '@/lib/model-tags'
 import { cn } from '@/lib/utils'
 
-import { DEFAULT_TAG_VARIANT, PROMO_TAGS, TAG_VARIANTS } from '../constants'
 import {
   formatCatalogTokenCount,
   formatCatalogYearMonth,
   normalizeCatalogItems,
 } from '../lib/catalog-fields'
-import { parseTags } from '../lib/filters'
 import { getPriceComparison } from '../lib/price-comparison'
 import type { PricingModel, TokenUnit } from '../types'
 import { FieldPlaceholder, ModalityLabels } from './model-details-shared'
@@ -263,10 +263,13 @@ export interface ModelDetailsHeaderProps {
  */
 export function ModelDetailsHeader(props: ModelDetailsHeaderProps) {
   const { t } = useTranslation()
+  const tagRegistry = useTagRegistry()
   const model = props.model
   const modelIconKey = model.icon || model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 22) : null
-  const tags = parseTags(model.tags)
+  // Not sorted by prominence: the details panel shows every tag, so there is no
+  // truncation for an offer tag to be pushed out of.
+  const tags = resolveTagList(model.tags, tagRegistry)
   // Platform ÷ official, not the group ratio: the group ratio compares this
   // group against this site's own standard price, which says nothing about
   // whether the model is cheaper here than from the vendor.
@@ -319,10 +322,10 @@ export function ModelDetailsHeader(props: ModelDetailsHeaderProps) {
             )}
             {tags.map((tag) => (
               <PromoBadge
-                key={tag}
-                label={tag}
-                variant={TAG_VARIANTS[tag.toLowerCase()] ?? DEFAULT_TAG_VARIANT}
-                flow={PROMO_TAGS.has(tag.toLowerCase())}
+                key={tag.slug}
+                label={tag.label}
+                variant={tag.variant}
+                flow={tag.kind === 'promo'}
               />
             ))}
           </div>

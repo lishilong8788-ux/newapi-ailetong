@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/pricing_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
@@ -97,6 +98,13 @@ func GetStatus(c *gin.Context) {
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
 		"price":             operation_setting.Price,
 		"stripe_unit_price": setting.StripeUnitPrice,
+
+		// Operator overrides and additions for model tag colours/labels only —
+		// the frontend compiles in the built-in vocabulary and layers this on
+		// top, so an installation that never opened the editor sends []. Served
+		// here rather than only on /api/option because the pricing catalog is
+		// reachable without login, while GetOptions is admin-only.
+		"model_tag_registry": pricing_setting.GetTagRegistry(),
 
 		// 面板启用开关
 		"api_info_enabled":      cs.ApiInfoEnabled,

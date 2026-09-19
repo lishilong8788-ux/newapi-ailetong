@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TagDefinition } from '@/lib/model-tags'
 import type { AuthBundle } from '@/stores/auth-store'
 
 // ============================================================================
@@ -135,6 +136,7 @@ export interface SystemStatus {
     password_login_enabled?: boolean
     password_register_enabled?: boolean
     custom_oauth_providers?: CustomOAuthProviderInfo[]
+    model_tag_registry?: TagDefinition[]
     [key: string]: unknown
   }
   // Allow direct access to common properties
@@ -167,6 +169,11 @@ export interface SystemStatus {
   self_use_mode_enabled?: boolean
   display_in_currency?: boolean
   display_token_stat_enabled?: boolean
+  /** Operator overrides for model tag colours, categories and labels. The
+   *  built-in vocabulary is compiled into `@/lib/model-tags`; this only adds to
+   *  or overrides it, so an installation that never opened the editor sends
+   *  nothing here and the catalog renders exactly as before. */
+  model_tag_registry?: TagDefinition[]
   quota_per_unit?: number
   quota_display_type?: string
   usd_exchange_rate?: number

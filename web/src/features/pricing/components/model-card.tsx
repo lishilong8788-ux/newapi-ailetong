@@ -21,18 +21,13 @@ import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { useTagRegistry } from '@/hooks/use-tag-registry'
 import { formatDiscount } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import { resolveTagList, sortTagsByProminence } from '@/lib/model-tags'
 import { cn } from '@/lib/utils'
 
-import {
-  DEFAULT_TAG_VARIANT,
-  DEFAULT_TOKEN_UNIT,
-  MAX_CARD_TAGS,
-  PROMO_TAGS,
-  TAG_VARIANTS,
-} from '../constants'
-import { parseTags } from '../lib/filters'
+import { DEFAULT_TOKEN_UNIT, MAX_CARD_TAGS } from '../constants'
 import { getPriceComparison } from '../lib/price-comparison'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
@@ -52,11 +47,12 @@ export interface ModelCardProps {
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
+  const tagRegistry = useTagRegistry()
   const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const priceRate = props.priceRate ?? 1
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
-  const tags = parseTags(props.model.tags)
+  const tags = resolveTagList(props.model.tags, tagRegistry)
   const modelIconKey = props.model.icon || props.model.vendor_icon
   // Scaled with the 48px frame below to hold the same glyph-to-padding ratio:
   // growing the frame alone just adds whitespace and reads as a smaller icon.
@@ -82,9 +78,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
 
   // Offer tags lead the row and animate; capability tags follow, unanimated.
   // Sorting by promo-ness rather than filtering keeps every tag visible.
-  const promoTags = tags.filter((tag) => PROMO_TAGS.has(tag.toLowerCase()))
-  const plainTags = tags.filter((tag) => !PROMO_TAGS.has(tag.toLowerCase()))
-  const visibleTags = [...promoTags, ...plainTags].slice(0, MAX_CARD_TAGS)
+  // Which tags are offers is now the vocabulary's `kind`, so an operator can
+  // make a new tag promotional without a frontend change.
+  const visibleTags = sortTagsByProminence(tags).slice(0, MAX_CARD_TAGS)
   const hiddenTagCount = Math.max(tags.length - MAX_CARD_TAGS, 0)
 
   // The same discount the table's own input row shows, taken from the same
@@ -176,12 +172,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               )}
               {visibleTags.map((tag) => (
                 <PromoBadge
-                  key={tag}
-                  label={tag}
-                  variant={
-                    TAG_VARIANTS[tag.toLowerCase()] ?? DEFAULT_TAG_VARIANT
-                  }
-                  flow={PROMO_TAGS.has(tag.toLowerCase())}
+                  key={tag.slug}
+                  label={tag.label}
+                  variant={tag.variant}
+                  flow={tag.kind === 'promo'}
                 />
               ))}
               {hiddenTagCount > 0 && (

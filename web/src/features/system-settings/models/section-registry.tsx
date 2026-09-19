@@ -24,6 +24,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { ModelTagRegistrySettings } from './model-tag-registry-settings'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
@@ -62,6 +63,19 @@ const MODELS_SECTIONS = [
               settings['general_setting.ping_interval_seconds'],
           },
         }}
+      />
+    ),
+  },
+  {
+    // Tag colours, categories and display names are model presentation data an
+    // operator edits alongside the models themselves, so it lives with the other
+    // model settings rather than under billing, despite the `pricing_setting.`
+    // option prefix.
+    id: 'model-tags',
+    titleKey: 'Model Tags',
+    build: (settings: ModelSettings) => (
+      <ModelTagRegistrySettings
+        defaultValue={settings['pricing_setting.tag_registry'] ?? ''}
       />
     ),
   },

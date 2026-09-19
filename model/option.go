@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
+	"github.com/QuantumNous/new-api/setting/pricing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
@@ -228,6 +229,12 @@ func validateOptionValue(key string, value string) error {
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
+	}
+	// Validated here rather than in the HTTP handler so both UpdateOption and
+	// UpdateOptionsBulk are covered: a malformed registry reaching the config
+	// struct would silently drop entries instead of telling the admin why.
+	if key == "pricing_setting.tag_registry" {
+		return pricing_setting.ValidateTagRegistry(value)
 	}
 	return nil
 }

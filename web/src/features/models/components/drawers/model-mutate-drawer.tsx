@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import i18next from 'i18next'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form'
@@ -80,11 +81,59 @@ import { useUpdateOption } from '@/features/system-settings/hooks/use-update-opt
 import { normalizeJsonString } from '@/features/system-settings/models/utils'
 import type { ModelSettings } from '@/features/system-settings/types'
 import { safeJsonParse } from '@/features/system-settings/utils/json-parser'
+import {
+  formatTagList,
+  parseTagList,
+  validateTagInput,
+  TAG_LIMITS,
+} from '@/lib/model-tags'
 
 import { createModel, updateModel, getModel, getVendors } from '../../api'
 import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
-import { modelsQueryKeys, vendorsQueryKeys, parseModelTags } from '../../lib'
+import { useTagVocabulary } from '../../hooks/use-tag-vocabulary'
+import {
+  modelsQueryKeys,
+  vendorsQueryKeys,
+  createModelTagValidator,
+  describeTagRejection,
+} from '../../lib'
 import type { Model } from '../../types'
+
+/**
+ * Tag rules, re-stated on the form and not only in the input widget.
+ *
+ * The widget guards typing; this guards submit. They are not the same event: a
+ * value can reach `tags` through `form.reset` from an existing row, and the
+ * array is what gets comma-joined into one column, so a tag carrying `,` would
+ * silently become two on the next read.
+ */
+const tagsSchema = z.array(z.string()).superRefine((tags, ctx) => {
+  if (tags.length > TAG_LIMITS.maxTagsPerModel) {
+    ctx.addIssue({
+      code: 'custom',
+      message: i18next.t('At most {{max}} tags per model', {
+        max: TAG_LIMITS.maxTagsPerModel,
+      }),
+    })
+  }
+
+  const seen = new Set<string>()
+  for (const tag of tags) {
+    const rejection = validateTagInput(tag, [...seen])
+    if (!rejection) {
+      seen.add(tag)
+      continue
+    }
+    // `too-many` is reported once above rather than once per surplus tag, and
+    // `duplicate` here compares slugs, so `Hot` next to `hot` is caught.
+    if (rejection.reason === 'too-many') continue
+    ctx.addIssue({
+      code: 'custom',
+      message: describeTagRejection(rejection, i18next.t),
+    })
+    return
+  }
+})
 
 // Extended schema for ratio configuration (internal form state only)
 const extendedModelFormSchema = z.object({
@@ -92,7 +141,7 @@ const extendedModelFormSchema = z.object({
   model_name: z.string().min(1, 'Model name is required'),
   description: z.string(),
   icon: z.string(),
-  tags: z.array(z.string()),
+  tags: tagsSchema,
   vendor_id: z.number().optional(),
   endpoints: z.string(),
   name_rule: z.number(),
@@ -239,6 +288,8 @@ export function ModelMutateDrawer({
 }: ModelMutateDrawerProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const tagSuggestions = useTagVocabulary()
+  const validateTag = useMemo(() => createModelTagValidator(t), [t])
   const currentModelId = currentRow?.id
   const isEditing = Boolean(currentModelId)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -434,7 +485,7 @@ export function ModelMutateDrawer({
         model_name: model.model_name,
         description: model.description || '',
         icon: model.icon || '',
-        tags: parseModelTags(model.tags),
+        tags: parseTagList(model.tags),
         vendor_id: model.vendor_id,
         endpoints: model.endpoints || '',
         name_rule: model.name_rule || 0,
@@ -477,7 +528,7 @@ export function ModelMutateDrawer({
         const submitData = {
           ...values,
           id: isEditing ? currentModelId : undefined,
-          tags: Array.isArray(values.tags) ? values.tags.join(',') : '',
+          tags: Array.isArray(values.tags) ? formatTagList(values.tags) : '',
           status: values.status ? 1 : 0,
           sync_official: values.sync_official ? 1 : 0,
         }
@@ -867,11 +918,15 @@ export function ModelMutateDrawer({
                       <TagInput
                         value={field.value || []}
                         onChange={field.onChange}
+                        validate={validateTag}
+                        suggestions={tagSuggestions}
                         placeholder={t('Add tags...')}
                       />
                     </FormControl>
                     <FormDescription>
-                      {t('Press Enter or comma to add tags')}
+                      {t(
+                        'Press Enter or comma to add tags. Existing tags are suggested as you type.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

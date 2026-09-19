@@ -360,6 +360,8 @@ func SyncUpstreamModels(c *gin.Context) {
 		}
 
 		// 若本地已存在且设置为不同步，则跳过（极端情况：缺失列表与本地状态不同步时）
+		// 未查到时 existing 保持零值，SyncExcludeFields == 0 表示不排除任何字段，
+		// 即与历史行为一致。
 		var existing model.Model
 		if err := model.DB.Where("model_name = ?", name).First(&existing).Error; err == nil {
 			if existing.SyncOfficial == 0 {
@@ -368,18 +370,29 @@ func SyncUpstreamModels(c *gin.Context) {
 			}
 		}
 
-		// 确保 vendor 存在
-		vendorID := ensureVendorID(up.VendorName, vendorByName, vendorIDCache, &createdVendors)
+		// 确保 vendor 存在。vendor 被排除时不调用 ensureVendorID，避免为一个用不到的
+		// 名字凭空建出 vendor 记录。
+		vendorID := 0
+		if !existing.SyncExcludes(model.SyncExcludeVendor) {
+			vendorID = ensureVendorID(up.VendorName, vendorByName, vendorIDCache, &createdVendors)
+		}
 
-		// 创建模型
+		// 创建模型：被排除的字段留空，而不是取上游值
 		mi := &model.Model{
-			ModelName:   name,
-			Description: up.Description,
-			Icon:        up.Icon,
-			Tags:        up.Tags,
-			VendorID:    vendorID,
-			Status:      chooseStatus(up.Status, 1),
-			NameRule:    up.NameRule,
+			ModelName:         name,
+			VendorID:          vendorID,
+			Status:            chooseStatus(up.Status, 1),
+			NameRule:          up.NameRule,
+			SyncExcludeFields: existing.SyncExcludeFields,
+		}
+		if !existing.SyncExcludes(model.SyncExcludeDescription) {
+			mi.Description = up.Description
+		}
+		if !existing.SyncExcludes(model.SyncExcludeIcon) {
+			mi.Icon = up.Icon
+		}
+		if !existing.SyncExcludes(model.SyncExcludeTags) {
+			mi.Tags = up.Tags
 		}
 		if err := mi.Insert(); err == nil {
 			createdModels++
@@ -407,25 +420,29 @@ func SyncUpstreamModels(c *gin.Context) {
 				continue
 			}
 
-			// 映射 vendor
-			newVendorID := ensureVendorID(up.VendorName, vendorByName, vendorIDCache, &createdVendors)
+			// 映射 vendor（vendor 被排除时不建 vendor 记录）
+			newVendorID := 0
+			if !local.SyncExcludes(model.SyncExcludeVendor) {
+				newVendorID = ensureVendorID(up.VendorName, vendorByName, vendorIDCache, &createdVendors)
+			}
 
-			// 应用字段覆盖（事务）
+			// 应用字段覆盖（事务）。SyncExcludeFields 的优先级高于调用方的 ow.Fields：
+			// 运营手配的字段即使被显式列进来也不会被上游覆盖。
 			_ = model.DB.Transaction(func(tx *gorm.DB) error {
 				needUpdate := false
-				if containsField(ow.Fields, "description") {
+				if containsField(ow.Fields, "description") && !local.SyncExcludes(model.SyncExcludeDescription) {
 					local.Description = up.Description
 					needUpdate = true
 				}
-				if containsField(ow.Fields, "icon") {
+				if containsField(ow.Fields, "icon") && !local.SyncExcludes(model.SyncExcludeIcon) {
 					local.Icon = up.Icon
 					needUpdate = true
 				}
-				if containsField(ow.Fields, "tags") {
+				if containsField(ow.Fields, "tags") && !local.SyncExcludes(model.SyncExcludeTags) {
 					local.Tags = up.Tags
 					needUpdate = true
 				}
-				if containsField(ow.Fields, "vendor") {
+				if containsField(ow.Fields, "vendor") && !local.SyncExcludes(model.SyncExcludeVendor) {
 					local.VendorID = newVendorID
 					needUpdate = true
 				}

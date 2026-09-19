@@ -17,8 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import { type Table } from '@tanstack/react-table'
-import { Power, PowerOff, Trash2, Copy } from 'lucide-react'
+import type { Table } from '@tanstack/react-table'
+import { Power, PowerOff, Tags, Trash2, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -39,6 +39,7 @@ import {
   handleBatchDeleteModels,
 } from '../lib'
 import type { Model } from '../types'
+import { BatchTagsDialog } from './dialogs/batch-tags-dialog'
 
 interface DataTableBulkActionsProps<TData> {
   table: Table<TData>
@@ -50,6 +51,7 @@ export function DataTableBulkActions<TData>({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showTagsDialog, setShowTagsDialog] = useState(false)
 
   const selectedRows = table.getFilteredSelectedRowModel().rows
   const selectedIds = selectedRows.reduce<number[]>((ids, row) => {
@@ -144,6 +146,27 @@ export function DataTableBulkActions<TData>({
               <Button
                 variant='outline'
                 size='icon'
+                onClick={() => setShowTagsDialog(true)}
+                className='size-8'
+                aria-label={t('Edit tags on selected models')}
+                title={t('Edit tags on selected models')}
+              />
+            }
+          >
+            <Tags />
+            <span className='sr-only'>{t('Edit tags on selected models')}</span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('Edit tags on selected models')}</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='outline'
+                size='icon'
                 onClick={handleCopyNames}
                 className='size-8'
                 aria-label={t('Copy model names')}
@@ -180,6 +203,13 @@ export function DataTableBulkActions<TData>({
           </TooltipContent>
         </Tooltip>
       </BulkActionsToolbar>
+
+      <BatchTagsDialog
+        open={showTagsDialog}
+        onOpenChange={setShowTagsDialog}
+        modelIds={selectedIds}
+        onApplied={handleClearSelection}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog

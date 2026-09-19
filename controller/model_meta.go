@@ -97,6 +97,17 @@ func CreateModelMeta(c *gin.Context) {
 		common.ApiErrorMsg(c, "模型名称不能为空")
 		return
 	}
+	// 标签校验与规范化：前端编辑器的限制可被直接调用 API 绕过
+	normalizedTags, err := model.NormalizeModelTags(m.Tags)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	m.Tags = normalizedTags
+	if err := model.ValidateSyncExcludeFields(m.SyncExcludeFields); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
 	// 名称冲突检查
 	if dup, err := model.IsModelNameDuplicated(0, m.ModelName); err != nil {
 		common.ApiError(c, err)
@@ -135,6 +146,17 @@ func UpdateModelMeta(c *gin.Context) {
 			return
 		}
 	} else {
+		// 标签校验与规范化：与新建走同一套规则
+		normalizedTags, err := model.NormalizeModelTags(m.Tags)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		m.Tags = normalizedTags
+		if err := model.ValidateSyncExcludeFields(m.SyncExcludeFields); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
 		// 名称冲突检查
 		if dup, err := model.IsModelNameDuplicated(m.Id, m.ModelName); err != nil {
 			common.ApiError(c, err)
@@ -167,6 +189,62 @@ func DeleteModelMeta(c *gin.Context) {
 	}
 	model.RefreshPricing()
 	common.ApiSuccess(c, nil)
+}
+
+// maxBatchTagModelIds caps one batch tag call. The whole batch runs in a single
+// transaction holding a row lock per model, so the cap bounds how long those
+// locks are held against concurrent model edits and the sync job. 200 covers a
+// full admin page selection several times over; larger jobs should page.
+const maxBatchTagModelIds = 200
+
+// batchModelTagRequest 批量增删模型标签的请求体。
+type batchModelTagRequest struct {
+	Ids        []int    `json:"ids"`
+	AddTags    []string `json:"add_tags"`
+	RemoveTags []string `json:"remove_tags"`
+}
+
+// BatchModelTags 批量为多个模型增删标签。
+//
+// 标签是「读-改-写」语义，前端并发发 N 个整行 PUT 会互相覆盖，因此这里在一个事务里
+// 加行锁串行处理。
+func BatchModelTags(c *gin.Context) {
+	var req batchModelTagRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if len(req.Ids) == 0 {
+		common.ApiErrorMsg(c, "请至少选择一个模型")
+		return
+	}
+	if len(req.Ids) > maxBatchTagModelIds {
+		common.ApiErrorMsg(c, "单次最多处理 "+strconv.Itoa(maxBatchTagModelIds)+" 个模型")
+		return
+	}
+	if len(req.AddTags) == 0 && len(req.RemoveTags) == 0 {
+		common.ApiErrorMsg(c, "请至少指定一个要添加或移除的标签")
+		return
+	}
+
+	result, err := model.BatchApplyModelTags(req.Ids, req.AddTags, req.RemoveTags)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+
+	// 定价缓存里带了模型标签（model/pricing.go 中 pricing.Tags = meta.Tags），
+	// 因此整批提交后刷新一次，而不是每行刷一次。
+	model.RefreshPricing()
+	recordManageAudit(c, "model.tag_batch", map[string]interface{}{
+		"count":   len(req.Ids),
+		"add":     strings.Join(req.AddTags, ","),
+		"remove":  strings.Join(req.RemoveTags, ","),
+		"updated": result.Updated,
+		"skipped": result.Skipped,
+		"failed":  len(result.Failures),
+	})
+	common.ApiSuccess(c, result)
 }
 
 // enrichModels 批量填充附加信息：端点、渠道、分组、计费类型，避免 N+1 查询

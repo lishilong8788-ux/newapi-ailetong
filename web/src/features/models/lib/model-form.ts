@@ -18,8 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import { parseTagList as parseTagsFromUtils } from '@/lib/model-tags'
+
 import type { Model } from '../types'
-import { parseModelTags as parseTagsFromUtils } from './model-utils'
 
 // ============================================================================
 // Model Form Schema

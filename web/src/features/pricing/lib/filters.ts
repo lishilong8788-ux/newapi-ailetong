@@ -17,6 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  resolveTag,
+  resolveTagList,
+  type ResolveTagOptions,
+} from '@/lib/model-tags'
+
+import {
   SORT_OPTIONS,
   FILTER_ALL,
   QUOTA_TYPES,
@@ -132,7 +138,11 @@ export function sortModels(
 }
 
 /**
- * Apply all filters and sorting to models
+ * Apply all filters and sorting to models.
+ *
+ * `tagOptions` carries the operator tag registry (see `useTagRegistry`). It is
+ * only consulted by the tag filter, and only registry-defined aliases need it:
+ * the built-in vocabulary and plain spelling variants fold without it.
  */
 export function filterAndSortModels(
   models: PricingModel[],
@@ -144,69 +154,66 @@ export function filterAndSortModels(
     endpointType: string
     tag: string
     sortBy: string
-  }
+  },
+  tagOptions?: ResolveTagOptions
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
   result = filterByVendor(result, filters.vendor)
   result = filterByGroup(result, filters.group)
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
-  result = filterByTag(result, filters.tag)
+  result = filterByTag(result, filters.tag, tagOptions)
   result = sortModels(result, filters.sortBy)
 
   return result
 }
 
 /**
- * Parse tags from comma-separated string
- */
-export function parseTags(tagsString?: string): string[] {
-  if (!tagsString) return []
-  return tagsString
-    .split(/[,;|\s]+/)
-    .map((t) => t.trim())
-    .filter(Boolean)
-}
-
-/**
- * Extract all unique tags from models.
+ * Every distinct tag in the catalog, as canonical slugs, for the filter rail.
  *
- * Deduplication is case-insensitive, but the first spelling encountered is kept
- * for display so the sidebar shows "Hot" rather than "hot". Callers that match
- * against these values (`filterByTag`, sidebar counts) lowercase both sides, so
- * preserving case here is display-only and does not affect filtering.
+ * Slugs rather than raw text because that is the identity the rest of the
+ * feature agrees on: `Hot`, `hot` and `热门` are one entry, and `long context`
+ * is one entry rather than the two grey fragments the old whitespace-splitting
+ * parser produced. The rail resolves each slug back to a display label, so
+ * nothing here has to preserve the operator's spelling.
+ *
+ * The returned values are what the tag filter state holds, and `filterByTag`
+ * resolves model tags to the same slugs — that is the round trip.
  */
-export function extractAllTags(models: PricingModel[]): string[] {
-  const tagsByLowercase = new Map<string, string>()
+export function extractAllTags(
+  models: PricingModel[],
+  options?: ResolveTagOptions
+): string[] {
+  const slugs = new Set<string>()
 
-  models.forEach((model) => {
-    if (model.tags) {
-      const tags = parseTags(model.tags)
-      tags.forEach((tag) => {
-        const key = tag.toLowerCase()
-        if (!tagsByLowercase.has(key)) {
-          tagsByLowercase.set(key, tag)
-        }
-      })
+  for (const model of models) {
+    for (const tag of resolveTagList(model.tags, options)) {
+      if (tag.slug) slugs.add(tag.slug)
     }
-  })
+  }
 
-  return [...tagsByLowercase.values()].sort((a, b) => a.localeCompare(b))
+  return [...slugs].sort((a, b) => a.localeCompare(b))
 }
 
 /**
- * Filter models by tag
+ * Filter models by tag.
+ *
+ * Both sides are reduced to canonical slugs, so a model tagged `Hot` matches a
+ * chip for `hot` and a model tagged `long context` matches `long-context`.
+ * `tag` is resolved rather than merely normalized so a value that arrived as an
+ * alias — a bookmarked `?tag=popular`, say — still lands on `hot`.
  */
 export function filterByTag(
   models: PricingModel[],
-  tag: string
+  tag: string,
+  options?: ResolveTagOptions
 ): PricingModel[] {
   if (tag === FILTER_ALL) return models
 
-  const tagLower = tag.toLowerCase()
-  return models.filter((m) => {
-    if (!m.tags) return false
-    const modelTags = parseTags(m.tags).map((t) => t.toLowerCase())
-    return modelTags.includes(tagLower)
-  })
+  const target = resolveTag(tag, options).slug
+  if (!target) return models
+
+  return models.filter((m) =>
+    resolveTagList(m.tags, options).some((item) => item.slug === target)
+  )
 }

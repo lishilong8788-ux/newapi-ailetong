@@ -18,11 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { useTagRegistry } from '@/hooks/use-tag-registry'
+import { resolveTagList } from '@/lib/model-tags'
+
 import {
   CAPABILITY_LABEL_KEYS,
   normalizeCatalogItems,
 } from '../lib/catalog-fields'
-import { parseTags } from '../lib/filters'
 import type { ModelCapability, PricingModel } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import {
@@ -121,10 +123,15 @@ function ModelCapabilitiesSection(props: { model: PricingModel }) {
 /** Six-cell reference grid: provider, billing mode, groups, endpoints, tags, size. */
 function ModelInfoSection(props: { model: PricingModel }) {
   const { t } = useTranslation()
+  const tagRegistry = useTagRegistry()
   const model = props.model
   const groups = normalizeCatalogItems(model.enable_groups)
   const endpoints = normalizeCatalogItems(model.supported_endpoint_types)
-  const tags = parseTags(model.tags)
+  // The pill list is a plain neutral list, so only the display name is needed
+  // here — this cell is a reference grid, not the place tag colour is read.
+  const tagLabels = resolveTagList(model.tags, tagRegistry).map(
+    (tag) => tag.label
+  )
 
   return (
     <section>
@@ -155,8 +162,8 @@ function ModelInfoSection(props: { model: PricingModel }) {
           )}
         </CatalogInfoCell>
         <CatalogInfoCell label={t('Tags')}>
-          {tags.length > 0 ? (
-            <CatalogPillList items={tags} />
+          {tagLabels.length > 0 ? (
+            <CatalogPillList items={tagLabels} />
           ) : (
             <FieldPlaceholder className='text-sm' />
           )}

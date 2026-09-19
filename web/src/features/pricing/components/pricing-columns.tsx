@@ -26,14 +26,15 @@ import {
 } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
+import { useTagRegistry } from '@/hooks/use-tag-registry'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import { resolveTagList } from '@/lib/model-tags'
 
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
-import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import {
   formatPrice,
@@ -62,6 +63,7 @@ export function usePricingColumns(
   options: PricingColumnsOptions = {}
 ): ColumnDef<PricingModel>[] {
   const { t } = useTranslation()
+  const tagRegistry = useTagRegistry()
   const {
     tokenUnit = DEFAULT_TOKEN_UNIT,
     priceRate = 1,
@@ -352,11 +354,15 @@ export function usePricingColumns(
       accessorKey: 'tags',
       header: t('Tags'),
       cell: ({ row }) => {
-        const tags = parseTags(row.original.tags)
+        const tags = resolveTagList(row.original.tags, tagRegistry)
         return (
           <BadgeListCell
             items={tags.map((tag) => (
-              <ModelTagBadge key={tag} tag={tag} />
+              <ModelTagBadge
+                key={tag.slug}
+                label={tag.label}
+                variant={tag.variant}
+              />
             ))}
           />
         )

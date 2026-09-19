@@ -220,6 +220,16 @@ export type ModelSettings = {
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
   'tool_price_setting.prices': string
+  /**
+   * Operator overrides for the model tag vocabulary: a JSON array of
+   * `TagDefinition`. Empty means "no overrides" and the frontend's built-in
+   * vocabulary applies unchanged.
+   *
+   * Optional because this type doubles as the shape of hand-built defaults
+   * objects elsewhere (the model editor assembles one for pricing ratios only);
+   * the settings page supplies a concrete `''` so the option is still read.
+   */
+  'pricing_setting.tag_registry'?: string
   TopupGroupRatio: string
   GroupRatio: string
   UserUsableGroups: string

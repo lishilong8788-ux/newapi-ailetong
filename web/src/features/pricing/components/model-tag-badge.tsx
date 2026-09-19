@@ -18,13 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { memo } from 'react'
 
-import { StatusBadge } from '@/components/status-badge'
+import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { cn } from '@/lib/utils'
 
-import { DEFAULT_TAG_VARIANT, TAG_VARIANTS } from '../constants'
-
 export interface ModelTagBadgeProps {
-  tag: string
+  /** Display name, already resolved from the raw `models.tags` value. */
+  label: string
+  variant: StatusVariant
   size?: 'sm' | 'md' | 'lg'
   filled?: boolean
   className?: string
@@ -33,18 +33,21 @@ export interface ModelTagBadgeProps {
 /**
  * Renders one operational tag from `models.tags`.
  *
- * Known tags get a color from `TAG_VARIANTS`; unknown ones stay neutral so that
- * operators can introduce new tags without a frontend change.
+ * Takes an already-resolved label and colour rather than the raw tag: resolution
+ * (`resolveTagList`) runs once per list, so every badge in a row shares one
+ * registry lookup instead of repeating it.
+ *
+ * The props stay primitives on purpose. Handing the whole `ResolvedTag` down
+ * would defeat the `memo` wrapper, because the resolver returns a fresh object
+ * on every render and shallow comparison would never hit.
  */
 export const ModelTagBadge = memo(function ModelTagBadge(
   props: ModelTagBadgeProps
 ) {
-  const variant = TAG_VARIANTS[props.tag.toLowerCase()] ?? DEFAULT_TAG_VARIANT
-
   return (
     <StatusBadge
-      label={props.tag}
-      variant={variant}
+      label={props.label}
+      variant={props.variant}
       size={props.size ?? 'sm'}
       copyable={false}
       filled={props.filled}
