@@ -23,6 +23,8 @@ import { describe, expect, test, vi } from 'vitest'
 
 import { STATUS_QUERY_KEY, type StatusRecord } from '@/lib/status-query'
 
+import type { AgentOverview } from '../types'
+
 const useSearch = vi.fn(() => ({ page: 1, pageSize: 10, keyword: '' }))
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
@@ -41,6 +43,13 @@ vi.mock('../api', () => ({
     Promise.resolve({ success: true, data: { items: [], total: 0 } })
   ),
   exportAgentCustomers: vi.fn(),
+}))
+
+// The sign-up-reward card reads `/api/user/self`; only that one call is faked so
+// the rest of the api module (the axios instance other imports pull in) is real.
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api')>()),
+  getSelf: vi.fn(() => Promise.resolve({ success: true, data: {} })),
 }))
 
 const { Agent } = await import('..')
@@ -82,8 +91,17 @@ describe('agent workbench when the programme is switched off', () => {
     expect(getAgentOverview).not.toHaveBeenCalled()
   })
 
-  test('renders the workbench once the programme is on', async () => {
-    getAgentOverview.mockResolvedValue({ success: true, data: null })
+  test('loads the referral page once the programme is on', async () => {
+    getAgentOverview.mockResolvedValue({
+      success: true,
+      data: {
+        profile: null,
+        effective_rate: 0.05,
+        stats: { available: 0, total: 0, withdrawn: 0, customer_count: 0 },
+        withdrawal: { min_amount: 100, fee_rate: 0, can_apply: false },
+        programme: { default_rate: 0.05, freeze_days: 7, auto_approve: false },
+      } satisfies AgentOverview,
+    })
 
     renderAgentPage({ agent_enabled: true })
 

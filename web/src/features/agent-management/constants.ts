@@ -54,8 +54,13 @@ export const AGENT_MANAGEMENT_TAB_LABEL_KEYS: Record<
 export const AGENT_STATUS_FILTER_ALL = 'all'
 
 // labelKey values are i18n keys; render with t(config.labelKey)
+//
+// `incomplete` only reaches this list when an operator designated someone an
+// agent from the console and that person has not submitted their subject
+// details yet — visiting the referral page no longer creates a profile. The
+// label says so rather than reading as a generic "unfinished".
 export const AGENT_STATUSES: Record<AgentStatus, BadgeConfig> = {
-  incomplete: { labelKey: 'Incomplete', variant: 'neutral' },
+  incomplete: { labelKey: 'Awaiting Submission', variant: 'neutral' },
   pending: { labelKey: 'Pending Review', variant: 'warning' },
   active: { labelKey: 'Active', variant: 'success' },
   rejected: { labelKey: 'Rejected', variant: 'danger' },

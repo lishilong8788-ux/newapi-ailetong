@@ -88,18 +88,49 @@ func maskBankAccount(account string) string {
 // ---- Agent APIs: profile ----
 
 // GetAgentProfile returns the workbench header: the caller's own profile, the
-// earnings summary and the promotion links. EnsureAgentProfile is used so a
-// first-time visitor gets a row instead of an error - promoting is allowed before
-// the identity documents are submitted (design doc 4.2).
+// earnings summary and - once the profile has been approved - the promotion
+// links. It also carries the programme terms the application page renders.
+//
+// Reading this endpoint must not create anything. It used to call
+// EnsureAgentProfile, so every user who merely opened the programme page became a
+// row in the admin agent list and a data point in the analytics status
+// breakdown. A caller with no profile gets a null profile and zeroed stats, which
+// is what the application form renders against.
 func GetAgentProfile(c *gin.Context) {
 	if !requireAgentProgramme(c) {
 		return
 	}
 	userId := c.GetInt("id")
 
-	profile, err := model.EnsureAgentProfile(userId)
-	if err != nil {
+	profile, err := model.GetAgentProfileByUserId(userId)
+	if err != nil && !errors.Is(err, model.ErrAgentProfileNotFound) {
 		respondAgentError(c, err)
+		return
+	}
+	programme := gin.H{
+		"default_rate": setting.EffectiveCommissionRate(nil),
+		"freeze_days":  setting.AgentFreezeDays,
+		"auto_approve": setting.AgentAutoApprove,
+	}
+	if profile == nil {
+		// Nothing to aggregate: no profile means no ledger rows and no customers,
+		// and there is no promotion link to hand out before approval.
+		common.ApiSuccess(c, gin.H{
+			"profile":        nil,
+			"effective_rate": setting.EffectiveCommissionRate(nil),
+			"stats": gin.H{
+				"available":      0,
+				"total":          0,
+				"withdrawn":      0,
+				"customer_count": 0,
+			},
+			"withdrawal": gin.H{
+				"min_amount": setting.AgentMinWithdrawal,
+				"fee_rate":   setting.AgentWithdrawalFeeRate,
+				"can_apply":  false,
+			},
+			"programme": programme,
+		})
 		return
 	}
 
@@ -133,17 +164,6 @@ func GetAgentProfile(c *gin.Context) {
 		return
 	}
 
-	if user.AffCode == "" {
-		// Same backfill as GetAffCode: an agent that registered before aff codes
-		// existed still needs a promotion link.
-		user.AffCode = common.GetRandomString(4)
-		if err := user.Update(false); err != nil {
-			common.ApiError(c, err)
-			return
-		}
-	}
-
-	base := strings.TrimRight(system_setting.ServerAddress, "/")
 	// The response profile is a copy of the row: masking the field on the loaded
 	// struct is what keeps the full account out of the JSON.
 	masked := *profile
@@ -152,7 +172,7 @@ func GetAgentProfile(c *gin.Context) {
 	// and is never shown to the agent.
 	masked.Remark = ""
 
-	common.ApiSuccess(c, gin.H{
+	response := gin.H{
 		"profile":        masked,
 		"effective_rate": setting.EffectiveCommissionRate(profile.CommissionRate),
 		"stats": gin.H{
@@ -161,15 +181,38 @@ func GetAgentProfile(c *gin.Context) {
 			"withdrawn":      user.AgentWithdrawnTotal,
 			"customer_count": customerCount,
 		},
-		"aff_code":      user.AffCode,
-		"promo_link":    base + "/r/" + user.AffCode,
-		"register_link": base + "/register?aff=" + url.QueryEscape(user.AffCode),
 		"withdrawal": gin.H{
 			"min_amount": setting.AgentMinWithdrawal,
 			"fee_rate":   setting.AgentWithdrawalFeeRate,
 			"can_apply":  profile.Status == model.AgentStatusActive,
 		},
-	})
+		"programme": programme,
+	}
+
+	// Promotion material is only issued to an approved agent. active and suspended
+	// are the two post-approval states - a suspended agent keeps their existing
+	// link, since revoking a code already printed on material would break the
+	// attribution of customers they already invited. An applicant under review gets
+	// nothing, and in particular is not handed a freshly generated aff code: that
+	// would make the platform mint promotion identities for people it has not
+	// approved yet.
+	if profile.Status == model.AgentStatusActive || profile.Status == model.AgentStatusSuspended {
+		if user.AffCode == "" {
+			// Same backfill as GetAffCode: an agent that registered before aff codes
+			// existed still needs a promotion link.
+			user.AffCode = common.GetRandomString(4)
+			if err := user.Update(false); err != nil {
+				common.ApiError(c, err)
+				return
+			}
+		}
+		base := strings.TrimRight(system_setting.ServerAddress, "/")
+		response["aff_code"] = user.AffCode
+		response["promo_link"] = base + "/r/" + user.AffCode
+		response["register_link"] = base + "/register?aff=" + url.QueryEscape(user.AffCode)
+	}
+
+	common.ApiSuccess(c, response)
 }
 
 // SubmitAgentProfileRequest is the client-writable part of a profile. The model

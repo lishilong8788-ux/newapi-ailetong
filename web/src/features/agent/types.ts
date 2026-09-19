@@ -24,8 +24,13 @@ For commercial licensing, please contact support@quantumnous.com
 export type AgentType = 'personal' | 'company'
 
 /**
- * Only `active` may withdraw. The other states can still promote and accrue
- * commission — identity review is a gate on cashing out, not on earning.
+ * Review is the gate on *being* an agent, not just on cashing out: a promo link
+ * is issued and commission accrues only once the review has passed, so `active`
+ * is the single earning state and `suspended` an operator's stop on one.
+ *
+ * The pre-approval states are all pre-promotion — `pending` and `rejected` come
+ * from the applicant's own submission, `incomplete` only from an operator adding
+ * someone in the admin console before they have filled anything in.
  */
 export type AgentStatus =
   | 'incomplete'
@@ -78,6 +83,13 @@ export interface AgentProfile {
   contact_phone: string
   contact_email: string
   reject_reason: string
+  /**
+   * When the first review passed. `0` means never approved.
+   *
+   * Never cleared, so it stays true through a later re-review — the server uses
+   * it, not `status`, to decide whether commission keeps accruing.
+   */
+  approved_at: number
   created_at: number
   updated_at: number
 }
@@ -158,21 +170,43 @@ export interface ApiResponse<T = unknown> {
 }
 
 /**
- * Everything the workbench needs on first paint: who the agent is, what they
- * have earned, and the link they hand out.
+ * Withdrawal rules, mirroring the `AgentMinWithdrawal` /
+ * `AgentWithdrawalFeeRate` options. The server remains the authority on all
+ * three, so the dialog pre-validates against them but surfaces the server's
+ * rejection rather than reimplementing it.
+ */
+export interface AgentWithdrawalRules {
+  /** RMB. */
+  min_amount: number
+  fee_rate: number
+  can_apply: boolean
+}
+
+/** Programme terms, shown on the application page before there is a profile. */
+export interface AgentProgramme {
+  default_rate: number
+  freeze_days: number
+  auto_approve: boolean
+}
+
+/**
+ * Everything the referral page needs on first paint: who the agent is, what they
+ * have earned, and — once review has passed — the link they hand out.
  *
- * `min_withdrawal` and `withdrawal_fee_rate` mirror the `AgentMinWithdrawal` /
- * `AgentWithdrawalFeeRate` options. They are optional because the client can
- * fall back to the documented defaults; the server remains the authority on
- * both, so the dialog surfaces its rejection rather than trusting these.
+ * `profile` is `null` for anyone who has never applied; nothing is written on a
+ * mere page visit. `aff_code` / `promo_link` / `register_link` are absent until
+ * the profile reaches `active` or `suspended`, so promotion material simply does
+ * not exist client-side before approval.
  */
 export interface AgentOverview {
-  profile: AgentProfile
+  profile: AgentProfile | null
+  effective_rate: number
   stats: AgentStats
-  promo_link: string
-  aff_code: string
-  min_withdrawal?: number
-  withdrawal_fee_rate?: number
+  aff_code?: string
+  promo_link?: string
+  register_link?: string
+  withdrawal: AgentWithdrawalRules
+  programme: AgentProgramme
 }
 
 export interface AgentProfilePayload {

@@ -93,8 +93,9 @@ export function WithdrawalDialog() {
   if (!isOpen) return null
 
   const available = overview?.stats.available ?? 0
-  const minAmount = overview?.min_withdrawal ?? WITHDRAWAL_DEFAULTS.MIN_AMOUNT
-  const feeRate = overview?.withdrawal_fee_rate ?? WITHDRAWAL_DEFAULTS.FEE_RATE
+  const minAmount =
+    overview?.withdrawal?.min_amount ?? WITHDRAWAL_DEFAULTS.MIN_AMOUNT
+  const feeRate = overview?.withdrawal?.fee_rate ?? WITHDRAWAL_DEFAULTS.FEE_RATE
   // The shortcut carries the method in; the selector takes over once touched.
   const selectedMethod = method ?? withdrawalMethod
 
@@ -252,7 +253,7 @@ export function WithdrawalDialog() {
         />
       </div>
 
-      {selectedMethod === 'bank' && !overview?.profile.bank_account ? (
+      {selectedMethod === 'bank' && !overview?.profile?.bank_account ? (
         <Alert variant='destructive'>
           <TriangleAlert aria-hidden='true' />
           <AlertDescription>

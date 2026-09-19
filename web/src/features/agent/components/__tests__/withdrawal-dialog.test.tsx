@@ -21,7 +21,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import type { AgentOverview } from '../../types'
+import type { AgentOverview, AgentProfile } from '../../types'
 
 const getAgentOverview = vi.fn()
 const createAgentWithdrawal = vi.fn()
@@ -38,36 +38,51 @@ const { AgentProvider, useAgent } = await import('../agent-provider')
 // dependent.
 const user = userEvent.setup({ delay: null })
 
+const BASE_PROFILE: AgentProfile = {
+  id: 1,
+  user_id: 42,
+  agent_type: 'personal',
+  status: 'active',
+  level: '',
+  commission_rate: 0.05,
+  subject_name: 'Li Si',
+  id_no: '',
+  company_name: '',
+  tax_no: '',
+  bank_name: 'ICBC',
+  bank_account: '4321',
+  bank_branch: '',
+  contact_name: '',
+  contact_phone: '13800000000',
+  contact_email: '',
+  reject_reason: '',
+  approved_at: 1_772_100_000,
+  created_at: 1_772_000_000,
+  updated_at: 1_772_000_000,
+}
+
 const BASE_OVERVIEW: AgentOverview = {
-  profile: {
-    id: 1,
-    user_id: 42,
-    agent_type: 'personal',
-    status: 'active',
-    level: '',
-    commission_rate: 0.05,
-    subject_name: 'Li Si',
-    id_no: '',
-    company_name: '',
-    tax_no: '',
-    bank_name: 'ICBC',
-    bank_account: '4321',
-    bank_branch: '',
-    contact_name: '',
-    contact_phone: '13800000000',
-    contact_email: '',
-    reject_reason: '',
-    created_at: 1_772_000_000,
-    updated_at: 1_772_000_000,
-  },
+  profile: BASE_PROFILE,
+  effective_rate: 0.05,
   stats: {
     available: 500,
     total: 900,
     withdrawn: 400,
     customer_count: 3,
   },
-  promo_link: 'https://example.test/r/2dfZb4',
   aff_code: '2dfZb4',
+  promo_link: 'https://example.test/r/2dfZb4',
+  register_link: 'https://example.test/register?aff=2dfZb4',
+  withdrawal: { min_amount: 100, fee_rate: 0, can_apply: true },
+  programme: { default_rate: 0.05, freeze_days: 7, auto_approve: false },
+}
+
+/** Same overview with one withdrawal rule overridden. */
+function withFeeRate(feeRate: number): AgentOverview {
+  return {
+    ...BASE_OVERVIEW,
+    withdrawal: { ...BASE_OVERVIEW.withdrawal, fee_rate: feeRate },
+  }
 }
 
 /** Opens the dialog the way the earnings card does, without mounting the card. */
@@ -130,10 +145,7 @@ describe('withdrawal fee and net preview', () => {
   })
 
   test('splits the amount into fee and net when a fee rate applies', async () => {
-    const amountInput = await openDialog({
-      ...BASE_OVERVIEW,
-      withdrawal_fee_rate: 0.02,
-    })
+    const amountInput = await openDialog(withFeeRate(0.02))
 
     await user.type(amountInput, '250')
 
@@ -143,10 +155,7 @@ describe('withdrawal fee and net preview', () => {
   })
 
   test('rounds the fee on cents rather than trailing a float artifact', async () => {
-    const amountInput = await openDialog({
-      ...BASE_OVERVIEW,
-      withdrawal_fee_rate: 0.015,
-    })
+    const amountInput = await openDialog(withFeeRate(0.015))
 
     await user.type(amountInput, '100.10')
 
@@ -157,10 +166,7 @@ describe('withdrawal fee and net preview', () => {
   })
 
   test('recomputes the preview as the amount changes', async () => {
-    const amountInput = await openDialog({
-      ...BASE_OVERVIEW,
-      withdrawal_fee_rate: 0.1,
-    })
+    const amountInput = await openDialog(withFeeRate(0.1))
 
     await user.type(amountInput, '200')
     expect(breakdownValue('Processing Fee')).toBe('¥20.00')
@@ -173,7 +179,7 @@ describe('withdrawal fee and net preview', () => {
   })
 
   test('holds the preview at zero before an amount is entered', async () => {
-    await openDialog({ ...BASE_OVERVIEW, withdrawal_fee_rate: 0.02 })
+    await openDialog(withFeeRate(0.02))
 
     expect(breakdownValue('Requested')).toBe('¥0.00')
     expect(breakdownValue('Processing Fee')).toBe('¥0.00')
@@ -183,10 +189,7 @@ describe('withdrawal fee and net preview', () => {
 
 describe('withdrawal amount validation', () => {
   test('blocks submission and flags the field below the minimum', async () => {
-    const amountInput = await openDialog({
-      ...BASE_OVERVIEW,
-      min_withdrawal: 100,
-    })
+    const amountInput = await openDialog()
 
     await user.type(amountInput, '50')
 
@@ -231,7 +234,7 @@ describe('withdrawal amount validation', () => {
   test('warns that bank details are missing before a bank payout', async () => {
     await openDialog({
       ...BASE_OVERVIEW,
-      profile: { ...BASE_OVERVIEW.profile, bank_account: '' },
+      profile: { ...BASE_PROFILE, bank_account: '' },
     })
 
     expect(

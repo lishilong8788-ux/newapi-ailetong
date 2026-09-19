@@ -55,10 +55,10 @@ function EarningsFigure(props: {
 /**
  * Earnings summary and the three money actions.
  *
- * Withdrawing is gated on `status === 'active'`: an agent can promote and accrue
- * commission from day one, but cash only moves once identity review has passed
- * (design doc §4.2). The buttons stay visible and disabled rather than
- * disappearing, so the reason can be stated next to them.
+ * Withdrawing is gated on `status === 'active'`. Only an approved agent reaches
+ * this card at all, so the gate closes for exactly one reason — an operator
+ * suspended the account. The buttons stay visible and disabled rather than
+ * disappearing, so that reason can be stated next to them.
  */
 export function EarningsCard() {
   const { t } = useTranslation()
@@ -81,7 +81,7 @@ export function EarningsCard() {
   }
 
   const stats = overview?.stats
-  const canWithdraw = overview?.profile.status === 'active'
+  const canWithdraw = overview?.profile?.status === 'active'
 
   return (
     <Card data-card-hover='false' className='py-0'>
@@ -149,7 +149,7 @@ export function EarningsCard() {
               className='text-warning text-xs leading-relaxed'
             >
               {t(
-                'Your agent details are awaiting review. You can promote and earn commission now, and withdraw once the review passes.'
+                'This agent account is suspended. Commission you already earned stays in the ledger, but no new commission accrues and withdrawals are paused.'
               )}
             </p>
           )}

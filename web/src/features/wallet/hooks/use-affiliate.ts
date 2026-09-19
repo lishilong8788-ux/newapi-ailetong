@@ -30,10 +30,20 @@ import { generateAffiliateLink } from '../lib'
 // Affiliate Hook
 // ============================================================================
 
-export function useAffiliate() {
+interface UseAffiliateOptions {
+  /**
+   * Whether to fetch the caller's affiliate code. Off for callers that only
+   * need `transferQuota`: `GET /api/user/aff` mints a code for anyone who asks,
+   * and the agent programme issues promotion links only after review passes.
+   */
+  fetchCode?: boolean
+}
+
+export function useAffiliate(options: UseAffiliateOptions = {}) {
+  const fetchCode = options.fetchCode ?? true
   const [affiliateCode, setAffiliateCode] = useState<string>('')
   const [affiliateLink, setAffiliateLink] = useState<string>('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(fetchCode)
   const [transferring, setTransferring] = useState(false)
   const { copyToClipboard } = useCopyToClipboard()
 
@@ -84,8 +94,9 @@ export function useAffiliate() {
   }, [])
 
   useEffect(() => {
+    if (!fetchCode) return
     fetchAffiliateCode()
-  }, [fetchAffiliateCode])
+  }, [fetchCode, fetchAffiliateCode])
 
   return {
     affiliateCode,

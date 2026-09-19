@@ -130,7 +130,7 @@ export function ProfileFormDialog() {
   const isCompany = agentType === 'company'
   // The saved account arrives masked, so the form starts blank and only warns
   // about the re-entry when there is actually something to overwrite.
-  const hasSavedBankAccount = Boolean(overview?.profile.bank_account)
+  const hasSavedBankAccount = Boolean(overview?.profile?.bank_account)
 
   if (!isOpen) return null
 
@@ -157,7 +157,7 @@ export function ProfileFormDialog() {
       onOpenChange={(next) => !next && setOpen(null)}
       title={t('Agent Details')}
       description={t(
-        'Submitting these details starts the review. You can keep promoting while it is in progress.'
+        'Submitting these details starts the review. Your promo link opens once it passes.'
       )}
       contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-2xl'
       footer={

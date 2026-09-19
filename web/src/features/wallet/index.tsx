@@ -80,7 +80,7 @@ export function Wallet(props: WalletProps) {
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
 
-  const { status } = useStatus()
+  const { status, loading: statusLoading } = useStatus()
   const { currency } = useSystemConfig()
   const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
 
@@ -97,12 +97,18 @@ export function Wallet(props: WalletProps) {
     calculatePaymentAmount,
     processPayment,
   } = usePayment()
+  // The link half of this is only rendered while the agent programme is off (see
+  // the card below). `transferQuota` is still needed either way, so the hook
+  // stays mounted and only the code fetch is skipped — and it waits until the
+  // flag is actually known, because `GET /api/user/aff` mints a code as a side
+  // effect and the programme must not hand one out before review passes.
+  const showAffiliateCard = status?.agent_enabled !== true
   const {
     affiliateLink,
     loading: affiliateLoading,
     transferQuota,
     transferring,
-  } = useAffiliate()
+  } = useAffiliate({ fetchCode: !statusLoading && showAffiliateCard })
   const { redeeming, redeemCode } = useRedemption()
   const { processing: creemProcessing, processCreemPayment } = useCreemPayment()
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
@@ -339,15 +345,22 @@ export function Wallet(props: WalletProps) {
               />
             </div>
 
-            <AffiliateRewardsCard
-              user={user}
-              affiliateLink={affiliateLink}
-              onTransfer={() => setTransferDialogOpen(true)}
-              complianceConfirmed={
-                topupInfo?.payment_compliance_confirmed !== false
-              }
-              loading={affiliateLoading}
-            />
+            {/* With the agent programme on, promotion belongs to the referral
+                page alone: the link is issued only after review passes, so
+                handing one out here would contradict that gate. The card stays
+                for deployments running the programme off, where this is still
+                the only place to see and move invite rewards. */}
+            {showAffiliateCard ? (
+              <AffiliateRewardsCard
+                user={user}
+                affiliateLink={affiliateLink}
+                onTransfer={() => setTransferDialogOpen(true)}
+                complianceConfirmed={
+                  topupInfo?.payment_compliance_confirmed !== false
+                }
+                loading={affiliateLoading}
+              />
+            ) : null}
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>

@@ -4,9 +4,11 @@ import (
 	"errors"
 )
 
-// Agent profile lifecycle. A profile starts incomplete so a user can promote
-// and earn before submitting identity documents; only an active profile may
-// withdraw.
+// Agent profile lifecycle. Nothing is promotable or payable until an operator
+// has approved the profile once: promotion links and commission accrual both
+// require ApprovedAt > 0, and only an active profile may withdraw. incomplete is
+// now only reachable through an operator designating an agent from the console
+// (AdminCreateAgentProfile); a user reaches pending by applying.
 const (
 	AgentStatusIncomplete = "incomplete"
 	AgentStatusPending    = "pending"
@@ -100,6 +102,13 @@ type AgentProfile struct {
 	AuditTime    int64  `json:"audit_time" gorm:"default:0"`
 	RejectReason string `json:"reject_reason" gorm:"type:varchar(255);default:''"`
 	Remark       string `json:"remark" gorm:"type:varchar(255);default:''"`
+
+	// ApprovedAt is when the profile first passed review, and is never cleared
+	// afterwards. Commission accrual keys off "has ever been approved" rather than
+	// the current status: editing an approved profile sends it back to pending for
+	// re-review (see SubmitAgentProfile), and an agent must not stop earning while
+	// an operator re-checks a changed bank account.
+	ApprovedAt int64 `json:"approved_at" gorm:"default:0"`
 
 	CreatedAt int64 `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt int64 `json:"updated_at" gorm:"autoUpdateTime"`

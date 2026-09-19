@@ -32,8 +32,9 @@ const { EarningsCard } = await import('../earnings-card')
 const { WithdrawalDialog } = await import('../dialogs/withdrawal-dialog')
 const { AgentProvider } = await import('../agent-provider')
 
-function buildOverview(status: AgentStatus): AgentOverview {
-  return {
+/** Only an approved profile reaches this card, so both statuses are post-review. */
+function buildOverview(status: Extract<AgentStatus, 'active' | 'suspended'>) {
+  const overview: AgentOverview = {
     profile: {
       id: 1,
       user_id: 42,
@@ -52,18 +53,24 @@ function buildOverview(status: AgentStatus): AgentOverview {
       contact_phone: '13800000000',
       contact_email: '',
       reject_reason: '',
+      approved_at: 1_772_100_000,
       created_at: 1_772_000_000,
       updated_at: 1_772_000_000,
     },
+    effective_rate: 0.05,
     stats: {
       available: 320.5,
       total: 1280.75,
       withdrawn: 960.25,
       customer_count: 7,
     },
-    promo_link: 'https://example.test/r/2dfZb4',
     aff_code: '2dfZb4',
+    promo_link: 'https://example.test/r/2dfZb4',
+    register_link: 'https://example.test/register?aff=2dfZb4',
+    withdrawal: { min_amount: 100, fee_rate: 0, can_apply: true },
+    programme: { default_rate: 0.05, freeze_days: 7, auto_approve: false },
   }
+  return overview
 }
 
 function renderCard() {
@@ -110,37 +117,32 @@ describe('agent withdraw gate', () => {
     expect(screen.getByRole('button', { name: 'To Balance' })).toBeEnabled()
   })
 
-  test.each<AgentStatus>(['incomplete', 'pending', 'rejected', 'suspended'])(
-    'disables both withdraw actions and explains why when the profile is %s',
-    async (status) => {
-      getAgentOverview.mockResolvedValue({
-        success: true,
-        data: buildOverview(status),
-      })
+  test('disables both withdraw actions and blames the suspension when the account is suspended', async () => {
+    getAgentOverview.mockResolvedValue({
+      success: true,
+      data: buildOverview('suspended'),
+    })
 
-      renderCard()
+    renderCard()
 
-      const withdraw = await screen.findByRole('button', { name: 'Withdraw' })
-      const toBalance = screen.getByRole('button', { name: 'To Balance' })
+    const withdraw = await screen.findByRole('button', { name: 'Withdraw' })
+    const toBalance = screen.getByRole('button', { name: 'To Balance' })
 
-      expect(withdraw).toBeDisabled()
-      expect(toBalance).toBeDisabled()
+    expect(withdraw).toBeDisabled()
+    expect(toBalance).toBeDisabled()
 
-      // The reason is attached to both buttons, not just printed nearby, so a
-      // screen reader announces it with the disabled control.
-      const hintId = withdraw.getAttribute('aria-describedby')
-      expect(hintId).toBeTruthy()
-      expect(toBalance).toHaveAttribute('aria-describedby', hintId)
-      expect(document.querySelector(`#${hintId}`)).toHaveTextContent(
-        /awaiting review/i
-      )
-    }
-  )
+    // The reason is attached to both buttons, not just printed nearby, so a
+    // screen reader announces it with the disabled control.
+    const hintId = withdraw.getAttribute('aria-describedby')
+    expect(hintId).toBeTruthy()
+    expect(toBalance).toHaveAttribute('aria-describedby', hintId)
+    expect(document.querySelector(`#${hintId}`)).toHaveTextContent(/suspended/i)
+  })
 
   test('keeps the withdrawal records action available while withdrawing is gated', async () => {
     getAgentOverview.mockResolvedValue({
       success: true,
-      data: buildOverview('incomplete'),
+      data: buildOverview('suspended'),
     })
 
     renderCard()

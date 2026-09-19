@@ -32,7 +32,9 @@ import type {
 type BadgeConfig = Pick<StatusBadgeProps, 'variant'> & { labelKey: string }
 
 export const AGENT_STATUSES: Record<AgentStatus, BadgeConfig> = {
-  incomplete: { labelKey: 'Details Needed', variant: 'warning' },
+  // Only an operator adding an agent in the admin console produces this state,
+  // so it reads as "we are waiting on them", not "they left a form half done".
+  incomplete: { labelKey: 'Awaiting Application', variant: 'warning' },
   pending: { labelKey: 'Under Review', variant: 'info' },
   active: { labelKey: 'Active', variant: 'success' },
   rejected: { labelKey: 'Rejected', variant: 'danger' },

@@ -42,9 +42,11 @@ function IdentityRow(props: { label: string; children: React.ReactNode }) {
 }
 
 /**
- * The agent's identity record, plus the call to action that unblocks
- * withdrawing. A rejection is surfaced verbatim — without the reason the agent
- * has no way to know what to fix.
+ * The agent's identity record, plus the way back into the form.
+ *
+ * Only an approved agent (`active` or `suspended`) reaches this card, so the
+ * profile is always present and the details are always already submitted —
+ * editing them is what re-opens a review, not what starts one.
  */
 export function IdentityCard() {
   const { t } = useTranslation()
@@ -64,14 +66,12 @@ export function IdentityCard() {
   }
 
   const profile = overview?.profile
-  const status = profile?.status ?? 'incomplete'
-  const statusConfig = AGENT_STATUSES[status]
-  const isActive = status === 'active'
-  const isRejected = status === 'rejected'
+  if (!profile) return null
+
+  const statusConfig = AGENT_STATUSES[profile.status]
+  const isActive = profile.status === 'active'
   const subjectName =
-    profile?.agent_type === 'company'
-      ? profile?.company_name
-      : profile?.subject_name
+    profile.agent_type === 'company' ? profile.company_name : profile.subject_name
 
   return (
     <Card data-card-hover='false' className='py-0'>
@@ -95,7 +95,7 @@ export function IdentityCard() {
         <div className='space-y-2 border-t pt-3'>
           <IdentityRow label={t('Subject Type')}>
             <span className='font-medium'>
-              {t(AGENT_TYPE_LABEL_KEYS[profile?.agent_type ?? 'personal'])}
+              {t(AGENT_TYPE_LABEL_KEYS[profile.agent_type])}
             </span>
           </IdentityRow>
           {subjectName ? (
@@ -104,16 +104,22 @@ export function IdentityCard() {
             </IdentityRow>
           ) : null}
           <IdentityRow label={t('Commission Rate')}>
+            {/* effective_rate, not profile.commission_rate: the latter is null
+                whenever the agent follows the platform default, which would
+                render as a dash for most agents. The server already resolved
+                the default and the configured ceiling into this number. */}
             <span className='font-medium tabular-nums'>
-              {formatCommissionRate(profile?.commission_rate)}
+              {formatCommissionRate(
+                overview?.effective_rate ?? profile.commission_rate
+              )}
             </span>
           </IdentityRow>
-          {profile?.level ? (
+          {profile.level ? (
             <IdentityRow label={t('Agent Level')}>
               <span className='truncate font-medium'>{profile.level}</span>
             </IdentityRow>
           ) : null}
-          {profile?.bank_account ? (
+          {profile.bank_account ? (
             <IdentityRow label={t('Payout Account')}>
               <span className='truncate font-mono'>
                 {formatMaskedBankAccount(profile.bank_account)}
@@ -122,31 +128,25 @@ export function IdentityCard() {
           ) : null}
         </div>
 
-        {isRejected && profile?.reject_reason ? (
+        {!isActive && (
           <Alert variant='destructive'>
             <TriangleAlert aria-hidden='true' />
-            <AlertTitle>{t('Review Rejected')}</AlertTitle>
-            <AlertDescription>{profile.reject_reason}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {!isActive && (
-          <div className='bg-warning/10 text-warning space-y-2 rounded-lg p-3'>
-            <p className='text-xs leading-relaxed'>
+            <AlertTitle>{t('Agent Account Suspended')}</AlertTitle>
+            <AlertDescription>
               {t(
-                'Complete your identity details and wait for review before you can withdraw.'
+                'An operator has suspended this account. Promotion and commission are paused — contact support to have it reviewed again.'
               )}
-            </p>
-          </div>
+            </AlertDescription>
+          </Alert>
         )}
 
         <Button
-          variant={isActive ? 'outline' : 'default'}
+          variant='outline'
           size='sm'
           className='w-full'
           onClick={() => setOpen('profile')}
         >
-          {isActive ? t('Edit Details') : t('Complete Details')}
+          {t('Edit Details')}
         </Button>
       </CardContent>
     </Card>

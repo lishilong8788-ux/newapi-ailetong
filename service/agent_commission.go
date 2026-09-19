@@ -94,9 +94,18 @@ func RecordTopUpCommissionTx(tx *gorm.DB, topUpId int, payerUserId int, money fl
 		}
 		return err
 	}
-	// Suspended only stops NEW commission (design doc 4.2); commission already
-	// earned stays withdrawable, so nothing else is touched here.
-	if profile.Status == model.AgentStatusSuspended {
+	// Two independent gates (design doc 4.2):
+	//
+	// approved_at == 0 means this profile has never passed review - incomplete,
+	// pending and rejected all land here - and an unapproved applicant earns
+	// nothing. Once approved, the stamp is permanent, so an agent who edits their
+	// bank details and goes back to pending for re-review keeps earning: the
+	// programme admitted them already, and a paused ledger during a clerical
+	// re-check would be indistinguishable from a bug.
+	//
+	// suspended stops NEW commission only; commission already in the ledger stays
+	// withdrawable, so nothing else is touched here.
+	if profile.ApprovedAt == 0 || profile.Status == model.AgentStatusSuspended {
 		return nil
 	}
 

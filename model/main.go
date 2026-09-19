@@ -310,6 +310,16 @@ func migrateDB() error {
 	if err := InitializeExternalIdentityClaims(); err != nil {
 		return err
 	}
+	// Agent housekeeping is best-effort: it tidies data, and a gateway that cannot
+	// start is far worse than a profile list that still needs tidying. The order
+	// matters - the backfill has to stamp approved_at before the prune decides
+	// which rows carry no information.
+	if err := BackfillAgentApprovedAt(); err != nil {
+		common.SysError("failed to backfill agent approved_at: " + err.Error())
+	}
+	if _, err := PruneEmptyAgentProfiles(); err != nil {
+		common.SysError("failed to prune empty agent profiles: " + err.Error())
+	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -396,6 +406,14 @@ func migrateDBFast() error {
 	}
 	if err := InitializeExternalIdentityClaims(); err != nil {
 		return err
+	}
+	// Same two best-effort steps as migrateDB, in the same order: backfill
+	// approved_at first, then prune the rows that are still empty afterwards.
+	if err := BackfillAgentApprovedAt(); err != nil {
+		common.SysError("failed to backfill agent approved_at: " + err.Error())
+	}
+	if _, err := PruneEmptyAgentProfiles(); err != nil {
+		common.SysError("failed to prune empty agent profiles: " + err.Error())
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {

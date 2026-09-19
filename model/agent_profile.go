@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -52,9 +53,12 @@ func GetAgentProfileByUserId(userId int) (*AgentProfile, error) {
 	return &profile, nil
 }
 
-// EnsureAgentProfile returns the caller's profile, creating an incomplete one on
-// first use. A user may promote and earn commission before submitting identity
-// documents, so the row has to exist before anything has been audited.
+// EnsureAgentProfile returns a user's profile, creating an incomplete one if it
+// does not exist yet. Only two callers may create a row: an operator designating
+// an agent from the console, and a user's own application (SubmitAgentProfile),
+// which immediately moves it to pending. Merely reading the programme page must
+// not create one - that is what turned the admin agent list into a list of every
+// user who had ever opened it.
 //
 // The uniqueIndex on user_id is the authority under concurrency: two callers can
 // both find nothing and both insert, and the loser re-reads the winner's row
@@ -141,26 +145,38 @@ func SubmitAgentProfile(userId int, params SubmitAgentProfileParams) (*AgentProf
 			return ErrAgentStatusInvalid
 		}
 
+		updates := map[string]interface{}{
+			"agent_type":    agentType,
+			"status":        targetStatus,
+			"subject_name":  subjectName,
+			"id_no":         idNo,
+			"company_name":  companyName,
+			"tax_no":        taxNo,
+			"bank_name":     strings.TrimSpace(params.BankName),
+			"bank_account":  strings.TrimSpace(params.BankAccount),
+			"bank_branch":   strings.TrimSpace(params.BankBranch),
+			"contact_name":  strings.TrimSpace(params.ContactName),
+			"contact_phone": strings.TrimSpace(params.ContactPhone),
+			"contact_email": strings.TrimSpace(params.ContactEmail),
+			// A resubmission is a fresh review: the previous verdict and its
+			// reason would otherwise stay on screen next to pending status.
+			//
+			// approved_at is deliberately absent from this map. It records that the
+			// agent was admitted to the programme once, and that is what keeps
+			// commission accruing while an operator re-checks an edited bank
+			// account; resetting it would silently stop the money mid-review.
+			"reject_reason": "",
+			"audit_by":      0,
+			"audit_time":    auditTime,
+		}
+		// Auto-approve skips the review queue entirely, so it is also the moment of
+		// first approval and has to stamp approved_at itself - otherwise an
+		// auto-approved agent would be active yet never earn.
+		if targetStatus == AgentStatusActive && current.ApprovedAt == 0 {
+			updates["approved_at"] = auditTime
+		}
 		return tx.Model(&AgentProfile{}).Where("id = ?", current.Id).
-			Updates(map[string]interface{}{
-				"agent_type":    agentType,
-				"status":        targetStatus,
-				"subject_name":  subjectName,
-				"id_no":         idNo,
-				"company_name":  companyName,
-				"tax_no":        taxNo,
-				"bank_name":     strings.TrimSpace(params.BankName),
-				"bank_account":  strings.TrimSpace(params.BankAccount),
-				"bank_branch":   strings.TrimSpace(params.BankBranch),
-				"contact_name":  strings.TrimSpace(params.ContactName),
-				"contact_phone": strings.TrimSpace(params.ContactPhone),
-				"contact_email": strings.TrimSpace(params.ContactEmail),
-				// A resubmission is a fresh review: the previous verdict and its
-				// reason would otherwise stay on screen next to pending status.
-				"reject_reason": "",
-				"audit_by":      0,
-				"audit_time":    auditTime,
-			}).Error
+			Updates(updates).Error
 	})
 	if err != nil {
 		return nil, err
@@ -188,17 +204,24 @@ func AuditAgentProfile(id int, adminId int, approve bool, reason string) error {
 		}
 
 		status := AgentStatusRejected
+		updates := map[string]interface{}{
+			"reject_reason": reason,
+			"audit_by":      adminId,
+			"audit_time":    common.GetTimestamp(),
+		}
 		if approve {
 			status = AgentStatusActive
-			reason = ""
+			updates["reject_reason"] = ""
+			// First approval only. Re-reviewing an edited profile must not move the
+			// date the agent was originally admitted, because commission accrual
+			// keys off "has ever been approved" and would otherwise be re-datable.
+			if profile.ApprovedAt == 0 {
+				updates["approved_at"] = common.GetTimestamp()
+			}
 		}
+		updates["status"] = status
 		return tx.Model(&AgentProfile{}).Where("id = ?", profile.Id).
-			Updates(map[string]interface{}{
-				"status":        status,
-				"reject_reason": reason,
-				"audit_by":      adminId,
-				"audit_time":    common.GetTimestamp(),
-			}).Error
+			Updates(updates).Error
 	})
 }
 
@@ -244,6 +267,77 @@ func SetAgentStatus(userId int, status string) error {
 		return tx.Model(&AgentProfile{}).Where("id = ?", profile.Id).
 			Update("status", status).Error
 	})
+}
+
+// BackfillAgentApprovedAt stamps approved_at on profiles that were approved
+// before the column existed. Commission accrual keys off approved_at, so without
+// this every already-approved agent would stop earning the moment the gate ships.
+//
+// audit_time is the approval timestamp for anything that went through the review
+// queue. Rows that reached active without one (an early manual status change)
+// fall back to updated_at, which is at worst late but never zero.
+func BackfillAgentApprovedAt() error {
+	// suspended is included on purpose: it is a post-approval state, and an
+	// operator reactivating the agent must not have to re-approve them.
+	approvedStatuses := []string{AgentStatusActive, AgentStatusSuspended}
+
+	// Two statements instead of one CASE expression: a CASE would have to be raw
+	// SQL, and the column quoting differs across the three supported databases.
+	audited := DB.Model(&AgentProfile{}).
+		Where("status IN ? AND approved_at = ? AND audit_time > ?", approvedStatuses, 0, 0).
+		Update("approved_at", gorm.Expr("audit_time"))
+	if audited.Error != nil {
+		return audited.Error
+	}
+	unaudited := DB.Model(&AgentProfile{}).
+		Where("status IN ? AND approved_at = ? AND audit_time = ?", approvedStatuses, 0, 0).
+		Update("approved_at", gorm.Expr("updated_at"))
+	if unaudited.Error != nil {
+		return unaudited.Error
+	}
+
+	total := audited.RowsAffected + unaudited.RowsAffected
+	if total > 0 {
+		common.SysLog(fmt.Sprintf("agent profiles backfilled approved_at: count=%d (from audit_time=%d, from updated_at=%d)",
+			total, audited.RowsAffected, unaudited.RowsAffected))
+	}
+	return nil
+}
+
+// PruneEmptyAgentProfiles deletes profile rows that carry no information at all.
+//
+// This repairs a historical bug: GET /api/agent/profile used to call
+// EnsureAgentProfile, so merely opening the programme page inserted an
+// incomplete row. The admin agent list became a list of every user who had ever
+// looked at the page, and the status breakdown in analytics was flooded with
+// them.
+//
+// The predicate is deliberately paranoid. A row is removed only when every
+// operator- and agent-writable field is still at its zero value AND the user has
+// no commission and no withdrawal history, so nothing an operator typed and no
+// money trail can be destroyed by this. An operator-designated agent
+// (AdminCreateAgentProfile) that was never touched afterwards looks identical to
+// page noise and is treated as such; the designation can simply be repeated.
+func PruneEmptyAgentProfiles() (int64, error) {
+	commissionAgents := DB.Model(&AgentCommission{}).Select("agent_user_id")
+	withdrawalAgents := DB.Model(&AgentWithdrawal{}).Select("agent_user_id")
+
+	result := DB.Where("status = ?", AgentStatusIncomplete).
+		Where("approved_at = ? AND audit_by = ? AND commission_rate IS NULL", 0, 0).
+		Where("subject_name = ? AND id_no = ? AND company_name = ? AND tax_no = ?", "", "", "", "").
+		Where("bank_name = ? AND bank_account = ? AND bank_branch = ?", "", "", "").
+		Where("contact_name = ? AND contact_phone = ? AND contact_email = ?", "", "", "").
+		Where("level = ? AND remark = ? AND reject_reason = ?", "", "", "").
+		Where("user_id NOT IN (?)", commissionAgents).
+		Where("user_id NOT IN (?)", withdrawalAgents).
+		Delete(&AgentProfile{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
+		common.SysLog(fmt.Sprintf("agent profiles pruned: count=%d (empty rows created by visiting the programme page)", result.RowsAffected))
+	}
+	return result.RowsAffected, nil
 }
 
 // AgentProfileWithUser is one row of the admin agent list: the profile plus the
