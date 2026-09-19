@@ -624,4 +624,46 @@ export const STATIC_I18N_KEYS = [
   'Last 7 days',
   'Last 30 days',
   'Last 90 days',
+
+  // Built-in model tag labels (`BUILTIN_TAGS[].labelKey` in lib/model-tags.ts,
+  // passed to t() by resolveTag at runtime).
+  //
+  // The keys are explicit rather than the tag text itself because i18next's
+  // default keySeparator is '.', so a tag like `gpt-4.5` used as a key would be
+  // read as a nested path. 'Free of charge' is deliberately not 'Free': that key
+  // already exists meaning free disk space and is translated 可用.
+  'Hot',
+  'Recommended',
+  'New',
+  'Limited time',
+  'Free of charge',
+  'Reasoning',
+  'Vision',
+  'Multimodal',
+  'Long context',
+  'Web search',
+  'Beta',
+  'Experimental',
+  'Deprecated',
+
+  // Agent programme status and subject labels (`AGENT_STATUSES[].labelKey` and
+  // `AGENT_TYPE_LABEL_KEYS` in features/agent/constants.ts, read through t() at
+  // runtime by the application screen and the identity card).
+  //
+  // 'Awaiting Application' is the operator-added state: under the apply-then-review
+  // flow nothing is written on a page visit, so the only way to hold a profile with
+  // no submitted details is for an operator to have added the agent by hand.
+  'Awaiting Application',
+  'Under Review',
+  'Active',
+  'Rejected',
+  'Suspended',
+  'Individual',
+  'Business',
+
+  // Tag categories, from the kind->key map in
+  // features/system-settings/models/model-tag-registry-messages.ts.
+  'Promotion',
+  'Capability',
+  'Lifecycle',
 ] as const
