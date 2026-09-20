@@ -379,6 +379,7 @@ func SetApiRouter(router *gin.Engine) {
 			costRoute.GET("/trend", middleware.AdminAuth(), controller.CostTrend)
 			costRoute.GET("/channels", middleware.AdminAuth(), controller.CostChannels)
 			costRoute.GET("/models", middleware.AdminAuth(), controller.CostModels)
+			costRoute.GET("/channel-models", middleware.AdminAuth(), controller.CostChannelModels)
 			costRoute.GET("/channel/:id", middleware.AdminAuth(), controller.CostChannelDetail)
 			costRoute.GET("/purchase", middleware.AdminAuth(), controller.CostPurchaseList)
 			costRoute.GET("/inventory", middleware.AdminAuth(), controller.CostInventory)

@@ -242,7 +242,9 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 	attachQuotaSaturation(ctx, relayInfo, other)
-	attachUpstreamCost(ctx, relayInfo, CostInputsFromRealtimeUsage(usage, quota), other)
+	wssCostInputs := CostInputsFromRealtimeUsage(usage, quota)
+	attachUpstreamCost(ctx, relayInfo, wssCostInputs, other)
+	attachSellPrice(ctx, relayInfo, quota, wssCostInputs.Tokens, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -366,7 +368,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 	attachQuotaSaturation(ctx, relayInfo, other)
-	attachUpstreamCost(ctx, relayInfo, CostInputsFromUsage(usage, quota), other)
+	audioCostInputs := CostInputsFromUsage(usage, quota)
+	attachUpstreamCost(ctx, relayInfo, audioCostInputs, other)
+	attachSellPrice(ctx, relayInfo, quota, audioCostInputs.Tokens, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,

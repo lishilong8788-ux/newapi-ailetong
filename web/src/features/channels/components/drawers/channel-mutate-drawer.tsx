@@ -42,6 +42,7 @@ import {
   Route,
   Settings,
   SlidersHorizontal,
+  Tag,
   Wand2,
 } from 'lucide-react'
 import {
@@ -117,6 +118,11 @@ import {
   SecureVerificationDialog,
   useSecureVerification,
 } from '@/features/auth/secure-verification'
+import { getPricing } from '@/features/pricing/api'
+import {
+  getTokenUnitPrice,
+  toOfficiallyPricedModel,
+} from '@/features/pricing/lib/price'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { useHiddenClickUnlock } from '@/hooks/use-hidden-click-unlock'
 import {
@@ -128,6 +134,7 @@ import {
   parseChannelConnectionInfo,
   type ChannelConnectionInfo,
 } from '@/lib/channel-connection-info'
+import { formatDiscount } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
@@ -179,6 +186,9 @@ import {
   findMissingModelsInMapping,
   validateModelMappingJson,
   hasAdvancedSettingsErrors,
+  sellDiscountTenthsToFraction,
+  MAX_SELL_DISCOUNT_TENTHS,
+  MIN_SELL_DISCOUNT_TENTHS,
 } from '../../lib'
 import {
   collectInvalidStatusCodeEntries,
@@ -383,6 +393,59 @@ function formatUnixTime(timestamp: unknown): string {
   const seconds = Number(timestamp)
   if (!Number.isFinite(seconds) || seconds <= 0) return '-'
   return new Date(seconds * 1000).toLocaleString()
+}
+
+type SellPriceEconomics = {
+  sellPrice: number | null
+  marginRate: number | null
+}
+
+/**
+ * What one token kind earns at a given discount: the price charged and the
+ * margin over what it costs to serve.
+ *
+ * Every unknown stays null instead of collapsing to 0. A missing cost booked as
+ * zero reads as 100% margin, which is exactly the number that would talk an
+ * operator into a discount that loses money on every request — the same reason
+ * the backend's cost resolution refuses to invent a price.
+ *
+ * Margin is over revenue, `(sell - cost) / sell`, matching the realized
+ * `margin_rate_30d` column so the projection and the outcome are comparable.
+ */
+function toSellPriceEconomics(
+  officialPrice: number | undefined,
+  costPrice: number | undefined,
+  discountFraction: number | null
+): SellPriceEconomics {
+  if (
+    officialPrice == null ||
+    !Number.isFinite(officialPrice) ||
+    discountFraction == null
+  ) {
+    return { sellPrice: null, marginRate: null }
+  }
+
+  const sellPrice = officialPrice * discountFraction
+  if (costPrice == null || !Number.isFinite(costPrice) || sellPrice <= 0) {
+    return { sellPrice, marginRate: null }
+  }
+  return { sellPrice, marginRate: (sellPrice - costPrice) / sellPrice }
+}
+
+/** USD / 1M tokens, the unit both the cost fields and this table are in. */
+function formatUsdPerMillion(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-'
+  return `$${Number(value.toFixed(4))}`
+}
+
+function formatMarginRate(rate: number | null): string {
+  if (rate == null) return '-'
+  return `${(rate * 100).toFixed(1)}%`
+}
+
+/** A discount that sells below cost, which is the one outcome worth colouring. */
+function isLosingMargin(rate: number | null | undefined): boolean {
+  return rate != null && rate < 0
 }
 
 function CardHeading(props: {
@@ -695,6 +758,17 @@ export function ChannelMutateDrawer({
     queryFn: () => getPrefillGroups('model'),
   })
 
+  // Vendor list prices, the baseline the sell discount applies to. Gated on
+  // `open` because this drawer stays mounted for the whole channels page and the
+  // catalog payload is large; the key matches the pricing page so an already
+  // warm cache is reused.
+  const { data: pricingData, isLoading: isLoadingPricing } = useQuery({
+    queryKey: ['pricing'],
+    queryFn: getPricing,
+    staleTime: 5 * 60 * 1000,
+    enabled: open,
+  })
+
   const { copyToClipboard } = useCopyToClipboard()
 
   const {
@@ -735,6 +809,15 @@ export function ChannelMutateDrawer({
   const costModelRows = costModelsField.fields
   const appendCostModelRow = () => costModelsField.append({ model: '' })
   const removeCostModelRow = costModelsField.remove
+
+  // Sell discount per-model rows (折扣定价 form).
+  const priceModelsField = useFieldArray({
+    control: form.control,
+    name: 'price_models',
+  })
+  const priceModelRows = priceModelsField.fields
+  const appendPriceModelRow = () => priceModelsField.append({ model: '' })
+  const removePriceModelRow = priceModelsField.remove
 
   // Watch form values for conditional rendering
   const multiKeyMode = form.watch('multi_key_mode')
@@ -789,6 +872,10 @@ export function ChannelMutateDrawer({
   const currentUpstreamModelUpdateIgnoredModels = form.watch(
     'upstream_model_update_ignored_models'
   )
+  const currentPriceDiscount = form.watch('price_discount')
+  const currentPriceModels = form.watch('price_models')
+  const currentCostModels = form.watch('cost_models')
+  const currentCostJson = form.watch('cost_json')
   const shouldPreviewUnsavedModels =
     !isEditing ||
     (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && canEditSensitive)
@@ -1173,6 +1260,107 @@ export function ChannelMutateDrawer({
       label: model,
     }))
   }, [allModelsList, currentModelsArray])
+
+  // Vendor list price per model, in USD / 1M tokens so it lines up with the
+  // cost fields above. Official ratios are swapped into the shared pricing
+  // pipeline rather than multiplied by hand, and no group ratio is applied: the
+  // baseline is what the vendor publishes, not what any group here pays.
+  const officialPriceByModel = useMemo(() => {
+    const byModel = new Map<string, { input: number; output: number }>()
+    for (const model of pricingData?.data ?? []) {
+      const official = toOfficiallyPricedModel(model)
+      if (!official) continue
+      byModel.set(model.model_name, {
+        input: getTokenUnitPrice(official, 'input', 'M', false, 1, 1, 1),
+        output: getTokenUnitPrice(official, 'output', 'M', false, 1, 1, 1),
+      })
+    }
+    return byModel
+  }, [pricingData])
+
+  // Upstream cost per model, read from the cost fields in this same form so the
+  // margin reacts while the operator is still typing. Mirrors the save-time
+  // precedence in `buildSettingsJSON`: raw JSON wins over the structured rows,
+  // otherwise the table would show a margin the saved channel does not have.
+  const costPriceByModel = useMemo(() => {
+    const byModel = new Map<string, { input?: number; output?: number }>()
+    const rawJson = currentCostJson?.trim()
+    if (rawJson) {
+      try {
+        const parsed = JSON.parse(rawJson)
+        const models = parsed?.models
+        if (models && typeof models === 'object' && !Array.isArray(models)) {
+          for (const [model, price] of Object.entries(
+            models as Record<string, { input?: number; output?: number }>
+          )) {
+            byModel.set(model, {
+              input: typeof price?.input === 'number' ? price.input : undefined,
+              output:
+                typeof price?.output === 'number' ? price.output : undefined,
+            })
+          }
+        }
+        return byModel
+      } catch {
+        // Invalid JSON is already flagged by the schema; fall through to the
+        // structured rows so the table keeps showing something usable.
+      }
+    }
+    for (const row of currentCostModels ?? []) {
+      const model = row.model?.trim()
+      if (!model) continue
+      byModel.set(model, { input: row.input, output: row.output })
+    }
+    return byModel
+  }, [currentCostJson, currentCostModels])
+
+  // One row per per-model discount entry, with the three prices and the margin
+  // they imply. Computed here rather than in the JSX so every column of a row
+  // comes from the same discount value.
+  const sellDiscountRows = useMemo(
+    () =>
+      (currentPriceModels ?? []).map((row) => {
+        const model = row.model?.trim() ?? ''
+        const official = model ? officialPriceByModel.get(model) : undefined
+        const cost = model ? costPriceByModel.get(model) : undefined
+        // Blank row discount inherits the channel default, which is what the
+        // backend resolution chain does.
+        const tenths =
+          row.discount != null && row.discount > 0
+            ? row.discount
+            : (currentPriceDiscount ?? 0)
+        const fraction =
+          tenths > 0 ? sellDiscountTenthsToFraction(tenths) : null
+
+        return {
+          model,
+          hasOfficialPrice: Boolean(official),
+          inheritsChannelDiscount: !(row.discount != null && row.discount > 0),
+          fraction,
+          input: toSellPriceEconomics(official?.input, cost?.input, fraction),
+          output: toSellPriceEconomics(official?.output, cost?.output, fraction),
+        }
+      }),
+    [
+      currentPriceModels,
+      currentPriceDiscount,
+      officialPriceByModel,
+      costPriceByModel,
+    ]
+  )
+
+  // Named models the official-price sync has never seen. Called out explicitly
+  // because their row shows "-" in three columns, which otherwise looks like a
+  // broken table rather than missing upstream data.
+  const modelsMissingListPrice = useMemo(
+    () =>
+      isLoadingPricing
+        ? []
+        : sellDiscountRows
+            .filter((row) => row.model && !row.hasOfficialPrice)
+            .map((row) => row.model),
+    [sellDiscountRows, isLoadingPricing]
+  )
 
   const modelMappingGuardrail = useMemo<ModelMappingGuardrail>(() => {
     if (!currentModelMapping?.trim()) {
@@ -4928,6 +5116,324 @@ export function ChannelMutateDrawer({
                                           <FormDescription>
                                             {t(
                                               'Overrides the fields above when set. Full cost object: mode, default_markup, discount, models (per-kind unit prices), expr.'
+                                            )}
+                                          </FormDescription>
+                                          <FormControl>
+                                            <Textarea
+                                              rows={6}
+                                              className='font-mono text-xs'
+                                              placeholder='{}'
+                                              {...field}
+                                              value={field.value ?? ''}
+                                            />
+                                          </FormControl>
+                                          <FormMessage />
+                                        </FormItem>
+                                      )}
+                                    />
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              </div>
+
+                              {/* ── Discount Pricing ── */}
+                              <div className={sideDrawerSectionClassName()}>
+                                <CardHeading
+                                  title={t('Discount Pricing')}
+                                  icon={<Tag className='h-4 w-4' />}
+                                  iconTone='success'
+                                />
+                                <p className='text-muted-foreground text-xs'>
+                                  {t(
+                                    'Sell at a discount off the vendor list price. 10 is the list price itself, 4.4 means charging 44% of it. Leave empty to keep this channel on its existing pricing.'
+                                  )}
+                                </p>
+                                <SettingsFormGrid>
+                                  <FormField
+                                    control={form.control}
+                                    name='price_discount'
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>
+                                          {t('Channel discount (0-10)')}
+                                        </FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type='number'
+                                            min={0}
+                                            max={MAX_SELL_DISCOUNT_TENTHS}
+                                            step={0.1}
+                                            {...safeNumberFieldProps(field)}
+                                          />
+                                        </FormControl>
+                                        <FormDescription>
+                                          {currentPriceDiscount != null &&
+                                          currentPriceDiscount >=
+                                            MIN_SELL_DISCOUNT_TENTHS
+                                            ? t(
+                                                'Applies to every model on this channel unless overridden below. Currently {{discount}}.',
+                                                {
+                                                  discount: formatDiscount(
+                                                    sellDiscountTenthsToFraction(
+                                                      currentPriceDiscount
+                                                    ),
+                                                    t
+                                                  ),
+                                                }
+                                              )
+                                            : t(
+                                                'Applies to every model on this channel unless overridden below. 0 means not configured.'
+                                              )}
+                                        </FormDescription>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </SettingsFormGrid>
+                                <div>
+                                  <FormLabel className='mb-2'>
+                                    {t('Per-model discount')}
+                                  </FormLabel>
+                                  <p className='text-muted-foreground mb-2 text-xs'>
+                                    {t(
+                                      'List and cost prices are read-only, in USD / 1M tokens, shown as input / output. Margin is over revenue: (discounted price - cost) / discounted price.'
+                                    )}
+                                  </p>
+                                  <div className='overflow-x-auto'>
+                                    <div className='min-w-[640px] space-y-2'>
+                                      <div className='text-muted-foreground grid grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.9fr)_2rem] gap-2 text-xs font-medium'>
+                                        <span>{t('Model')}</span>
+                                        <span>{t('List price')}</span>
+                                        <span>{t('Cost price')}</span>
+                                        <span>{t('Discount (0-10)')}</span>
+                                        <span>{t('Discounted price')}</span>
+                                        <span>{t('Margin')}</span>
+                                        <span className='sr-only'>
+                                          {t('Actions')}
+                                        </span>
+                                      </div>
+                                      {priceModelRows.map((row, index) => {
+                                        const economics =
+                                          sellDiscountRows[index]
+                                        return (
+                                          <div
+                                            key={row.id}
+                                            className='grid grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.9fr)_2rem] items-start gap-2'
+                                          >
+                                            <FormField
+                                              control={form.control}
+                                              name={`price_models.${index}.model`}
+                                              render={({ field }) => (
+                                                <FormItem>
+                                                  <FormControl>
+                                                    <Combobox
+                                                      options={modelOptions}
+                                                      value={field.value ?? ''}
+                                                      onValueChange={
+                                                        field.onChange
+                                                      }
+                                                      placeholder='model-name'
+                                                      searchPlaceholder={t(
+                                                        'Search models...'
+                                                      )}
+                                                      emptyText={t(
+                                                        'No models found.'
+                                                      )}
+                                                      allowCustomValue
+                                                      openOnFocus={false}
+                                                    />
+                                                  </FormControl>
+                                                  <FormMessage />
+                                                </FormItem>
+                                              )}
+                                            />
+                                            <div className='text-muted-foreground pt-2 text-xs tabular-nums'>
+                                              {isLoadingPricing ? (
+                                                <Skeleton className='h-4 w-14' />
+                                              ) : (
+                                                <>
+                                                  <div>
+                                                    {formatUsdPerMillion(
+                                                      officialPriceByModel.get(
+                                                        economics?.model ?? ''
+                                                      )?.input
+                                                    )}
+                                                  </div>
+                                                  <div>
+                                                    {formatUsdPerMillion(
+                                                      officialPriceByModel.get(
+                                                        economics?.model ?? ''
+                                                      )?.output
+                                                    )}
+                                                  </div>
+                                                </>
+                                              )}
+                                            </div>
+                                            <div className='text-muted-foreground pt-2 text-xs tabular-nums'>
+                                              <div>
+                                                {formatUsdPerMillion(
+                                                  costPriceByModel.get(
+                                                    economics?.model ?? ''
+                                                  )?.input
+                                                )}
+                                              </div>
+                                              <div>
+                                                {formatUsdPerMillion(
+                                                  costPriceByModel.get(
+                                                    economics?.model ?? ''
+                                                  )?.output
+                                                )}
+                                              </div>
+                                            </div>
+                                            <FormField
+                                              control={form.control}
+                                              name={`price_models.${index}.discount`}
+                                              render={({ field }) => (
+                                                <FormItem>
+                                                  <FormControl>
+                                                    <Input
+                                                      type='number'
+                                                      min={
+                                                        MIN_SELL_DISCOUNT_TENTHS
+                                                      }
+                                                      max={
+                                                        MAX_SELL_DISCOUNT_TENTHS
+                                                      }
+                                                      step={0.1}
+                                                      placeholder={
+                                                        economics?.inheritsChannelDiscount
+                                                          ? t('Inherited')
+                                                          : undefined
+                                                      }
+                                                      {...safeNumberFieldProps(
+                                                        field
+                                                      )}
+                                                    />
+                                                  </FormControl>
+                                                  <FormMessage />
+                                                </FormItem>
+                                              )}
+                                            />
+                                            <div className='pt-2 text-xs tabular-nums'>
+                                              <div>
+                                                {formatUsdPerMillion(
+                                                  economics?.input.sellPrice
+                                                )}
+                                              </div>
+                                              <div>
+                                                {formatUsdPerMillion(
+                                                  economics?.output.sellPrice
+                                                )}
+                                              </div>
+                                            </div>
+                                            <div className='pt-2 text-xs tabular-nums'>
+                                              <div
+                                                className={cn(
+                                                  isLosingMargin(
+                                                    economics?.input.marginRate
+                                                  ) &&
+                                                    'text-destructive font-medium'
+                                                )}
+                                              >
+                                                {formatMarginRate(
+                                                  economics?.input.marginRate ??
+                                                    null
+                                                )}
+                                              </div>
+                                              <div
+                                                className={cn(
+                                                  isLosingMargin(
+                                                    economics?.output.marginRate
+                                                  ) &&
+                                                    'text-destructive font-medium'
+                                                )}
+                                              >
+                                                {formatMarginRate(
+                                                  economics?.output
+                                                    .marginRate ?? null
+                                                )}
+                                              </div>
+                                            </div>
+                                            <Button
+                                              type='button'
+                                              variant='ghost'
+                                              size='icon'
+                                              className='text-muted-foreground hover:text-destructive mt-1 shrink-0'
+                                              aria-label={t(
+                                                'Remove model discount'
+                                              )}
+                                              onClick={() =>
+                                                removePriceModelRow(index)
+                                              }
+                                            >
+                                              <Trash2
+                                                className='h-4 w-4'
+                                                aria-hidden='true'
+                                              />
+                                            </Button>
+                                          </div>
+                                        )
+                                      })}
+                                      {priceModelRows.length === 0 && (
+                                        <p className='text-muted-foreground py-2 text-xs'>
+                                          {t(
+                                            'No per-model discounts. The channel discount above applies to every model.'
+                                          )}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type='button'
+                                    variant='outline'
+                                    size='sm'
+                                    className='mt-2'
+                                    onClick={appendPriceModelRow}
+                                  >
+                                    <Plus
+                                      className='mr-1 h-3.5 w-3.5'
+                                      aria-hidden='true'
+                                    />
+                                    {t('Add model discount')}
+                                  </Button>
+                                </div>
+                                {modelsMissingListPrice.length > 0 && (
+                                  <Alert>
+                                    <AlertCircle
+                                      className='h-4 w-4'
+                                      aria-hidden='true'
+                                    />
+                                    <AlertDescription>
+                                      {t(
+                                        'No vendor list price synced for {{models}}, so the discounted price and margin cannot be computed. The discount still saves and still applies.',
+                                        {
+                                          models:
+                                            modelsMissingListPrice.join(', '),
+                                        }
+                                      )}
+                                    </AlertDescription>
+                                  </Alert>
+                                )}
+
+                                <Collapsible>
+                                  <CollapsibleTrigger
+                                    render={
+                                      <button
+                                        type='button'
+                                        className='text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs font-medium'
+                                      />
+                                    }
+                                  >
+                                    {t('Advanced (raw JSON)')}
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent className='mt-2'>
+                                    <FormField
+                                      control={form.control}
+                                      name='price_json'
+                                      render={({ field }) => (
+                                        <FormItem>
+                                          <FormDescription>
+                                            {t(
+                                              'Overrides the fields above when set. Full price object: discount, models (upstream model -> 0-1 fraction of list price).'
                                             )}
                                           </FormDescription>
                                           <FormControl>

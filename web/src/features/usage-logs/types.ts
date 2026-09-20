@@ -142,6 +142,35 @@ export interface LogOtherData {
       original: number
       clamped: number
     }
+    // Upstream cost snapshot for this request. cost_source grades how the
+    // number was obtained; 'unknown' means it could not be priced and must be
+    // excluded from margin, not counted as zero.
+    cost?: {
+      cost_quota?: number
+      cost_source?: 'exact' | 'reported' | 'markup' | 'official' | 'unknown'
+      cost_model?: string
+      cost_reported?: number
+      margin_quota?: number
+    }
+    // Which sell discount governed this request. Written after settlement, so
+    // charged_quota is what the customer actually paid; a 'fallback' source
+    // means no channel discount applied and the legacy ratio path priced it.
+    price?: {
+      price_source?: 'exact' | 'channel' | 'fallback'
+      price_model?: string
+      charged_quota?: number
+      discount?: number
+      // What the vendor's own list rates would charge for this request.
+      // list_complete false means some token kind (image/audio/cache-write) has
+      // no official rate, so list_quota is a LOWER BOUND — margin against it is
+      // overstated and the row must be excluded, not treated as exact.
+      list_quota?: number
+      list_complete?: boolean
+      // list_quota x discount: what the configured discount says this request
+      // should cost. Absent when no discount applied. Compare against
+      // charged_quota to see whether the discount is actually in effect yet.
+      expected_quota?: number
+    }
   }
   // Language-independent operation descriptor (audit/login logs).
   // Frontend renders localized content from action + params via i18n templates.

@@ -52,7 +52,11 @@ import {
   formatQuotaWithCurrency,
   getCurrencyLabel,
 } from '@/lib/currency'
-import { formatTimestampToDate, formatQuota } from '@/lib/format'
+import {
+  formatDiscount,
+  formatTimestampToDate,
+  formatQuota,
+} from '@/lib/format'
 import { truncateText } from '@/lib/utils'
 
 import { getCodexUsage, updateChannelBalance } from '../api'
@@ -73,6 +77,7 @@ import {
   handleUpdateTagField,
   createChannelFieldUpdateScheduler,
   isTagAggregateRow,
+  readChannelSellDiscount,
   type TagRow,
 } from '../lib'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
@@ -1237,6 +1242,49 @@ export function useChannelsColumns(
         },
         size: 120,
         enableSorting: true,
+      },
+
+      // Sell discount column (configured, not realized)
+      {
+        id: 'sell_discount',
+        header: t('Sell discount'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          // A tag row spreads the first child's fields, so its `settings` is one
+          // channel's config. Showing it as the tag's discount would misreport
+          // every other channel under that tag.
+          if (isTagAggregateRow(row.original)) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+
+          const { discount, modelOverrides } = readChannelSellDiscount(
+            row.original.settings
+          )
+          if (discount == null && modelOverrides === 0) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+
+          return (
+            <div className='flex flex-col gap-0.5'>
+              {discount == null ? (
+                <span className='text-muted-foreground text-xs'>
+                  {t('Per-model only')}
+                </span>
+              ) : (
+                <span className='text-xs font-medium tabular-nums'>
+                  {formatDiscount(discount, t)}
+                </span>
+              )}
+              {modelOverrides > 0 && (
+                <span className='text-muted-foreground text-xs'>
+                  {t('{{count}} model override(s)', { count: modelOverrides })}
+                </span>
+              )}
+            </div>
+          )
+        },
+        size: 120,
+        enableSorting: false,
       },
 
       // Actions column

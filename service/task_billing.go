@@ -57,6 +57,10 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	attachQuotaSaturation(c, info, other)
 	// 任务提交按次计费居多，token 明细大多为空；成本按 per_call/加价率解析。
 	attachUpstreamCost(c, info, CostInputs{Revenue: info.PriceData.Quota}, other)
+	// 任务按次计费，没有 token 明细，所以官网价应收算不出来（列表价表是
+	// 按 token 的）。空明细让 ComputeListPriceQuota 返回 0，快照里不会出现
+	// list_quota——报表看到没有应收就知道这类流量不能按官网价口径比。
+	attachSellPrice(c, info, info.PriceData.Quota, CostTokenBreakdown{}, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
@@ -275,6 +279,16 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	for _, clamp := range clamps {
 		attachQuotaSaturationToOther(other, clamp)
 	}
+	// Differential settlement is where a task's charge is finally decided
+	// (task.Quota above), so the snapshot belongs here too — recording only at
+	// submission would peg the task's books to the pre-consumed estimate.
+	//
+	// charged_quota here is the task's FINAL total, not this row's movement:
+	// the row's own Quota field carries the delta (or the refund amount). The
+	// two must not be added together, and a report summing charged_quota across
+	// rows would count this task twice — once at submission, once here.
+	attachUpstreamCostForChannel(task.ChannelId, taskModelName(task), actualQuota, other)
+	attachSellPriceForChannel(task.ChannelId, taskModelName(task), actualQuota, CostTokenBreakdown{}, other)
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
 		LogType:   logType,

@@ -54,6 +54,16 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
   'upstream_model_update_ignored_models',
+  // Pricing fields live in the advanced section too, so a rejected discount or
+  // cost price has to open it. Without these the form only raises a toast and
+  // leaves the offending input collapsed out of sight.
+  'cost_markup_percent',
+  'cost_discount_percent',
+  'cost_models',
+  'cost_json',
+  'price_discount',
+  'price_models',
+  'price_json',
 ])
 
 export function isAdvancedSettingsField(

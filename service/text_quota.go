@@ -525,7 +525,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 
 	attachQuotaSaturation(ctx, relayInfo, other)
-	attachUpstreamCost(ctx, relayInfo, CostInputsFromUsage(billingUsage, summary.Quota), other)
+	textCostInputs := CostInputsFromUsage(billingUsage, summary.Quota)
+	attachUpstreamCost(ctx, relayInfo, textCostInputs, other)
+	attachSellPrice(ctx, relayInfo, summary.Quota, textCostInputs.Tokens, other)
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  CostChannelModelRow,
   CostChannelRow,
   CostInventoryRow,
   CostListResponse,
@@ -56,6 +57,25 @@ export async function getCostChannels(
 ): Promise<CostListResponse<CostChannelRow[]>> {
   const res = await api.get<CostListResponse<CostChannelRow[]>>(
     '/api/cost/channels',
+    { params }
+  )
+  return res.data
+}
+
+/**
+ * Channel × model cross margin for the whole window.
+ *
+ * The endpoint also takes `model`/`channel_id`, but the view needs the full set
+ * to build its model filter — narrowing server-side would cost a second request
+ * for the option list and a refetch on every selection, so the focus filter is
+ * applied client-side over this one payload (already SQL-aggregated to one row
+ * per pair, so it stays small).
+ */
+export async function getCostChannelModels(
+  params: CostWindow
+): Promise<CostListResponse<CostChannelModelRow[]>> {
+  const res = await api.get<CostListResponse<CostChannelModelRow[]>>(
+    '/api/cost/channel-models',
     { params }
   )
   return res.data

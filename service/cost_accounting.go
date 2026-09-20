@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	costsetting "github.com/QuantumNous/new-api/setting/cost_setting"
@@ -264,6 +265,37 @@ func costUSDToQuota(usd float64) int {
 		return 0
 	}
 	return quota
+}
+
+// attachUpstreamCostForChannel 给拿不到 relayInfo 的结算点写成本快照：任务差额
+// 结算跑在 context.Context 上，渠道只能按 id 查。
+//
+// 与 attachUpstreamCost 的关键区别是【不调 RecordCostSample】。任务在提交时已
+// 按预扣额采过一次样，差额结算再采一次会把同一笔收入重复累加进 channel_cost_daily。
+// 所以这里只负责日志可见性，日聚合表里任务的成本仍是提交时的估算——那个偏差要
+// 修得先定清楚是记增量还是覆盖，属于改既有聚合语义，不在快照的职责里。
+func attachUpstreamCostForChannel(channelId int, upstreamModel string, revenue int, other map[string]interface{}) {
+	if other == nil {
+		return
+	}
+	channel, err := model.CacheGetChannel(channelId)
+	if err != nil || channel == nil {
+		return
+	}
+	costSettings := channel.GetOtherSettings().Cost
+	costQuota, source := ComputeUpstreamCost(costSettings, upstreamModel, CostInputs{Revenue: revenue})
+
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		adminInfo = map[string]interface{}{}
+		other["admin_info"] = adminInfo
+	}
+	adminInfo["cost"] = map[string]interface{}{
+		"cost_quota":   costQuota,
+		"cost_source":  source,
+		"cost_model":   upstreamModel,
+		"margin_quota": revenue - costQuota,
+	}
 }
 
 // attachUpstreamCost 在各计费路径 RecordConsumeLog 前一行调用，把成本快照

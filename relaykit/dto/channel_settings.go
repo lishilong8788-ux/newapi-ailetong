@@ -2,6 +2,7 @@ package dto
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"regexp"
 	"strings"
@@ -85,7 +86,8 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
-	Cost                                  *ChannelCostSettings  `json:"cost,omitempty"` // 上游成本配置（毛利核算用）
+	Cost                                  *ChannelCostSettings  `json:"cost,omitempty"`  // 上游成本配置（毛利核算用）
+	Price                                 *ChannelPriceSettings `json:"price,omitempty"` // 售价折扣配置（官网价 × 折扣）
 }
 
 // ChannelCostSettings is the per-channel upstream cost configuration stored
@@ -115,6 +117,80 @@ type ModelCostPrice struct {
 	ImageOut     *float64 `json:"image_out,omitempty"`
 	Reasoning    *float64 `json:"reasoning,omitempty"`
 	PerCall      *float64 `json:"per_call,omitempty"` // USD per request（per_call 模式）
+}
+
+// ChannelPriceSettings is the per-channel SELL price configuration, the mirror
+// of ChannelCostSettings on the revenue side. Stored inside
+// ChannelOtherSettings so enabling it costs no migration: a nil Price means
+// "not configured" and billing stays bit-for-bit on the legacy
+// modelRatio × group_ratio path.
+//
+// Only a discount is stored, never an absolute price. The baseline is the
+// vendor list price (ratio_setting.GetOfficialModelRatio), so when a vendor
+// cuts prices our sell price follows and the advertised discount stays put.
+// Storing an absolute price would silently drift the discount — and the margin
+// with it — every time upstream repriced.
+//
+// One discount covers every token kind (input/output/cache). That is not a
+// simplification: a per-kind discount would render as three different
+// percentages on one catalog row, which is precisely what the reference
+// implementation does not do.
+type ChannelPriceSettings struct {
+	// Discount is channel-wide, expressed as a 0–1 fraction of the vendor list
+	// price (0.44 renders as 4.4折). The UI trades in 折 (0–10) and converts at
+	// the form boundary; nothing downstream of this struct speaks 折.
+	Discount *float64 `json:"discount,omitempty"`
+	// Models overrides Discount for one upstream model. Keyed by upstream model
+	// name, same key space as ChannelCostSettings.Models, so cost and price for
+	// one model always resolve off the same name.
+	Models    map[string]*float64 `json:"models,omitempty"`
+	UpdatedAt int64               `json:"updated_at,omitempty"`
+}
+
+// SellDiscountBounds are enforced at the API boundary, not only in the form.
+// The floor exists because a 0 ships every request on the channel free of
+// charge; the ceiling because the baseline is the vendor list price and
+// selling above list is a markup, which belongs to the cost side.
+const (
+	MinSellDiscount = 0.001
+	MaxSellDiscount = 1.0
+)
+
+// Validate rejects discounts that would misbill, so a hand-rolled API call
+// cannot install what the form refuses. Resolution treats an out-of-range
+// discount as "not configured" and silently keeps the legacy price — correct
+// for serving traffic, but it would let a typo sit in the config looking
+// active. Failing the write is how the operator finds out.
+func (p *ChannelPriceSettings) Validate() error {
+	if p == nil {
+		return nil
+	}
+	if err := validateSellDiscountValue(p.Discount, "channel discount"); err != nil {
+		return err
+	}
+	for model, d := range p.Models {
+		if d == nil {
+			return fmt.Errorf("price discount for model %q is null; remove the entry instead", model)
+		}
+		if err := validateSellDiscountValue(d, fmt.Sprintf("discount for model %q", model)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSellDiscountValue(d *float64, label string) error {
+	if d == nil {
+		return nil
+	}
+	v := *d
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return fmt.Errorf("%s must be a finite number", label)
+	}
+	if v < MinSellDiscount || v > MaxSellDiscount {
+		return fmt.Errorf("%s must be within (0, 1]: %g折 is out of range", label, v*10)
+	}
+	return nil
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

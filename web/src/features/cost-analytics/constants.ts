@@ -38,10 +38,25 @@ export const WINDOW_PRESETS: ReadonlyArray<{
 export const QUERY_KEY_COST_OVERVIEW = 'cost-overview'
 export const QUERY_KEY_COST_TREND = 'cost-trend'
 export const QUERY_KEY_COST_CHANNELS = 'cost-channels'
+export const QUERY_KEY_COST_CHANNEL_MODELS = 'cost-channel-models'
 export const QUERY_KEY_COST_INVENTORY = 'cost-inventory'
+
+/** Sentinel for "no model focus" in the channel × model filter. */
+export const ALL_MODELS_FILTER = '__all__'
 
 /**
  * Unknown-rate above which margin numbers become untrustworthy and the page
  * has to say so instead of showing them as fact (design doc §4.5).
  */
 export const UNKNOWN_RATE_WARN_THRESHOLD = 0.05
+
+/**
+ * Per-row unpriced share above which a margin is flagged as covering only part
+ * of the traffic.
+ *
+ * Looser than the page-level 5% on purpose: that one gates whether the whole
+ * ledger can be trusted, while a single (channel, model) pair routinely carries
+ * a few unpriced calls without the comparison losing its meaning. Past ~20% the
+ * margin describes a minority-to-be-ignored slice and has to be marked.
+ */
+export const ROW_UNKNOWN_RATE_WARN_THRESHOLD = 0.2

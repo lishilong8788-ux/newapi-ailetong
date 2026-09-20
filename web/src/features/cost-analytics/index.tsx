@@ -19,16 +19,25 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { TriangleAlert } from 'lucide-react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PanelWrapper } from '@/features/dashboard/components/ui/panel-wrapper'
 
 import {
+  getCostChannelModels,
   getCostChannels,
   getCostInventory,
   getCostOverview,
@@ -37,22 +46,25 @@ import {
 import { ChannelMarginRanking } from './components/channel-margin-ranking'
 import { CostDetailTable } from './components/cost-detail-table'
 import { InventoryTable } from './components/inventory-table'
+import { ModelChannelTable } from './components/model-channel-table'
 import { OverviewCards } from './components/overview-cards'
 import { ProfitTrendChart } from './components/profit-trend-chart'
 import {
+  ALL_MODELS_FILTER,
   DEFAULT_WINDOW_DAYS,
   MAX_WINDOW_DAYS,
   QUERY_KEY_COST_CHANNELS,
+  QUERY_KEY_COST_CHANNEL_MODELS,
   QUERY_KEY_COST_INVENTORY,
   QUERY_KEY_COST_OVERVIEW,
   QUERY_KEY_COST_TREND,
   WINDOW_PRESETS,
 } from './constants'
-import { formatDayLabel } from './lib'
+import { collectModelNames, formatDayLabel } from './lib'
 
 const route = getRouteApi('/_authenticated/cost-analytics/')
 
-type ViewTab = 'overview' | 'inventory'
+type ViewTab = 'overview' | 'models' | 'inventory'
 
 /**
  * Channel cost & margin analytics.
@@ -100,11 +112,52 @@ export function CostAnalytics() {
     queryFn: () => getCostChannels(params),
     staleTime: 60_000,
   })
+  const channelModelsQuery = useQuery({
+    queryKey: [QUERY_KEY_COST_CHANNEL_MODELS, params],
+    queryFn: () => getCostChannelModels(params),
+    staleTime: 60_000,
+  })
   const inventoryQuery = useQuery({
     queryKey: [QUERY_KEY_COST_INVENTORY],
     queryFn: () => getCostInventory(),
     staleTime: 300_000,
   })
+
+  // Model focus is component state, not URL state: the route's search schema is
+  // days + tab, and a zod object drops anything else on navigate, so a search
+  // param would be silently discarded on the next range switch.
+  const [modelFilter, setModelFilter] = useState<string>(ALL_MODELS_FILTER)
+
+  // Keyed off the query payload, not a fresh `?? []` literal, so the derived
+  // grouping below is not rebuilt on every unrelated render.
+  const channelModelRows = useMemo(
+    () => channelModelsQuery.data?.data ?? [],
+    [channelModelsQuery.data]
+  )
+  const modelNames = useMemo(
+    () => collectModelNames(channelModelRows),
+    [channelModelRows]
+  )
+  // Shrinking the window can drop the focused model entirely. Falling back to
+  // "all" beats an empty table under a filter this window cannot satisfy — but
+  // only once models are actually known, otherwise the selection would blink
+  // back to "all" during every refetch.
+  const activeModelFilter =
+    modelFilter !== ALL_MODELS_FILTER &&
+    modelNames.length > 0 &&
+    !modelNames.includes(modelFilter)
+      ? ALL_MODELS_FILTER
+      : modelFilter
+
+  const focusedRows = useMemo(
+    () =>
+      activeModelFilter === ALL_MODELS_FILTER
+        ? channelModelRows
+        : channelModelRows.filter(
+            (row) => row.model_name === activeModelFilter
+          ),
+    [activeModelFilter, channelModelRows]
+  )
 
   const handlePresetChange = useCallback(
     (days: number) => {
@@ -122,13 +175,19 @@ export function CostAnalytics() {
     [navigate, window.days]
   )
 
-  const activeTab: ViewTab = search.tab === 'inventory' ? 'inventory' : 'overview'
+  const activeTab: ViewTab =
+    search.tab === 'inventory' || search.tab === 'models'
+      ? search.tab
+      : 'overview'
 
   const failed =
     overviewQuery.isError ||
     overviewQuery.data?.success === false ||
     channelsQuery.isError ||
     channelsQuery.data?.success === false
+
+  const modelsFailed =
+    channelModelsQuery.isError || channelModelsQuery.data?.success === false
 
   const windowLabel = t('{{start}} to {{end}} · {{days}} days', {
     start: formatDayLabel(window.startTimestamp) ?? '',
@@ -160,10 +219,17 @@ export function CostAnalytics() {
   )
 
   const viewTabs = (
-    <Tabs value={activeTab} onValueChange={handleTabChange} className='shrink-0'>
+    <Tabs
+      value={activeTab}
+      onValueChange={handleTabChange}
+      className='shrink-0'
+    >
       <TabsList aria-label={t('Cost view')}>
         <TabsTrigger value='overview' className='px-2.5 text-xs'>
           {t('Overview')}
+        </TabsTrigger>
+        <TabsTrigger value='models' className='px-2.5 text-xs'>
+          {t('By model')}
         </TabsTrigger>
         <TabsTrigger value='inventory' className='px-2.5 text-xs'>
           {t('Inventory')}
@@ -172,29 +238,58 @@ export function CostAnalytics() {
     </Tabs>
   )
 
+  // Shared by every windowed view, so the trimmed range is never silently
+  // applied to one tab and announced on another.
+  const clampedAlert = window.clamped ? (
+    <Alert>
+      <TriangleAlert aria-hidden='true' />
+      <AlertDescription>
+        {t(
+          'The requested range exceeded the maximum and was trimmed to the most recent {{days}} days.',
+          { days: MAX_WINDOW_DAYS }
+        )}
+      </AlertDescription>
+    </Alert>
+  ) : null
+
+  const modelFilterSelect = (
+    <Select
+      value={activeModelFilter}
+      onValueChange={(value) => value !== null && setModelFilter(String(value))}
+    >
+      <SelectTrigger className='h-8 w-44' aria-label={t('Focus on one model')}>
+        <SelectValue>
+          {activeModelFilter === ALL_MODELS_FILTER
+            ? t('All models')
+            : activeModelFilter}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        <SelectGroup>
+          <SelectItem value={ALL_MODELS_FILTER}>{t('All models')}</SelectItem>
+          {modelNames.map((name) => (
+            <SelectItem key={name} value={name}>
+              {name}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Cost Analytics')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <div className='flex flex-wrap items-center gap-2'>
           {viewTabs}
-          {activeTab === 'overview' && rangeTabs}
+          {activeTab !== 'inventory' && rangeTabs}
         </div>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        {activeTab === 'overview' ? (
+        {activeTab === 'overview' && (
           <div className='space-y-3 sm:space-y-4'>
-            {window.clamped && (
-              <Alert>
-                <TriangleAlert aria-hidden='true' />
-                <AlertDescription>
-                  {t(
-                    'The requested range exceeded the maximum and was trimmed to the most recent {{days}} days.',
-                    { days: MAX_WINDOW_DAYS }
-                  )}
-                </AlertDescription>
-              </Alert>
-            )}
+            {clampedAlert}
 
             {failed && (
               <Alert variant='destructive'>
@@ -245,7 +340,43 @@ export function CostAnalytics() {
               </PanelWrapper>
             </FadeIn>
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'models' && (
+          <div className='space-y-3 sm:space-y-4'>
+            {clampedAlert}
+
+            {modelsFailed && (
+              <Alert variant='destructive'>
+                <TriangleAlert aria-hidden='true' />
+                <AlertDescription>
+                  {channelModelsQuery.data?.message ??
+                    t('Failed to load cost analytics')}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <FadeIn>
+              <PanelWrapper
+                title={t('Margin by model across channels')}
+                description={t(
+                  'Every channel serving the same model, worst margin first — which upstream buys cheapest, and which one is losing money. {{window}}',
+                  { window: windowLabel }
+                )}
+                loading={channelModelsQuery.isLoading}
+                headerActions={modelFilterSelect}
+                height=''
+              >
+                <ModelChannelTable
+                  rows={focusedRows}
+                  loading={channelModelsQuery.isLoading}
+                />
+              </PanelWrapper>
+            </FadeIn>
+          </div>
+        )}
+
+        {activeTab === 'inventory' && (
           <div className='space-y-3 sm:space-y-4'>
             <FadeIn>
               <PanelWrapper

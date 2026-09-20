@@ -49,18 +49,29 @@ import {
   UserCog,
   Info,
   LogIn,
+  Coins,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
-import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
+import {
+  StatusBadge,
+  type StatusBadgeProps,
+  type StatusVariant,
+} from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
+import {
+  formatDiscount,
+  formatLogQuota,
+  formatPercent,
+  formatTokens,
+  formatUseTime,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import type { UsageLog } from '../../data/schema'
@@ -214,6 +225,74 @@ function quotaSaturationKindLabel(
   if (kind === 'overflow') return t('Overflow')
   if (kind === 'underflow') return t('Underflow')
   return t('Invalid (NaN)')
+}
+
+// Grades how the upstream cost number was obtained. `incomplete` drives a
+// louder badge: it marks a snapshot that must not be read as a cost at all.
+// The backend writes cost_quota: 0 alongside cost_source: 'unknown' (also when
+// cost accounting is switched off), so rendering that 0 as a cost would show a
+// 100% margin on a request whose cost is simply not known.
+function costSourceBadge(
+  source: string | undefined,
+  t: (key: string) => string
+): { label: string; variant: StatusVariant; incomplete: boolean } {
+  switch (source) {
+    case 'exact':
+      return {
+        label: t('Exact channel price'),
+        variant: 'success',
+        incomplete: false,
+      }
+    case 'reported':
+      return {
+        label: t('Reported by upstream'),
+        variant: 'success',
+        incomplete: false,
+      }
+    case 'markup':
+      return {
+        label: t('Derived from markup rate'),
+        variant: 'info',
+        incomplete: false,
+      }
+    case 'official':
+      return {
+        label: t('Estimated from official price'),
+        variant: 'info',
+        incomplete: false,
+      }
+    default:
+      return { label: t('Not priced'), variant: 'warning', incomplete: true }
+  }
+}
+
+// Same grading for the sell side. 'fallback' is not a discount of 1.0 — it
+// means no channel discount matched and the legacy modelRatio x group_ratio
+// path priced the request, so no discount figure exists to show.
+function priceSourceBadge(
+  source: string | undefined,
+  t: (key: string) => string
+): { label: string; variant: StatusVariant; incomplete: boolean } {
+  switch (source) {
+    case 'exact':
+      return {
+        label: t('Per-model channel discount'),
+        variant: 'success',
+        incomplete: false,
+      }
+    case 'channel':
+      return {
+        label: t('Channel-wide discount'),
+        variant: 'info',
+        incomplete: false,
+      }
+    default:
+      return {
+        label: t('Legacy ratio pricing'),
+        variant: 'warning',
+        incomplete: true,
+      }
+  }
 }
 
 function BillingBreakdown(props: {
@@ -602,6 +681,31 @@ export function DetailsDialog(props: DetailsDialogProps) {
     props.log.type !== 6 &&
     (other?.request_path || conversionChain.length > 0)
 
+  // Cost and sell-price snapshots are written by two independent hooks after
+  // settlement, so either half can be missing: logs predating cost accounting
+  // carry neither, and a deleted channel leaves the price half unwritten.
+  const costInfo = props.isAdmin ? adminInfo?.cost : undefined
+  const priceInfo = props.isAdmin ? adminInfo?.price : undefined
+  const costBadge = costSourceBadge(costInfo?.cost_source, t)
+  const priceBadge = priceSourceBadge(priceInfo?.price_source, t)
+  const costKnown = costInfo != null && !costBadge.incomplete
+  const chargedQuota = priceInfo?.charged_quota
+  // Margin is only meaningful against a known cost. Prefer deriving it from
+  // what the customer actually paid so the rate below shares one base; the
+  // backend's margin_quota is revenue-based and can differ on task logs, where
+  // charged_quota is the task total rather than this row's movement.
+  let marginQuota: number | undefined
+  if (costKnown) {
+    marginQuota =
+      chargedQuota != null && costInfo.cost_quota != null
+        ? chargedQuota - costInfo.cost_quota
+        : costInfo.margin_quota
+  }
+  const marginRate =
+    marginQuota != null && chargedQuota != null && chargedQuota > 0
+      ? (marginQuota / chargedQuota) * 100
+      : undefined
+
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
@@ -810,6 +914,120 @@ export function DetailsDialog(props: DetailsDialogProps) {
               value={other.admin_info.quota_saturation.op}
               mono
             />
+          </DetailSection>
+        )}
+
+        {/* Cost vs. sell price (admin only) */}
+        {props.isAdmin && (costInfo || priceInfo) && (
+          <DetailSection
+            icon={<Coins className='size-3.5' aria-hidden='true' />}
+            iconTone='chart-2'
+            label={t('Cost & Price')}
+          >
+            {costInfo && (
+              <>
+                {/* The cost figure is suppressed when unpriced: the stored 0 is
+                    a placeholder, not a zero-cost request. */}
+                {costKnown && costInfo.cost_quota != null && (
+                  <DetailRow
+                    label={t('Upstream cost')}
+                    value={formatLogQuota(costInfo.cost_quota)}
+                    mono
+                  />
+                )}
+                <DetailRow
+                  label={t('Cost source')}
+                  value={
+                    <StatusBadge
+                      label={costBadge.label}
+                      variant={costBadge.variant}
+                      size='sm'
+                      copyable={false}
+                      filled={costBadge.incomplete}
+                      icon={costBadge.incomplete ? AlertTriangle : undefined}
+                    />
+                  }
+                />
+              </>
+            )}
+
+            {priceInfo && (
+              <>
+                {chargedQuota != null && (
+                  <DetailRow
+                    label={t('Customer paid')}
+                    value={formatLogQuota(chargedQuota)}
+                    mono
+                  />
+                )}
+                {priceInfo.discount != null &&
+                  Number.isFinite(priceInfo.discount) &&
+                  priceInfo.discount > 0 && (
+                    <DetailRow
+                      label={t('Discount applied')}
+                      value={
+                        priceInfo.discount >= 1
+                          ? t('List price (no discount)')
+                          : formatDiscount(priceInfo.discount, t)
+                      }
+                    />
+                  )}
+                <DetailRow
+                  label={t('Price source')}
+                  value={
+                    <StatusBadge
+                      label={priceBadge.label}
+                      variant={priceBadge.variant}
+                      size='sm'
+                      copyable={false}
+                      filled={priceBadge.incomplete}
+                      icon={priceBadge.incomplete ? AlertTriangle : undefined}
+                    />
+                  }
+                />
+              </>
+            )}
+
+            {costInfo && (
+              <DetailRow
+                label={t('Margin')}
+                value={
+                  marginQuota != null
+                    ? formatLogQuota(marginQuota)
+                    : t('Not available')
+                }
+                mono
+                muted={marginQuota == null}
+              />
+            )}
+            {marginRate != null && (
+              <DetailRow
+                label={t('Margin rate')}
+                value={formatPercent(marginRate)}
+                mono
+              />
+            )}
+
+            {costInfo && costBadge.incomplete && (
+              <div className='flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400'>
+                <Info className='mt-0.5 size-3.5 shrink-0' aria-hidden='true' />
+                <span>
+                  {t(
+                    'Upstream cost could not be resolved for this request, so margin is unavailable. Treating it as zero cost would report a 100% margin. Configure the channel cost price to fill this in for future requests.'
+                  )}
+                </span>
+              </div>
+            )}
+            {priceInfo && priceBadge.incomplete && (
+              <div className='flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400'>
+                <Info className='mt-0.5 size-3.5 shrink-0' aria-hidden='true' />
+                <span>
+                  {t(
+                    'No channel discount applied to this request; it was priced by the legacy model ratio path. This is not the same as a configured discount of list price.'
+                  )}
+                </span>
+              </div>
+            )}
           </DetailSection>
         )}
 

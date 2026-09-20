@@ -122,6 +122,53 @@ function isOptionalJsonObject(value: string | undefined): boolean {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Sell discount (售价折扣)
+// ----------------------------------------------------------------------------
+
+/**
+ * The form speaks 折: 10 is the vendor list price, 4.4 renders as 4.4折.
+ * Storage speaks a 0-1 fraction of that list price, so the boundary is a
+ * factor of ten — not a hundred. `cost_discount_percent` next door is a
+ * percentage and divides by 100; confusing the two misprices by 10x.
+ */
+const SELL_DISCOUNT_TENTHS_PER_FRACTION = 10
+
+/**
+ * Mirrors `dto.MinSellDiscount`/`MaxSellDiscount` (0.001-1.0) expressed in 折.
+ * The backend rejects anything outside that window on save, so the form has to
+ * refuse it first or the whole channel update fails on an unrelated-looking
+ * error.
+ */
+export const MIN_SELL_DISCOUNT_TENTHS = 0.01
+export const MAX_SELL_DISCOUNT_TENTHS = 10
+
+export const SELL_DISCOUNT_RANGE_MESSAGE =
+  'Discount must be between 0.01 and 10 (10 = vendor list price); leave empty to disable'
+
+/**
+ * Mirror of `dto.ChannelPriceSettings`, stored at `other_settings.price`.
+ *
+ * Discounts are 0-1 fractions of the vendor list price here and in the payload;
+ * only the form fields are in 折. A `models` entry overrides `discount` for one
+ * upstream model, keyed in the same space as `ChannelCostSettings.models`.
+ */
+export interface ChannelPriceSettings {
+  discount?: number
+  models?: Record<string, number>
+  updated_at?: number
+}
+
+/**
+ * 0 is the "not configured" sentinel, not a discount — a real 0折 would ship
+ * every request on the channel free of charge, which is why the backend floors
+ * at 0.001. Everything between the sentinel and that floor is a typo.
+ */
+function isConfigurableSellDiscountTenths(value: number | undefined): boolean {
+  if (value == null) return true
+  return value === 0 || value >= MIN_SELL_DISCOUNT_TENTHS
+}
+
 function isOptionalModelMapping(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -308,6 +355,30 @@ export const channelFormSchema = z
       .string()
       .optional()
       .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
+    // Sell discount (stored in settings JSON under price). The form trades in
+    // 折 (0-10, where 10 is the vendor list price); storage is a 0-1 fraction.
+    price_discount: z
+      .number()
+      .min(0, SELL_DISCOUNT_RANGE_MESSAGE)
+      .max(MAX_SELL_DISCOUNT_TENTHS, SELL_DISCOUNT_RANGE_MESSAGE)
+      .refine(isConfigurableSellDiscountTenths, SELL_DISCOUNT_RANGE_MESSAGE)
+      .optional(),
+    price_models: z
+      .array(
+        z.object({
+          model: z.string().min(1, 'Model name is required'),
+          discount: z
+            .number()
+            .min(MIN_SELL_DISCOUNT_TENTHS, SELL_DISCOUNT_RANGE_MESSAGE)
+            .max(MAX_SELL_DISCOUNT_TENTHS, SELL_DISCOUNT_RANGE_MESSAGE)
+            .optional(),
+        })
+      )
+      .optional(),
+    price_json: z
+      .string()
+      .optional()
+      .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
   })
   .superRefine((data, ctx) => {
     if (
@@ -485,6 +556,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   cost_models: [],
   cost_mode: 'ratio',
   cost_json: '',
+  price_discount: 0,
+  price_models: [],
+  price_json: '',
 }
 
 // ============================================================================
@@ -550,6 +624,7 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
   let costConfig: ChannelCostSettings | null = null
+  let priceConfig: ChannelPriceSettings | null = null
 
   if (channel.settings) {
     try {
@@ -584,6 +659,13 @@ export function transformChannelToFormDefaults(
         !Array.isArray(parsed.cost)
       ) {
         costConfig = parsed.cost as ChannelCostSettings
+      }
+      if (
+        parsed.price &&
+        typeof parsed.price === 'object' &&
+        !Array.isArray(parsed.price)
+      ) {
+        priceConfig = parsed.price as ChannelPriceSettings
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -637,6 +719,7 @@ export function transformChannelToFormDefaults(
     upstream_model_update_ignored_models: upstreamModelUpdateIgnoredModels,
     advanced_custom: advancedCustom,
     ...expandCostConfigToForm(costConfig),
+    ...expandPriceConfigToForm(priceConfig),
   }
 }
 
@@ -806,7 +889,7 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   // Cost pricing: structured fields win; raw JSON is the escape hatch for
   // anything the form does not expose (cache/audio/image unit prices, expr).
   // When the raw JSON has content it is submitted verbatim.
-  const costFromJson = parseOptionalCostJSON(formData.cost_json)
+  const costFromJson = parseOptionalOverrideJSON(formData.cost_json)
   const structuredCost = buildCostFromStructuredFields(formData)
   if (costFromJson) {
     settingsObj.cost = costFromJson
@@ -816,13 +899,27 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.cost
   }
 
+  // Sell discount: same precedence as cost. Dropping the key entirely is what
+  // disables the feature — the backend reads a missing `price` as "not
+  // configured" and keeps the legacy modelRatio × group_ratio billing.
+  const priceFromJson = parseOptionalOverrideJSON(formData.price_json)
+  const structuredPrice = buildPriceFromStructuredFields(formData)
+  if (priceFromJson) {
+    settingsObj.price = priceFromJson
+  } else if (structuredPrice) {
+    settingsObj.price = structuredPrice
+  } else if ('price' in settingsObj) {
+    delete settingsObj.price
+  }
+
   return JSON.stringify(settingsObj)
 }
 
-// parseOptionalCostJSON returns the parsed cost object or null when the raw
-// JSON is empty/invalid. Invalid JSON is blocked by the schema refine; here it
-// degrades to "no override" so the structured fields still apply.
-function parseOptionalCostJSON(
+// parseOptionalOverrideJSON returns the parsed object or null when the raw JSON
+// is empty/invalid. Invalid JSON is blocked by the schema refine; here it
+// degrades to "no override" so the structured fields still apply. Shared by the
+// cost and price escape hatches, which have the same semantics.
+function parseOptionalOverrideJSON(
   raw: string | undefined
 ): Record<string, unknown> | null {
   const trimmed = raw?.trim()
@@ -940,6 +1037,143 @@ function expandCostConfigToForm(
     cost_models: models,
     cost_mode: mode,
     cost_json: json,
+  }
+}
+
+/**
+ * 折 -> stored fraction. Rounded because `4.4 / 10` is not exactly 0.44 in
+ * binary floating point, and an unrounded 0.44000000000000006 is what makes a
+ * saved channel reopen showing 4.4000000000000005折.
+ */
+export function sellDiscountTenthsToFraction(tenths: number): number {
+  return (
+    Math.round((tenths / SELL_DISCOUNT_TENTHS_PER_FRACTION) * 10000) / 10000
+  )
+}
+
+/** Stored fraction -> 折, the inverse of the round-trip above. */
+function sellDiscountFractionToTenths(fraction: number): number {
+  return (
+    Math.round(fraction * SELL_DISCOUNT_TENTHS_PER_FRACTION * 100) / 100
+  )
+}
+
+function isStorableSellDiscountTenths(value: number | undefined): boolean {
+  return (
+    value != null &&
+    Number.isFinite(value) &&
+    value >= MIN_SELL_DISCOUNT_TENTHS &&
+    value <= MAX_SELL_DISCOUNT_TENTHS
+  )
+}
+
+// buildPriceFromStructuredFields assembles the price object from the everyday
+// form fields. Returns null when nothing is configured so the stored `price`
+// key is dropped and billing stays on the legacy path.
+function buildPriceFromStructuredFields(
+  formData: ChannelFormValues
+): Record<string, unknown> | null {
+  const channelDiscount = formData.price_discount
+  // A row with a name but no discount is half-typed, not a zero discount:
+  // storing it would bill that model free of charge.
+  const models = (formData.price_models ?? []).filter(
+    (row) => row.model?.trim() && isStorableSellDiscountTenths(row.discount)
+  )
+
+  const hasChannelDiscount = isStorableSellDiscountTenths(channelDiscount)
+  if (!hasChannelDiscount && models.length === 0) {
+    return null
+  }
+
+  const price: Record<string, unknown> = {}
+  if (hasChannelDiscount) {
+    price.discount = sellDiscountTenthsToFraction(channelDiscount as number)
+  }
+  if (models.length > 0) {
+    const modelMap: Record<string, number> = {}
+    for (const row of models) {
+      modelMap[row.model.trim()] = sellDiscountTenthsToFraction(
+        row.discount as number
+      )
+    }
+    price.models = modelMap
+  }
+  return price
+}
+
+// expandPriceConfigToForm flattens a stored price object into the structured
+// form fields (0.44 -> 4.4折).
+function expandPriceConfigToForm(
+  price: ChannelPriceSettings | null
+): Pick<
+  ChannelFormValues,
+  'price_discount' | 'price_models' | 'price_json'
+> {
+  if (!price) {
+    return { price_discount: 0, price_models: [], price_json: '' }
+  }
+
+  const discount =
+    typeof price.discount === 'number' && price.discount > 0
+      ? sellDiscountFractionToTenths(price.discount)
+      : 0
+  const models = Object.entries(price.models ?? {})
+    .filter(([, fraction]) => typeof fraction === 'number')
+    .map(([model, fraction]) => ({
+      model,
+      discount: sellDiscountFractionToTenths(fraction),
+    }))
+
+  // `updated_at` is backend-written and has no form field, so it is not treated
+  // as an unknown key — otherwise every previously saved channel would reopen
+  // with its config stranded in the raw JSON box.
+  const knownKeys = new Set(['discount', 'models', 'updated_at'])
+  const usesOnlyStructuredFields =
+    Object.keys(price).every((key) => knownKeys.has(key)) &&
+    (price.discount == null || typeof price.discount === 'number') &&
+    Object.values(price.models ?? {}).every(
+      (fraction) => typeof fraction === 'number'
+    )
+
+  return {
+    price_discount: discount,
+    price_models: models,
+    price_json: usesOnlyStructuredFields
+      ? ''
+      : JSON.stringify(price, null, 2),
+  }
+}
+
+/**
+ * The sell discount a channel currently has stored, read straight off the
+ * `other_settings` JSON the list endpoint already returns — no extra request.
+ *
+ * `discount` stays a 0-1 fraction so callers can hand it to `formatDiscount`,
+ * which renders 折 or "% off" per locale. `modelOverrides` counts the per-model
+ * entries, which a single table cell cannot enumerate but should not hide
+ * either: a channel whose default is unset can still be discounting models.
+ */
+export function readChannelSellDiscount(
+  settingsStr: string | null | undefined
+): { discount: number | null; modelOverrides: number } {
+  const empty = { discount: null, modelOverrides: 0 }
+  if (!settingsStr || settingsStr === '{}') return empty
+
+  try {
+    const parsed = JSON.parse(settingsStr)
+    const price = parsed?.price
+    if (!price || typeof price !== 'object' || Array.isArray(price)) {
+      return empty
+    }
+    const raw = (price as ChannelPriceSettings).discount
+    const models = (price as ChannelPriceSettings).models
+    return {
+      discount:
+        typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : null,
+      modelOverrides: models ? Object.keys(models).length : 0,
+    }
+  } catch {
+    return empty
   }
 }
 

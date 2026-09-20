@@ -74,6 +74,33 @@ export interface CostModelRow {
   margin_rate: number | null
 }
 
+/**
+ * GET /api/cost/channel-models row — one (channel, model) pair.
+ *
+ * `day_ts` is always 0: the endpoint groups the whole window in SQL, so the day
+ * dimension is already collapsed and only the channel × model cross survives.
+ */
+export interface CostChannelModelRow {
+  channel_id: number
+  /** `#<id> (deleted)` when the channel is gone but its ledger rows remain. */
+  channel_name: string
+  model_name: string
+  day_ts: number
+  request_count: number
+  token_used: number
+  revenue_quota: number
+  cost_quota: number
+  unknown_count: number
+  unknown_quota: number
+  reported_quota: number
+  /** Priced revenue − cost. Negative means this channel loses money. */
+  margin_quota: number
+  /** margin/priced revenue; null when nothing on this row is priced. */
+  margin_rate: number | null
+  /** Unpriced share of requests; null when the row has no requests. */
+  unknown_rate: number | null
+}
+
 /** GET /api/cost/inventory row. */
 export interface CostInventoryRow {
   channel_id: number

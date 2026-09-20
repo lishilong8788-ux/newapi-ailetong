@@ -54,17 +54,18 @@ func CostOverview(c *gin.Context) {
 		requests += row.RequestCount
 		unknownCount += row.UnknownCount
 	}
-	margin := revenue - cost
+	margin, pricedBase := pricedMargin(revenue, cost, unknown)
 	overview := gin.H{
-		"start_ts":       startTs,
-		"end_ts":         endTs,
-		"revenue_quota":  revenue,
-		"cost_quota":     cost,
-		"margin_quota":   margin,
-		"margin_rate":    marginRateOrNull(revenue, margin),
-		"unknown_quota":  unknown,
-		"unknown_rate":   requestCountRateOrNull(requests, unknownCount),
-		"request_count":  requests,
+		"start_ts":             startTs,
+		"end_ts":               endTs,
+		"revenue_quota":        revenue,
+		"cost_quota":           cost,
+		"margin_quota":         margin,
+		"margin_rate":          marginRateOrNull(pricedBase, margin),
+		"priced_revenue_quota": pricedBase,
+		"unknown_quota":        unknown,
+		"unknown_rate":         requestCountRateOrNull(requests, unknownCount),
+		"request_count":        requests,
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -81,6 +82,26 @@ func marginRateOrNull(revenue int64, margin int64) *float64 {
 	}
 	rate := float64(margin) / float64(revenue)
 	return &rate
+}
+
+// pricedMargin 按【已定价口径】算毛利，是本文件唯一允许的毛利算法。
+//
+// 未定价流量（cost_source=unknown）的收入照常累加进 revenue_quota，成本却被
+// RecordCostSample（service/cost_flush.go:55-60）跳过，所以 revenue-cost 会把
+// 这部分收入整笔当成纯利。一条渠道收入 400 成本 380、其中 200 未定价，全额口径
+// 报 +5%，剔掉未定价后真实是 -90%——方向正好是最危险的那一侧（毛利虚高会让
+// 亏损渠道看起来健康）。
+//
+// unknownRevenue 取 UnknownQuota：该字段存的是这些请求的【收入】而非成本，
+// 名字容易误读。数据本来就在，不需要迁移，只是此前没有从分子分母里扣掉。
+func pricedMargin(revenue, cost, unknownRevenue int64) (margin int64, base int64) {
+	base = revenue - unknownRevenue
+	if base < 0 {
+		// 理论不可能（unknown 收入是 revenue 的子集），但宁可退化成 0 也不能
+		// 让负分母算出一个反号的毛利率。
+		base = 0
+	}
+	return base - cost, base
 }
 
 func requestCountRateOrNull(total int64, part int64) *float64 {
@@ -122,6 +143,7 @@ func channelSnapshotForInventory() map[int]*model.Channel {
 	}
 	return result
 }
+
 // CostChannels 按渠道明细。
 func CostChannels(c *gin.Context) {
 	startTs, endTs, ok := parseCostTimeRange(c, 30)
@@ -145,7 +167,8 @@ func CostChannels(c *gin.Context) {
 		if ch, okc := channels[row.ChannelId]; okc {
 			out.ChannelName = ch.Name
 		}
-		out.MarginRate = marginRateOrNull(row.RevenueQuota, row.RevenueQuota-row.CostQuota)
+		rowMargin, rowBase := pricedMargin(row.RevenueQuota, row.CostQuota, row.UnknownQuota)
+		out.MarginRate = marginRateOrNull(rowBase, rowMargin)
 		result = append(result, out)
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -173,7 +196,108 @@ func CostModels(c *gin.Context) {
 	result := make([]modelCostRow, 0, len(rows))
 	for _, row := range rows {
 		out := modelCostRow{CostDailyAgg: row}
-		out.MarginRate = marginRateOrNull(row.RevenueQuota, row.RevenueQuota-row.CostQuota)
+		rowMargin, rowBase := pricedMargin(row.RevenueQuota, row.CostQuota, row.UnknownQuota)
+		out.MarginRate = marginRateOrNull(rowBase, rowMargin)
+		result = append(result, out)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    result,
+	})
+}
+
+const (
+	costChannelModelDefaultDays = 30
+	// costChannelModelMaxDays 查询窗口上界。事实表是日汇总，窗口越宽扫的行
+	// 越多；超界按调用错误拒绝而不是静默钳制——运营看到 366 天的表头却只
+	// 拿到 30 天的数，比报错更危险。
+	costChannelModelMaxDays = 366
+)
+
+// CostChannelModels 渠道×模型交叉毛利。/channels 吃掉模型维、/models 吃掉
+// 渠道维，两者都回答不了"同一个模型在哪条线上进货更便宜"——而 fact 表的唯一
+// 键本来就是 (day, channel, model)，三维数据一直都在，这里只是把 day 压掉、
+// 保留另外两维。
+//
+// 与 /channels /models 的区别：那两个 handler 直接返回 GetCostDaily* 的原始
+// 行（/models 其实连 day 都没压，同一模型会按天出多行），这里在 SQL 里
+// GROUP BY channel_id, model_name 一次聚完，避免把几万行丢给前端再算。
+func CostChannelModels(c *gin.Context) {
+	days := costChannelModelDefaultDays
+	if raw := strings.TrimSpace(c.Query("days")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			common.ApiErrorMsg(c, "invalid days")
+			return
+		}
+		days = parsed
+	}
+	if days > costChannelModelMaxDays {
+		common.ApiErrorMsg(c, fmt.Sprintf("days must not exceed %d", costChannelModelMaxDays))
+		return
+	}
+	startTs, endTs, ok := parseCostTimeRange(c, days)
+	if !ok {
+		return
+	}
+	// 显式 start/end 会绕过 days，上界要在解析之后再兜一次。
+	if (endTs-startTs)/86400 > int64(costChannelModelMaxDays) {
+		common.ApiErrorMsg(c, fmt.Sprintf("time range must not exceed %d days", costChannelModelMaxDays))
+		return
+	}
+
+	// 全部走参数化占位符：model 名是用户可控输入，任何拼接都是注入面。
+	query := model.DB.Model(&model.ChannelCostDaily{}).
+		Select("channel_id, model_name, 0 as day_ts, SUM(request_count) as request_count, SUM(token_used) as token_used, "+
+			"SUM(revenue_quota) as revenue_quota, SUM(cost_quota) as cost_quota, "+
+			"SUM(unknown_count) as unknown_count, SUM(unknown_quota) as unknown_quota, SUM(reported_quota) as reported_quota").
+		Where("day_ts >= ? AND day_ts <= ?", startTs, endTs)
+	if modelName := strings.TrimSpace(c.Query("model")); modelName != "" {
+		query = query.Where("model_name = ?", modelName)
+	}
+	if raw := strings.TrimSpace(c.Query("channel_id")); raw != "" {
+		channelId, err := strconv.Atoi(raw)
+		if err != nil || channelId <= 0 {
+			common.ApiErrorMsg(c, "invalid channel id")
+			return
+		}
+		query = query.Where("channel_id = ?", channelId)
+	}
+	var rows []model.CostDailyAgg
+	// ORDER BY 写成显式聚合而不是 SELECT 别名：三个库对"别名 vs 同名列"的
+	// 解析规则不同，显式 SUM() 没有歧义。收入降序 + 复合键兜底保证稳定顺序。
+	if err := query.Group("channel_id, model_name").
+		Order("SUM(revenue_quota) DESC, channel_id ASC, model_name ASC").
+		Find(&rows).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	type channelModelCostRow struct {
+		model.CostDailyAgg
+		ChannelName string   `json:"channel_name"`
+		MarginQuota int64    `json:"margin_quota"`
+		MarginRate  *float64 `json:"margin_rate"`
+		UnknownRate *float64 `json:"unknown_rate"`
+	}
+	result := make([]channelModelCostRow, 0, len(rows))
+	channels := channelSnapshotForInventory()
+	for _, row := range rows {
+		out := channelModelCostRow{CostDailyAgg: row}
+		if ch, okc := channels[row.ChannelId]; okc {
+			out.ChannelName = ch.Name
+		} else {
+			// 渠道已删但账还在。空字符串会让前端表格出现无主行，给个
+			// 语言中立的可辨识占位（前端要本地化可按 "#<id>" 前缀识别）。
+			out.ChannelName = fmt.Sprintf("#%d (deleted)", row.ChannelId)
+		}
+		rowMargin, rowBase := pricedMargin(row.RevenueQuota, row.CostQuota, row.UnknownQuota)
+		out.MarginQuota = rowMargin
+		out.MarginRate = marginRateOrNull(rowBase, rowMargin)
+		// 未定价占比按请求数算，与 /overview 的 unknown_rate 同口径
+		// （unknown_quota 记的是这些请求的收入，不是成本）。
+		out.UnknownRate = requestCountRateOrNull(row.RequestCount, row.UnknownCount)
 		result = append(result, out)
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -209,7 +333,8 @@ func CostChannelDetail(c *gin.Context) {
 			continue
 		}
 		out := modelCostRow{CostDailyAgg: row}
-		out.MarginRate = marginRateOrNull(row.RevenueQuota, row.RevenueQuota-row.CostQuota)
+		rowMargin, rowBase := pricedMargin(row.RevenueQuota, row.CostQuota, row.UnknownQuota)
+		out.MarginRate = marginRateOrNull(rowBase, rowMargin)
 		result = append(result, out)
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -254,14 +379,14 @@ func CostInventory(c *gin.Context) {
 		return
 	}
 	type inventoryRow struct {
-		ChannelId        int     `json:"channel_id"`
-		ChannelName      string  `json:"channel_name"`
-		FetchedBalance   float64 `json:"fetched_balance"`   // 上游 API 抓取（真值，覆盖面有限）
-		HasFetched       bool    `json:"has_fetched"`       // 渠道类型是否支持抓取
-		PurchasedUSD     float64 `json:"purchased_usd"`     // 累计采购（含赠送）
-		SpentUSD         float64 `json:"spent_usd"`         // 累计消耗成本
-		DerivedBalance   float64 `json:"derived_balance"`   // 推算余额 = 采购 − 消耗
-		DiffRate         *float64 `json:"diff_rate"`         // 差异率（两者都有才有）
+		ChannelId      int      `json:"channel_id"`
+		ChannelName    string   `json:"channel_name"`
+		FetchedBalance float64  `json:"fetched_balance"` // 上游 API 抓取（真值，覆盖面有限）
+		HasFetched     bool     `json:"has_fetched"`     // 渠道类型是否支持抓取
+		PurchasedUSD   float64  `json:"purchased_usd"`   // 累计采购（含赠送）
+		SpentUSD       float64  `json:"spent_usd"`       // 累计消耗成本
+		DerivedBalance float64  `json:"derived_balance"` // 推算余额 = 采购 − 消耗
+		DiffRate       *float64 `json:"diff_rate"`       // 差异率（两者都有才有）
 	}
 	channels := channelSnapshotForInventory()
 	purchaseMap := make(map[int]model.PurchaseAgg, len(purchases))
@@ -398,9 +523,9 @@ func validateChannelCostSettings(cs *dto.ChannelCostSettings) error {
 // 愿意逐个配）。
 func CostBatchPrice(c *gin.Context) {
 	var req struct {
-		Tag       string                   `json:"tag"`
-		ChannelType int                    `json:"channel_type"`
-		Cost      *dto.ChannelCostSettings `json:"cost"`
+		Tag         string                   `json:"tag"`
+		ChannelType int                      `json:"channel_type"`
+		Cost        *dto.ChannelCostSettings `json:"cost"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil || req.Cost == nil {
 		common.ApiErrorMsg(c, "invalid request body")
