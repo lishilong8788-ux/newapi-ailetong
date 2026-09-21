@@ -16,6 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+const BYTES_PER_KIB = 1024
+
+/**
+ * Renders an attachment size. KB and MB only: an invoice PDF is never smaller
+ * than a kilobyte nor larger than the 10 MB upload cap, so further units would
+ * only be dead branches.
+ */
+export function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '-'
+  const kib = bytes / BYTES_PER_KIB
+  if (kib < BYTES_PER_KIB) return `${Math.max(1, Math.round(kib))} KB`
+  return `${(kib / BYTES_PER_KIB).toFixed(1)} MB`
+}
+
 const CURRENCY_SYMBOLS: Record<string, string> = {
   CNY: '¥',
   RMB: '¥',

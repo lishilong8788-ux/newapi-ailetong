@@ -39,7 +39,8 @@ func TestRejectInvoiceRequest_ReleasesOrders(t *testing.T) {
 	userId := 9201
 	request := submitInvoiceRequestForOneOrder(t, userId, 9201001, "inv-reject-release")
 
-	require.NoError(t, RejectInvoiceRequest(request.Id, 1, "tax number does not match"))
+	_, err := RejectInvoiceRequest(request.Id, 1, "tax number does not match")
+	require.NoError(t, err)
 
 	orders, err := GetInvoiceableOrders(userId)
 	require.NoError(t, err)
@@ -71,7 +72,8 @@ func TestCancelInvoiceRequest_ReleasesOrders(t *testing.T) {
 	userId := 9202
 	request := submitInvoiceRequestForOneOrder(t, userId, 9202001, "inv-cancel-release")
 
-	require.NoError(t, CancelInvoiceRequest(request.Id, userId))
+	_, err := CancelInvoiceRequest(request.Id, userId)
+	require.NoError(t, err)
 
 	orders, err := GetInvoiceableOrders(userId)
 	require.NoError(t, err)
@@ -113,8 +115,11 @@ func TestInvoiceRequestTransitions_RejectTerminalStates(t *testing.T) {
 	require.NoError(t, IssueInvoiceRequest(request.Id, 1, "24417000000087654321", "https://invoice.example.com/b.pdf", 0))
 
 	require.ErrorIs(t, IssueInvoiceRequest(request.Id, 1, "24417000000099999999", "https://invoice.example.com/c.pdf", 0), ErrInvoiceStatusInvalid)
-	require.ErrorIs(t, RejectInvoiceRequest(request.Id, 1, "changed my mind"), ErrInvoiceStatusInvalid)
-	require.ErrorIs(t, CancelInvoiceRequest(request.Id, userId), ErrInvoiceStatusInvalid)
+
+	_, rejectErr := RejectInvoiceRequest(request.Id, 1, "changed my mind")
+	require.ErrorIs(t, rejectErr, ErrInvoiceStatusInvalid)
+	_, cancelErr := CancelInvoiceRequest(request.Id, userId)
+	require.ErrorIs(t, cancelErr, ErrInvoiceStatusInvalid)
 
 	reloaded, err := GetInvoiceRequestById(request.Id, userId)
 	require.NoError(t, err)
@@ -128,7 +133,8 @@ func TestCancelInvoiceRequest_RejectsForeignUser(t *testing.T) {
 	request := submitInvoiceRequestForOneOrder(t, ownerId, 9205001, "inv-foreign-cancel")
 	insertInvoiceTestUser(t, attackerId)
 
-	require.ErrorIs(t, CancelInvoiceRequest(request.Id, attackerId), ErrInvoiceRequestNotFound)
+	_, cancelErr := CancelInvoiceRequest(request.Id, attackerId)
+	require.ErrorIs(t, cancelErr, ErrInvoiceRequestNotFound)
 
 	reloaded, err := GetInvoiceRequestById(request.Id, ownerId)
 	require.NoError(t, err)

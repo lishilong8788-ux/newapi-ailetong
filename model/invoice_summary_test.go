@@ -68,7 +68,8 @@ func TestGetUserInvoiceAmountSummary_RejectionReturnsAmountToInvoiceable(t *test
 	require.EqualValues(t, 25000, before.PendingMinor)
 	require.EqualValues(t, 0, before.InvoiceableMinor)
 
-	require.NoError(t, RejectInvoiceRequest(request.Id, 1, "tax number does not match"))
+	_, err := RejectInvoiceRequest(request.Id, 1, "tax number does not match")
+	require.NoError(t, err)
 
 	after := requireSingleSummary(t, userId, "CNY")
 	assert.EqualValues(t, 0, after.PendingMinor)

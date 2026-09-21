@@ -32,6 +32,10 @@ func SetApiRouter(router *gin.Engine) {
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
+		// Sell-side only, same gate as /api/pricing. Deliberately NOT under
+		// /api/cost/*: that group is AdminAuth because it carries purchase prices
+		// and margin, and this endpoint answers to catalog visitors.
+		apiRouter.GET("/pricing/channels", middleware.HeaderNavModuleAuth("pricing"), controller.GetModelChannelPricing)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
 		{
@@ -198,6 +202,7 @@ func SetApiRouter(router *gin.Engine) {
 			invoiceRoute.GET("/self/:id", controller.GetSelfInvoiceRequestDetail)
 			invoiceRoute.POST("/self/:id/cancel", middleware.CriticalRateLimit(), controller.CancelSelfInvoiceRequest)
 			invoiceRoute.GET("/self/:id/download", controller.DownloadInvoicePdf)
+			invoiceRoute.GET("/self/:id/attachment/:attachmentId", controller.DownloadSelfInvoiceAttachment)
 		}
 		invoiceAdminRoute := apiRouter.Group("/invoice/admin")
 		invoiceAdminRoute.Use(middleware.AdminAuth())
@@ -209,6 +214,10 @@ func SetApiRouter(router *gin.Engine) {
 			invoiceAdminRoute.POST("/:id/issue", middleware.CriticalRateLimit(), controller.AdminIssueInvoice)
 			invoiceAdminRoute.POST("/:id/reject", middleware.CriticalRateLimit(), controller.AdminRejectInvoice)
 			invoiceAdminRoute.POST("/:id/resend", middleware.CriticalRateLimit(), controller.AdminResendInvoiceEmail)
+			invoiceAdminRoute.GET("/:id/download", controller.AdminDownloadInvoiceDocument)
+			invoiceAdminRoute.POST("/:id/attachment", middleware.CriticalRateLimit(), controller.AdminUploadInvoiceAttachment)
+			invoiceAdminRoute.GET("/:id/attachment/:attachmentId", controller.AdminDownloadInvoiceAttachment)
+			invoiceAdminRoute.DELETE("/:id/attachment/:attachmentId", middleware.CriticalRateLimit(), controller.AdminDeleteInvoiceAttachment)
 		}
 
 		// Agent distribution (代理分销): promotion, commission ledger, withdrawals.

@@ -4,8 +4,11 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/mail"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -40,9 +43,57 @@ func respondInvoiceError(c *gin.Context, err error) {
 		common.ApiErrorMsg(c, "开具专用发票需要填写开户行和银行账号")
 	case errors.Is(err, model.ErrInvoiceAmountInvalid):
 		common.ApiErrorMsg(c, "开票金额无效")
+	case errors.Is(err, model.ErrInvoiceAttachmentLimit):
+		common.ApiErrorMsg(c, fmt.Sprintf("每张发票最多上传 %d 个附件", model.MaxInvoiceAttachmentsPerItem))
+	case errors.Is(err, model.ErrInvoiceAttachmentQuota):
+		common.ApiErrorMsg(c, fmt.Sprintf("附件总大小不能超过 %d MB", model.MaxInvoiceAttachmentTotalBytes>>20))
+	case errors.Is(err, model.ErrInvoiceAttachmentNotFnd):
+		common.ApiErrorMsg(c, "发票附件不存在")
+	case errors.Is(err, model.ErrInvoiceDocumentMissing):
+		common.ApiErrorMsg(c, "请上传发票附件，或填写发票 PDF 链接")
 	default:
 		common.ApiError(c, err)
 	}
+}
+
+// validateInvoicePdfUrl rejects a link the customer would not be able to open.
+//
+// The plain `http(s)://` prefix check this replaces let `https://11111` through:
+// that parses as a host literally named `11111`, which browsers then resolve as
+// an integer-form IPv4 address (0.0.43.103) and security interstitials block. The
+// address is mailed to a customer and used as a redirect target, so it has to be
+// a real public hostname.
+func validateInvoicePdfUrl(raw string) error {
+	if len(raw) > 1024 {
+		return errors.New("发票 PDF 链接长度不能超过 1024 个字符")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return errors.New("发票 PDF 链接格式无效")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return errors.New("发票 PDF 链接必须以 http:// 或 https:// 开头")
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return errors.New("发票 PDF 链接缺少域名")
+	}
+	if net.ParseIP(host) != nil {
+		return errors.New("发票 PDF 链接不能使用 IP 地址，请填写可公网访问的域名")
+	}
+	labels := strings.Split(host, ".")
+	topLevel := labels[len(labels)-1]
+	// A real public suffix always starts with a letter — including punycode ones
+	// such as xn--fiqs8s. This is what catches `11111`, `localhost` and the hex or
+	// decimal host forms that browsers still treat as addresses.
+	if len(labels) < 2 || len(topLevel) < 2 || !isAsciiLetter(rune(topLevel[0])) {
+		return errors.New("发票 PDF 链接不是有效的域名，请检查是否填错")
+	}
+	return nil
+}
+
+func isAsciiLetter(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
 // ---- User APIs: invoice titles ----
@@ -270,7 +321,12 @@ func GetSelfInvoiceRequestDetail(c *gin.Context) {
 		respondInvoiceError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"request": request, "items": items})
+	attachments, err := model.GetInvoiceAttachments(request.Id)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"request": request, "items": items, "attachments": attachments})
 }
 
 func CancelSelfInvoiceRequest(c *gin.Context) {
@@ -279,16 +335,69 @@ func CancelSelfInvoiceRequest(c *gin.Context) {
 		common.ApiErrorMsg(c, "无效的ID")
 		return
 	}
-	if err := model.CancelInvoiceRequest(id, c.GetInt("id")); err != nil {
+	releasedPaths, err := model.CancelInvoiceRequest(id, c.GetInt("id"))
+	if err != nil {
 		respondInvoiceError(c, err)
 		return
 	}
+	service.RemoveInvoiceAttachmentFiles(releasedPaths)
 	common.ApiSuccess(c, nil)
 }
 
-// DownloadInvoicePdf redirects to the issued PDF. The ownership check is the
-// whole point of routing the download through the server: the document carries
-// the company name, tax number and bank account.
+// serveInvoiceAttachment streams one stored file.
+//
+// The original file name is restored in Content-Disposition: on disk the file is
+// named by UUID, and a customer saving `a3f2...pdf` has no way to tell which
+// invoice it is.
+func serveInvoiceAttachment(c *gin.Context, attachment *model.InvoiceAttachment) {
+	absolutePath, err := service.ResolveInvoiceAttachmentPath(attachment.StoredPath)
+	if err != nil {
+		common.SysError("failed to resolve invoice attachment path: " + err.Error())
+		common.ApiErrorMsg(c, "发票附件不可读，请联系管理员")
+		return
+	}
+	if _, err := os.Stat(absolutePath); err != nil {
+		common.SysError("invoice attachment file missing: " + err.Error())
+		common.ApiErrorMsg(c, "发票附件文件已丢失，请联系管理员重新上传")
+		return
+	}
+	if attachment.MimeType != "" {
+		// Set before ServeFile, which only sniffs a type when none is present.
+		c.Header("Content-Type", attachment.MimeType)
+	}
+	c.FileAttachment(absolutePath, attachment.FileName)
+}
+
+// serveInvoiceDocument answers a "download this invoice" action.
+//
+// An uploaded file wins over the stored link: it is the exact document mailed to
+// the customer, it is served from the platform's own domain, and it cannot rot
+// the way a third-party URL can. The link stays as the fallback for invoices
+// issued before attachments existed.
+func serveInvoiceDocument(c *gin.Context, request *model.InvoiceRequest) {
+	if request.Status != model.InvoiceStatusIssued {
+		common.ApiErrorMsg(c, "发票尚未开具")
+		return
+	}
+	attachments, err := model.GetInvoiceAttachments(request.Id)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	if len(attachments) > 0 {
+		serveInvoiceAttachment(c, attachments[0])
+		return
+	}
+	if strings.TrimSpace(request.PdfUrl) == "" {
+		common.ApiErrorMsg(c, "该发票没有可下载的文件，请联系客服")
+		return
+	}
+	c.Redirect(http.StatusFound, request.PdfUrl)
+}
+
+// DownloadInvoicePdf serves the invoice document to its owner. The ownership
+// check is the whole point of routing the download through the server: the
+// document carries the company name, tax number and bank account.
 func DownloadInvoicePdf(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	if id <= 0 {
@@ -300,11 +409,24 @@ func DownloadInvoicePdf(c *gin.Context) {
 		respondInvoiceError(c, err)
 		return
 	}
-	if request.Status != model.InvoiceStatusIssued || request.PdfUrl == "" {
-		common.ApiErrorMsg(c, "发票尚未开具")
+	serveInvoiceDocument(c, request)
+}
+
+// DownloadSelfInvoiceAttachment serves one specific file of the caller's own
+// invoice, for the case where finance uploaded several documents.
+func DownloadSelfInvoiceAttachment(c *gin.Context) {
+	requestId, _ := strconv.Atoi(c.Param("id"))
+	attachmentId, _ := strconv.Atoi(c.Param("attachmentId"))
+	if requestId <= 0 || attachmentId <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
 		return
 	}
-	c.Redirect(http.StatusFound, request.PdfUrl)
+	attachment, err := model.GetInvoiceAttachmentById(attachmentId, requestId, c.GetInt("id"))
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	serveInvoiceAttachment(c, attachment)
 }
 
 // ---- Admin APIs ----
@@ -338,7 +460,12 @@ func AdminGetInvoiceRequestDetail(c *gin.Context) {
 		respondInvoiceError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"request": request, "items": items})
+	attachments, err := model.GetInvoiceAttachments(request.Id)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"request": request, "items": items, "attachments": attachments})
 }
 
 type AdminIssueInvoiceRequest struct {
@@ -368,16 +495,24 @@ func AdminIssueInvoice(c *gin.Context) {
 		common.ApiErrorMsg(c, "发票号码长度不能超过 64 个字符")
 		return
 	}
+	// An invoice must ship with a document the customer can actually open: either
+	// an uploaded file, which is mailed as a real attachment, or an external link.
+	// The link is now the fallback, so it is only validated when one was given.
 	pdfUrl := strings.TrimSpace(req.PdfUrl)
-	if pdfUrl == "" {
-		common.ApiErrorMsg(c, "请填写发票 PDF 链接")
+	attachmentCount, err := model.CountInvoiceAttachments(id)
+	if err != nil {
+		respondInvoiceError(c, err)
 		return
 	}
-	// The URL is handed straight back to the browser as a redirect target, so
-	// only real http(s) links are accepted.
-	if !strings.HasPrefix(pdfUrl, "http://") && !strings.HasPrefix(pdfUrl, "https://") {
-		common.ApiErrorMsg(c, "发票 PDF 链接必须以 http:// 或 https:// 开头")
+	if pdfUrl == "" && attachmentCount == 0 {
+		respondInvoiceError(c, model.ErrInvoiceDocumentMissing)
 		return
+	}
+	if pdfUrl != "" {
+		if err := validateInvoicePdfUrl(pdfUrl); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
 	}
 
 	var issueTime int64
@@ -424,12 +559,100 @@ func AdminRejectInvoice(c *gin.Context) {
 		common.ApiErrorMsg(c, "驳回原因长度不能超过 500 个字符")
 		return
 	}
-	if err := model.RejectInvoiceRequest(id, c.GetInt("id"), reason); err != nil {
+	releasedPaths, err := model.RejectInvoiceRequest(id, c.GetInt("id"), reason)
+	if err != nil {
 		respondInvoiceError(c, err)
 		return
 	}
+	service.RemoveInvoiceAttachmentFiles(releasedPaths)
 	service.SendInvoiceRejectedNotify(id)
 	common.ApiSuccess(c, nil)
+}
+
+// AdminUploadInvoiceAttachment stores one invoice document against a request.
+//
+// Uploading is allowed while the application is pending (the normal flow: upload,
+// then issue) and after it has been issued (re-upload of a corrected file), but
+// not once it has been rejected or cancelled, where the document would describe
+// an invoice that was never produced.
+func AdminUploadInvoiceAttachment(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
+		return
+	}
+	request, err := model.GetInvoiceRequestById(id, 0)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	if request.Status != model.InvoiceStatusPending && request.Status != model.InvoiceStatusIssued {
+		respondInvoiceError(c, model.ErrInvoiceStatusInvalid)
+		return
+	}
+
+	header, err := c.FormFile("file")
+	if err != nil {
+		common.ApiErrorMsg(c, "请选择要上传的文件")
+		return
+	}
+	attachment, err := service.SaveInvoiceAttachment(request.Id, c.GetInt("id"), header)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	common.ApiSuccess(c, attachment)
+}
+
+// AdminDeleteInvoiceAttachment removes one uploaded document. The row is dropped
+// first and the file after it, so a failed unlink leaves unused bytes on disk
+// rather than a download the customer cannot open.
+func AdminDeleteInvoiceAttachment(c *gin.Context) {
+	requestId, _ := strconv.Atoi(c.Param("id"))
+	attachmentId, _ := strconv.Atoi(c.Param("attachmentId"))
+	if requestId <= 0 || attachmentId <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
+		return
+	}
+	storedPath, err := model.DeleteInvoiceAttachment(attachmentId, requestId)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	service.RemoveInvoiceAttachmentFiles([]string{storedPath})
+	common.ApiSuccess(c, nil)
+}
+
+// AdminDownloadInvoiceAttachment lets finance verify exactly what was mailed.
+func AdminDownloadInvoiceAttachment(c *gin.Context) {
+	requestId, _ := strconv.Atoi(c.Param("id"))
+	attachmentId, _ := strconv.Atoi(c.Param("attachmentId"))
+	if requestId <= 0 || attachmentId <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
+		return
+	}
+	attachment, err := model.GetInvoiceAttachmentById(attachmentId, requestId, 0)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	serveInvoiceAttachment(c, attachment)
+}
+
+// AdminDownloadInvoiceDocument mirrors the customer's download button so an
+// operator can confirm the link or file a customer is seeing.
+func AdminDownloadInvoiceDocument(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
+		return
+	}
+	request, err := model.GetInvoiceRequestById(id, 0)
+	if err != nil {
+		respondInvoiceError(c, err)
+		return
+	}
+	serveInvoiceDocument(c, request)
 }
 
 func AdminResendInvoiceEmail(c *gin.Context) {

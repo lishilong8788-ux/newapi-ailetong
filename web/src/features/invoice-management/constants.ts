@@ -75,6 +75,14 @@ export const INVOICE_TYPE_LABEL_KEYS = {
 // Validation Constants
 // ============================================================================
 
+/** Mirrors the server-side attachment limits in model/invoice.go. */
+export const INVOICE_ATTACHMENT = {
+  MAX_FILES: 5,
+  MAX_FILE_BYTES: 10 * 1024 * 1024,
+  MAX_TOTAL_BYTES: 15 * 1024 * 1024,
+  ACCEPT: '.pdf,.ofd,.jpg,.jpeg,.png',
+} as const
+
 export const INVOICE_VALIDATION = {
   INVOICE_NO_MAX_LENGTH: 64,
   PDF_URL_MAX_LENGTH: 1024,
@@ -94,14 +102,23 @@ export const ERROR_MESSAGES = {
   RESEND_FAILED: 'Failed to resend the invoice email',
   EXPORT_FAILED: 'Failed to export the pending invoice list',
   INVOICE_NO_REQUIRED: 'Invoice number is required',
-  PDF_URL_REQUIRED: 'PDF link is required',
-  PDF_URL_INVALID: 'PDF link must be a valid http or https URL',
+  PDF_URL_INVALID:
+    'PDF link must be a public http or https address, not an IP or a bare name',
+  DOCUMENT_REQUIRED: 'Upload the invoice file, or fill in a PDF link',
+  ATTACHMENT_UPLOAD_FAILED: 'Failed to upload the attachment',
+  ATTACHMENT_DELETE_FAILED: 'Failed to remove the attachment',
+  ATTACHMENT_TOO_LARGE: 'Each attachment must be under {{max}} MB',
+  ATTACHMENT_TOTAL_TOO_LARGE:
+    'Attachments must total under {{max}} MB so the email can carry them',
+  ATTACHMENT_TYPE_UNSUPPORTED: 'Only PDF, OFD, JPG and PNG files are accepted',
   REJECT_REASON_TOO_SHORT:
     'Reject reason must be at least {{min}} characters long',
   REJECT_REASON_TOO_LONG: 'Reject reason must be at most {{max}} characters',
 } as const
 
 export const SUCCESS_MESSAGES = {
+  ATTACHMENT_UPLOADED: 'Attachment uploaded',
+  ATTACHMENT_DELETED: 'Attachment removed',
   INVOICE_ISSUED: 'Invoice issued successfully',
   INVOICE_REJECTED: 'Invoice request rejected',
   EMAIL_RESENT: 'Invoice email resent',

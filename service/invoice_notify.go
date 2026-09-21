@@ -136,6 +136,21 @@ func SendInvoiceIssuedNotify(requestId int) {
 		body.WriteString(fmt.Sprintf("<p>发票抬头：%s</p>", html.EscapeString(request.Title)))
 		body.WriteString(fmt.Sprintf("<p>关联订单：%s</p>", html.EscapeString(tradeNos)))
 		body.WriteString(fmt.Sprintf("<p>开票时间：%s</p>", issueTime))
+		// Loaded before the mail is built so an unreadable file fails the send and
+		// stays retryable, instead of mailing the customer a message that claims to
+		// carry the invoice but does not.
+		attachments, err := InvoiceMailAttachments(request.Id)
+		if err != nil {
+			recordInvoiceEmailResult(requestId, err)
+			return
+		}
+		if len(attachments) > 0 {
+			names := make([]string, 0, len(attachments))
+			for _, attachment := range attachments {
+				names = append(names, html.EscapeString(attachment.FileName))
+			}
+			body.WriteString(fmt.Sprintf("<p>发票文件已作为附件随本邮件发送：%s</p>", strings.Join(names, "、")))
+		}
 		if pdfUrl := strings.TrimSpace(request.PdfUrl); pdfUrl != "" {
 			escapedUrl := html.EscapeString(pdfUrl)
 			// The link is written twice on purpose: some mail clients strip the
@@ -147,7 +162,7 @@ func SendInvoiceIssuedNotify(requestId int) {
 		body.WriteString("<p>如对发票内容有疑问，请联系客服处理。</p>")
 
 		subject := fmt.Sprintf("%s 发票已开出", common.SystemName)
-		recordInvoiceEmailResult(requestId, common.SendEmail(subject, recipient, body.String()))
+		recordInvoiceEmailResult(requestId, common.SendEmailWithAttachments(subject, recipient, body.String(), attachments))
 	})
 }
 

@@ -35,14 +35,33 @@ export type IssueInvoiceFormValues = {
   notify_email: boolean
 }
 
-/** Only web links are accepted: the address is emailed to the customer. */
-function isHttpUrl(value: string): boolean {
+/**
+ * Only a real public web address is accepted, because it is emailed to the
+ * customer and used as a redirect target.
+ *
+ * A protocol check alone is not enough: `https://11111` parses fine, but the
+ * host is a bare number that browsers resolve as an integer-form IPv4 address,
+ * and the customer gets a security interstitial instead of their invoice. The
+ * server repeats this check — this copy only spares the operator a round trip.
+ */
+export function isPublicHttpUrl(value: string): boolean {
+  let parsed: URL
   try {
-    const parsed = new URL(value)
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+    parsed = new URL(value)
   } catch {
     return false
   }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+
+  const host = parsed.hostname
+  // An IPv6 literal keeps its brackets in hostname; IPv4 is all digits and dots.
+  if (host.startsWith('[') || /^[\d.]+$/.test(host)) return false
+
+  const labels = host.split('.')
+  const topLevel = labels.at(-1) ?? ''
+  // Every real public suffix starts with a letter, punycode ones (xn--fiqs8s)
+  // included. This is what rejects `11111`, `localhost` and `example.123`.
+  return labels.length >= 2 && topLevel.length >= 2 && /^[a-z]/i.test(topLevel)
 }
 
 export function getIssueInvoiceFormSchema(t: TFunction) {
@@ -55,15 +74,20 @@ export function getIssueInvoiceFormSchema(t: TFunction) {
         INVOICE_VALIDATION.INVOICE_NO_MAX_LENGTH,
         t(ERROR_MESSAGES.INVOICE_NO_REQUIRED)
       ),
+    // Optional: the uploaded attachment is the primary document now. The
+    // "attachment or link" rule spans both fields, so it is enforced by the
+    // dialog, which is what knows how many files are attached.
     pdf_url: z
       .string()
       .trim()
-      .min(1, t(ERROR_MESSAGES.PDF_URL_REQUIRED))
       .max(
         INVOICE_VALIDATION.PDF_URL_MAX_LENGTH,
         t(ERROR_MESSAGES.PDF_URL_INVALID)
       )
-      .refine(isHttpUrl, t(ERROR_MESSAGES.PDF_URL_INVALID)),
+      .refine(
+        (value) => value === '' || isPublicHttpUrl(value),
+        t(ERROR_MESSAGES.PDF_URL_INVALID)
+      ),
     issue_date: z.date().optional(),
     notify_email: z.boolean(),
   })

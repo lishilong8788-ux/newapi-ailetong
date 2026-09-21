@@ -55,6 +55,17 @@ func invoiceableCutoff() int64 {
 	return common.GetTimestamp() - invoiceableWindowSeconds
 }
 
+// Attachment limits. The per-request total is the binding one: every file is
+// base64-encoded into the notification mail, which inflates it by roughly a
+// third, and most SMTP providers reject a message over ~25MB outright. Capping
+// the total at upload time means a mail built from stored attachments always
+// fits, so the customer never silently loses the document.
+const (
+	MaxInvoiceAttachmentBytes      int64 = 10 << 20 // 10 MiB per file
+	MaxInvoiceAttachmentTotalBytes int64 = 15 << 20 // 15 MiB per request
+	MaxInvoiceAttachmentsPerItem         = 5
+)
+
 var (
 	ErrInvoiceProfileNotFound  = errors.New("invoice profile not found")
 	ErrInvoiceRequestNotFound  = errors.New("invoice request not found")
@@ -65,6 +76,10 @@ var (
 	ErrInvoiceCurrencyMixed    = errors.New("selected orders have mixed currencies")
 	ErrInvoiceBankRequired     = errors.New("bank name and account are required for special invoices")
 	ErrInvoiceAmountInvalid    = errors.New("invalid invoice amount")
+	ErrInvoiceAttachmentLimit  = errors.New("too many attachments for one invoice request")
+	ErrInvoiceAttachmentQuota  = errors.New("invoice attachments exceed the total size limit")
+	ErrInvoiceAttachmentNotFnd = errors.New("invoice attachment not found")
+	ErrInvoiceDocumentMissing  = errors.New("an attachment or a pdf url is required")
 )
 
 // InvoiceProfile is a reusable invoice title (开票资料) owned by a user.
@@ -152,6 +167,29 @@ type InvoiceItem struct {
 	// detail must keep showing when each order was paid even if the order is
 	// later purged or its row changes.
 	PayTime int64 `json:"pay_time" gorm:"bigint;default:0"`
+}
+
+// InvoiceAttachment is one file an operator uploaded for an invoice request:
+// normally the invoice PDF/OFD produced by the invoicing software, which is then
+// mailed to the customer as a real attachment.
+//
+// StoredPath is json:"-" on purpose. The on-disk layout is an implementation
+// detail, and exposing it would hand the browser a path to probe; files are only
+// ever reached through the download endpoints, which check ownership.
+type InvoiceAttachment struct {
+	Id        int `json:"id"`
+	RequestId int `json:"request_id" gorm:"index"`
+
+	FileName   string `json:"file_name" gorm:"type:varchar(255);not null"`
+	StoredPath string `json:"-" gorm:"type:varchar(500);not null"`
+	MimeType   string `json:"mime_type" gorm:"type:varchar(128);default:''"`
+	FileSize   int64  `json:"file_size" gorm:"type:bigint;not null;default:0"`
+	// Sha256 lets an operator confirm the file mailed to the customer is the one
+	// they uploaded, and makes a truncated write detectable.
+	Sha256 string `json:"sha256" gorm:"type:varchar(64);default:''"`
+
+	UploaderId int   `json:"uploader_id" gorm:"default:0"`
+	CreateTime int64 `json:"create_time" gorm:"bigint;index"`
 }
 
 // InvoiceableOrder is one row of the "待开票" list. It is projected from either

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import type { ReactNode } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -46,6 +47,8 @@ type InvoiceIssueFormProps = {
   formId: string
   recipientEmail: string
   isSubmitting: boolean
+  /** Rendered above the link field: the uploaded file is the primary document. */
+  attachmentSlot: ReactNode
   onSubmit: (values: IssueInvoiceFormValues) => void
 }
 
@@ -93,12 +96,14 @@ export function InvoiceIssueForm(props: InvoiceIssueFormProps) {
           )}
         />
 
+        {props.attachmentSlot}
+
         <FormField
           control={form.control}
           name='pdf_url'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('PDF Link')}</FormLabel>
+              <FormLabel>{t('PDF Link (optional)')}</FormLabel>
               <FormControl>
                 <Input
                   {...field}
@@ -110,7 +115,9 @@ export function InvoiceIssueForm(props: InvoiceIssueFormProps) {
                 />
               </FormControl>
               <FormDescription>
-                {t('The customer receives this link by email.')}
+                {t(
+                  'Only needed when the file is hosted elsewhere. Must be a public domain, not an IP address.'
+                )}
               </FormDescription>
               <FormMessage />
             </FormItem>

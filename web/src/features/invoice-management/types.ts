@@ -66,6 +66,22 @@ export interface InvoiceRequest {
   username?: string
 }
 
+/**
+ * One file finance uploaded for an invoice request, mailed to the customer as a
+ * real attachment. The on-disk location is deliberately not exposed.
+ */
+export interface InvoiceAttachment {
+  id: number
+  request_id: number
+  file_name: string
+  mime_type: string
+  /** Bytes. */
+  file_size: number
+  sha256: string
+  uploader_id: number
+  create_time: number
+}
+
 export interface InvoiceItem {
   id: number
   request_id: number
@@ -108,10 +124,12 @@ export interface ListInvoiceRequestsResponse {
 export interface InvoiceRequestDetail {
   request: InvoiceRequest
   items: InvoiceItem[]
+  attachments: InvoiceAttachment[]
 }
 
 export interface IssueInvoicePayload {
   invoice_no: string
+  /** Optional fallback: an uploaded attachment is the primary document. */
   pdf_url: string
   issue_date?: string
   notify_email: boolean

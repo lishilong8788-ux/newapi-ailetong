@@ -258,8 +258,13 @@ func lockInvoiceRequestForTransition(tx *gorm.DB, id int, userId int, allowed ..
 
 // CancelInvoiceRequest withdraws a pending application. Deleting the items is
 // what returns the orders to the invoiceable pool.
-func CancelInvoiceRequest(id int, userId int) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+//
+// The returned paths are the attachment files the caller must unlink: the rows go
+// with the transaction, but touching the filesystem inside one would leave the
+// disk and the database disagreeing if the commit later failed.
+func CancelInvoiceRequest(id int, userId int) ([]string, error) {
+	var releasedPaths []string
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		request, err := lockInvoiceRequestForTransition(tx, id, userId, InvoiceStatusPending)
 		if err != nil {
 			return err
@@ -268,8 +273,16 @@ func CancelInvoiceRequest(id int, userId int) error {
 			Update("status", InvoiceStatusCancelled).Error; err != nil {
 			return err
 		}
-		return tx.Where("request_id = ?", request.Id).Delete(&InvoiceItem{}).Error
+		if err := tx.Where("request_id = ?", request.Id).Delete(&InvoiceItem{}).Error; err != nil {
+			return err
+		}
+		releasedPaths, err = releaseInvoiceAttachmentRows(tx, request.Id)
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	return releasedPaths, nil
 }
 
 // IssueInvoiceRequest records the invoice number and PDF link an admin filled in.
@@ -296,9 +309,11 @@ func IssueInvoiceRequest(id int, operatorId int, invoiceNo string, pdfUrl string
 }
 
 // RejectInvoiceRequest declines an application and releases its orders so the
-// user can correct the details and apply again.
-func RejectInvoiceRequest(id int, operatorId int, reason string) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+// user can correct the details and apply again. Any uploaded document is released
+// with them: it would describe an invoice that was never issued.
+func RejectInvoiceRequest(id int, operatorId int, reason string) ([]string, error) {
+	var releasedPaths []string
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		request, err := lockInvoiceRequestForTransition(tx, id, 0, InvoiceStatusPending)
 		if err != nil {
 			return err
@@ -311,8 +326,16 @@ func RejectInvoiceRequest(id int, operatorId int, reason string) error {
 			}).Error; err != nil {
 			return err
 		}
-		return tx.Where("request_id = ?", request.Id).Delete(&InvoiceItem{}).Error
+		if err := tx.Where("request_id = ?", request.Id).Delete(&InvoiceItem{}).Error; err != nil {
+			return err
+		}
+		releasedPaths, err = releaseInvoiceAttachmentRows(tx, request.Id)
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	return releasedPaths, nil
 }
 
 // UpdateInvoiceEmailResult records the outcome of the notification email so a

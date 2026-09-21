@@ -55,6 +55,7 @@ func TestMain(m *testing.M) {
 		&InvoiceProfile{},
 		&InvoiceRequest{},
 		&InvoiceItem{},
+		&InvoiceAttachment{},
 		&AgentProfile{},
 		&AgentCommission{},
 		&AgentWithdrawal{},

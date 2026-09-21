@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 
 import type {
   ApiResponse,
+  InvoiceAttachment,
   InvoiceRequestDetail,
   IssueInvoicePayload,
   ListInvoiceRequestsParams,
@@ -69,6 +70,42 @@ export async function rejectInvoiceRequest(
 export async function resendInvoiceEmail(id: number): Promise<ApiResponse> {
   const res = await api.post(`/api/invoice/admin/${id}/resend`)
   return res.data
+}
+
+// ============================================================================
+// Invoice attachments (admin)
+// ============================================================================
+
+/**
+ * Uploads one invoice document. Sent as multipart under the field name the
+ * handler reads; the Content-Type boundary is left to the browser.
+ */
+export async function uploadInvoiceAttachment(
+  id: number,
+  file: File
+): Promise<ApiResponse<InvoiceAttachment>> {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await api.post(`/api/invoice/admin/${id}/attachment`, body)
+  return res.data
+}
+
+export async function deleteInvoiceAttachment(
+  id: number,
+  attachmentId: number
+): Promise<ApiResponse> {
+  const res = await api.delete(
+    `/api/invoice/admin/${id}/attachment/${attachmentId}`
+  )
+  return res.data
+}
+
+/** Opened in a new tab; the server sets the download headers. */
+export function invoiceAttachmentDownloadUrl(
+  id: number,
+  attachmentId: number
+): string {
+  return `/api/invoice/admin/${id}/attachment/${attachmentId}`
 }
 
 /**

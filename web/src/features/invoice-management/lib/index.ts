@@ -19,7 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 // ============================================================================
 // Formatting
 // ============================================================================
-export { formatInvoiceAmount, parseTradeNumbers } from './format'
+export {
+  formatAttachmentSize,
+  formatInvoiceAmount,
+  parseTradeNumbers,
+} from './format'
 
 // ============================================================================
 // Issuing worksheet (copy-to-invoicing-platform)
@@ -38,6 +42,7 @@ export {
   getIssueInvoiceFormDefaults,
   getIssueInvoiceFormSchema,
   getRejectInvoiceFormSchema,
+  isPublicHttpUrl,
   REJECT_INVOICE_FORM_DEFAULTS,
   toIssueInvoicePayload,
   toRejectInvoicePayload,
