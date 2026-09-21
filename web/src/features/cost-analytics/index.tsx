@@ -159,9 +159,13 @@ export function CostAnalytics() {
     [activeModelFilter, channelModelRows]
   )
 
+  // Both handlers merge into the previous search rather than replacing it: a
+  // whole-object `search` drops every key it omits, so switching the range while
+  // reading the model tab used to throw the reader back to the overview.
   const handlePresetChange = useCallback(
     (days: number) => {
-      void navigate({ search: { days } })
+      if (!Number.isFinite(days)) return
+      void navigate({ search: (prev) => ({ ...prev, days }) })
     },
     [navigate]
   )
@@ -169,10 +173,10 @@ export function CostAnalytics() {
   const handleTabChange = useCallback(
     (tab: string) => {
       void navigate({
-        search: { days: window.days, tab: tab as ViewTab },
+        search: (prev) => ({ ...prev, tab: tab as ViewTab }),
       })
     },
-    [navigate, window.days]
+    [navigate]
   )
 
   const activeTab: ViewTab =
