@@ -16,12 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 
-import { getSelf } from '@/lib/api'
 import { formatQuota } from '@/lib/format'
+import { refreshSelf } from '@/lib/self-query'
 
 import { redeemTopupCode } from '../api'
 
@@ -31,37 +32,41 @@ import { redeemTopupCode } from '../api'
 
 export function useRedemption() {
   const [redeeming, setRedeeming] = useState(false)
+  const queryClient = useQueryClient()
 
-  const redeemCode = useCallback(async (code: string): Promise<boolean> => {
-    if (!code || code.trim() === '') {
-      toast.error(i18next.t('Please enter a redemption code'))
-      return false
-    }
-
-    try {
-      setRedeeming(true)
-      const response = await redeemTopupCode({ key: code })
-
-      if (response.success && response.data) {
-        const quotaAdded = response.data
-        toast.success(
-          i18next.t('Redemption successful! Added: {{quota}}', {
-            quota: formatQuota(quotaAdded),
-          })
-        )
-        await getSelf()
-        return true
+  const redeemCode = useCallback(
+    async (code: string): Promise<boolean> => {
+      if (!code || code.trim() === '') {
+        toast.error(i18next.t('Please enter a redemption code'))
+        return false
       }
 
-      toast.error(response.message || i18next.t('Redemption failed'))
-      return false
-    } catch (_error) {
-      toast.error(i18next.t('Redemption failed'))
-      return false
-    } finally {
-      setRedeeming(false)
-    }
-  }, [])
+      try {
+        setRedeeming(true)
+        const response = await redeemTopupCode({ key: code })
+
+        if (response.success && response.data) {
+          const quotaAdded = response.data
+          toast.success(
+            i18next.t('Redemption successful! Added: {{quota}}', {
+              quota: formatQuota(quotaAdded),
+            })
+          )
+          await refreshSelf(queryClient)
+          return true
+        }
+
+        toast.error(response.message || i18next.t('Redemption failed'))
+        return false
+      } catch (_error) {
+        toast.error(i18next.t('Redemption failed'))
+        return false
+      } finally {
+        setRedeeming(false)
+      }
+    },
+    [queryClient]
+  )
 
   return {
     redeeming,

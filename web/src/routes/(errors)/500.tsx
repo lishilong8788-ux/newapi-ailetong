@@ -17,9 +17,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute } from '@tanstack/react-router'
+import z from 'zod'
 
 import { GeneralError } from '@/features/errors/general-error'
 
-export const Route = createFileRoute('/(errors)/500')({
-  component: GeneralError,
+/**
+ * Reached by a link or a manual URL, never by the app throwing: the error a
+ * route threw is handed straight to `errorComponent`, which knows its status.
+ * `?status=` exists so a caller that does route here can still say what
+ * happened instead of having this page assert a server fault it cannot see.
+ */
+const errorPageSearchSchema = z.object({
+  status: z.number().int().min(100).max(599).optional().catch(undefined),
 })
+
+export const Route = createFileRoute('/(errors)/500')({
+  validateSearch: errorPageSearchSchema,
+  component: RouteComponent,
+})
+
+function RouteComponent() {
+  const { status } = Route.useSearch()
+  return <GeneralError status={status ?? 500} />
+}

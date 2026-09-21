@@ -58,3 +58,29 @@ export function getServerErrorMessageKey(value: unknown): string | null {
     ] ?? null
   )
 }
+
+function isHttpStatus(value: unknown): value is number {
+  return typeof value === 'number' && value >= 100 && value <= 599
+}
+
+/**
+ * Best-effort HTTP status for whatever was thrown.
+ *
+ * Three shapes reach an error boundary: an axios rejection
+ * (`error.response.status`), a `Response`-like object or router error carrying
+ * `status` directly, and a plain runtime exception carrying neither. Only the
+ * last is genuinely unknown — reading just the axios shape meant a 429 rendered
+ * as "500" and sent people looking for a server fault that never happened.
+ */
+export function getHttpStatus(value: unknown): number | undefined {
+  if (!isRecord(value)) return undefined
+
+  const response = value.response
+  if (isRecord(response) && isHttpStatus(response.status)) {
+    return response.status
+  }
+
+  if (isHttpStatus(value.status)) return value.status
+  if (isHttpStatus(value.statusCode)) return value.statusCode
+  return undefined
+}

@@ -17,9 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { getHttpStatus } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 const FEEDBACK_URL = 'https://github.com/QuantumNous/new-api/issues'
@@ -27,32 +29,38 @@ const FEEDBACK_URL = 'https://github.com/QuantumNous/new-api/issues'
 type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
   minimal?: boolean
   error?: unknown
-}
-
-function getHttpStatus(error: unknown): number | undefined {
-  if (typeof error !== 'object' || error === null) return undefined
-  const response = (error as Record<string, unknown>).response
-  if (typeof response !== 'object' || response === null) return undefined
-  const status = (response as Record<string, unknown>).status
-  return typeof status === 'number' ? status : undefined
+  /** Explicit status, for callers that know it without holding the error. */
+  status?: number
 }
 
 export function GeneralError({
   className,
   minimal = false,
   error,
+  status: statusOverride,
 }: GeneralErrorProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { history } = useRouter()
-  const status = getHttpStatus(error)
+  const status = statusOverride ?? getHttpStatus(error)
   const isRateLimited = status === 429
+
   const title = isRateLimited
     ? t('Too many requests')
     : `${t('Oops! Something went wrong')} ${`:')`}`
   const description = isRateLimited
     ? t('Please wait a moment before trying again.')
     : t('Please try again later.')
+
+  // The page renders a number, which is all the user needs and nowhere near
+  // enough to debug with: a render-time exception carries no status at all and
+  // used to be indistinguishable from a real 500. Log the thrown value so the
+  // stack survives in the console of whoever hit it.
+  useEffect(() => {
+    if (error === undefined) return
+    // eslint-disable-next-line no-console
+    console.error('[error-page] unhandled error', { status, error })
+  }, [error, status])
 
   return (
     <div className={cn('h-svh w-full', className)}>

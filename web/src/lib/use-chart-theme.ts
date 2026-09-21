@@ -45,13 +45,27 @@ export function useChartTheme() {
           (m) => m.ThemeManager
         )
       }
-      const ThemeManager = await themeManagerPromise
-      if (cancelled) return
-      themeRef.current = ThemeManager
-      ThemeManager.setCurrentTheme(resolvedTheme === 'dark' ? 'dark' : 'light')
-      setThemeReady(true)
+      try {
+        const ThemeManager = await themeManagerPromise
+        if (cancelled) return
+        themeRef.current = ThemeManager
+        ThemeManager.setCurrentTheme(
+          resolvedTheme === 'dark' ? 'dark' : 'light'
+        )
+        setThemeReady(true)
+      } catch (error) {
+        // A rejected promise stays rejected, and this one is module-level: one
+        // dropped chunk request would otherwise keep every chart in the app
+        // blank for the rest of the session. Drop it so the next theme change or
+        // remount can try again, and swallow the rejection — leaving it floating
+        // reaches the window as an unhandled rejection with no context.
+        themeManagerPromise = null
+        if (cancelled) return
+        // eslint-disable-next-line no-console
+        console.error('[chart] theme manager failed to load', error)
+      }
     }
-    updateTheme()
+    void updateTheme()
     return () => {
       cancelled = true
     }

@@ -60,9 +60,13 @@ const queryClient = new QueryClient({
         if (failureCount >= 0 && import.meta.env.DEV) return false
         if (failureCount > 3 && import.meta.env.PROD) return false
 
+        // 429 belongs on this list, not because retrying is pointless but
+        // because it is actively harmful: a page like cost analytics fires five
+        // queries at once, so retrying each of them four times turns one
+        // rate-limit hit into ~20 requests and keeps the window closed.
         return !(
           error instanceof AxiosError &&
-          [401, 403].includes(error.response?.status ?? 0)
+          [401, 403, 429].includes(error.response?.status ?? 0)
         )
       },
       // Keep focused tabs from silently re-running heavy pages like logs.
@@ -82,12 +86,14 @@ const queryClient = new QueryClient({
     },
   },
   queryCache: new QueryCache({
+    // Report, never navigate. This hook fires for *every* query in the app, so
+    // routing from here let one failed background query throw the user off the
+    // page they were reading — the crash looked like the page itself had died.
+    // Pages own their error state (see the `failed` branch in cost analytics);
+    // all this handler owes the user is a notice.
     onError: (error) => {
-      if (error instanceof AxiosError) {
-        if (error.response?.status === 500) {
-          toast.error(i18next.t('Internal Server Error!'))
-          router.navigate({ to: '/500' })
-        }
+      if (error instanceof AxiosError && error.response?.status === 500) {
+        toast.error(i18next.t('Internal Server Error!'))
       }
     },
   }),

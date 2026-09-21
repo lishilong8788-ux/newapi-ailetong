@@ -26,8 +26,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { TransferDialog } from '@/features/wallet/components/dialogs/transfer-dialog'
 import { useAffiliate } from '@/features/wallet/hooks'
-import { getSelf } from '@/lib/api'
 import { formatQuota } from '@/lib/format'
+import { selfQueryOptions } from '@/lib/self-query'
 
 /** The sign-up reward figures on `/api/user/self`, in quota units. */
 type LegacyRewards = {
@@ -72,14 +72,9 @@ export function LegacyRewardsCard() {
   // who asks. Only the transfer half of the hook is wanted here.
   const { transferQuota, transferring } = useAffiliate({ fetchCode: false })
 
-  const { data: rewards, refetch } = useQuery<LegacyRewards | null>({
-    queryKey: ['agent-legacy-rewards'],
-    queryFn: async () => {
-      const result = await getSelf()
-      if (!result?.success) return null
-      return (result.data ?? null) as LegacyRewards | null
-    },
-  })
+  const { data: rewards, refetch } = useQuery(
+    selfQueryOptions<LegacyRewards>()
+  )
 
   const available = rewards?.aff_quota ?? 0
   if (available <= 0) return null
