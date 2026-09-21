@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/route_setting"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
@@ -30,6 +31,8 @@ func InitChannelCache() {
 	}
 	newChannelId2channel := make(map[int]*Channel)
 	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
+	newChannel2priceSettings := make(map[int]*dto.ChannelPriceSettings)
+	newChannel2modelMapping := make(map[int]map[string]string)
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
@@ -37,6 +40,17 @@ func InitChannelCache() {
 		if channel.Type == constant.ChannelTypeAdvancedCustom {
 			if config := channel.GetOtherSettings().AdvancedCustom; config != nil {
 				newChannel2advancedCustomConfig[channel.Id] = config
+			}
+		}
+		// Sell-price metadata for every channel, not only type 58: the public
+		// per-channel pricing endpoint and the price-ranked router both need it
+		// per request, and neither may parse `settings` JSON on the hot path.
+		if price, mapping := parseChannelPriceMetadata(channel); price != nil || mapping != nil {
+			if price != nil {
+				newChannel2priceSettings[channel.Id] = price
+			}
+			if mapping != nil {
+				newChannel2modelMapping[channel.Id] = mapping
 			}
 		}
 	}
@@ -76,6 +90,12 @@ func InitChannelCache() {
 		}
 	}
 
+	// Price ranks are computed unconditionally, not only while auto-route is on.
+	// The switch is a runtime option: building the ranks lazily would leave the
+	// first requests after it is flipped with an empty map, which collapses every
+	// priority tier into one and turns failover into a single weighted pool.
+	newModel2channelPriceRank := buildChannelPriceRanks(channels, newChannel2priceSettings, newChannel2modelMapping)
+
 	channelSyncLock.Lock()
 	group2model2channels = newGroup2model2channels
 	//channelsIDM = newChannelId2channel
@@ -94,6 +114,9 @@ func InitChannelCache() {
 	}
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
+	channel2priceSettings = newChannel2priceSettings
+	channel2modelMapping = newChannel2modelMapping
+	model2channelPriceRank = newModel2channelPriceRank
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -140,10 +163,38 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
 	}
 
+	// Which number tiers the candidates. Resolved once, before the loops, so the
+	// switch-off path executes exactly the comparisons it always did.
+	priorityOf := func(channel *Channel) int64 { return channel.GetPriority() }
+	if route_setting.AutoRouteEnabled() {
+		// Only models with a real price spread are ranked (see
+		// buildChannelPriceRanks); everything else keeps the manual priority, so
+		// an unconfigured install behaves identically with the switch on.
+		if _, ranked := model2channelPriceRank[model]; ranked {
+			priorityOf = func(channel *Channel) int64 {
+				rank, ok := channelPriceRankFor(model, channel.Id)
+				if !ok {
+					return channel.GetPriority()
+				}
+				return rank
+			}
+		} else if normalizedModel := ratio_setting.FormatMatchingModelName(model); normalizedModel != model {
+			if _, ranked := model2channelPriceRank[normalizedModel]; ranked {
+				priorityOf = func(channel *Channel) int64 {
+					rank, ok := channelPriceRankFor(normalizedModel, channel.Id)
+					if !ok {
+						return channel.GetPriority()
+					}
+					return rank
+				}
+			}
+		}
+	}
+
 	uniquePriorities := make(map[int]bool)
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
-			uniquePriorities[int(channel.GetPriority())] = true
+			uniquePriorities[int(priorityOf(channel))] = true
 		} else {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
@@ -164,7 +215,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	var targetChannels []*Channel
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
-			if channel.GetPriority() == targetPriority {
+			if priorityOf(channel) == targetPriority {
 				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}
@@ -319,6 +370,31 @@ func CacheUpdateChannel(channel *Channel) {
 			channel2advancedCustomConfig[channel.Id] = config
 		}
 	}
+
+	// Sell-price metadata follows the channel it belongs to. Stale settings here
+	// would keep the catalog advertising a discount the operator just removed,
+	// and keep the router ranking on it.
+	if channel2priceSettings == nil {
+		channel2priceSettings = make(map[int]*dto.ChannelPriceSettings)
+	}
+	if channel2modelMapping == nil {
+		channel2modelMapping = make(map[int]map[string]string)
+	}
+	delete(channel2priceSettings, channel.Id)
+	delete(channel2modelMapping, channel.Id)
+	if price, mapping := parseChannelPriceMetadata(channel); price != nil || mapping != nil {
+		if price != nil {
+			channel2priceSettings[channel.Id] = price
+		}
+		if mapping != nil {
+			channel2modelMapping[channel.Id] = mapping
+		}
+	}
+	// Price ranks are cross-channel by construction — one channel's new discount
+	// changes every other channel's tier for the same model — so they cannot be
+	// patched here. The next InitChannelCache recomputes them; until then the
+	// router keeps using the previous ranking, which is a consistent snapshot
+	// rather than a half-updated one.
 	logger.LogDebug(nil, "CacheUpdateChannel after: id=%d, name=%s, status=%d, polling_index=%d", channel.Id, channel.Name, channel.Status, channel.ChannelInfo.MultiKeyPollingIndex)
 	// Lock ordering: do NOT hold channelSyncLock while calling
 	// InvalidatePricingCache. GetPricing acquires updatePricingLock first and then

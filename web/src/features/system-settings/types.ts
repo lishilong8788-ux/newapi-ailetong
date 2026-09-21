@@ -238,6 +238,16 @@ export type ModelSettings = {
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
+  /**
+   * Prefer the cheapest channel among those serving one model. Separate from
+   * `cost_setting.*`, which is about accounting for what upstreams charged:
+   * this one decides which upstream a live request actually reaches.
+   *
+   * Optional for the same reason as `pricing_setting.tag_registry`: the model
+   * editor hand-builds a `ModelSettings` for pricing ratios only. The settings
+   * page supplies a concrete `false` so the option is still read.
+   */
+  'route_setting.auto_route_enabled'?: boolean
   RetryTimes: number
   ChannelDisableThreshold: string
   AutomaticDisableChannelEnabled: boolean

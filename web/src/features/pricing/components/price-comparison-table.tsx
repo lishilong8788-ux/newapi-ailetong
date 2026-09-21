@@ -138,60 +138,76 @@ export const PriceComparisonTable = memo(function PriceComparisonTable(
         </thead>
 
         <tbody>
-          {comparison.rows.map((row, index) => (
-            <tr
-              key={row.key}
-              className={index > 0 ? 'border-border/30 border-t' : undefined}
-            >
-              <th
-                scope='row'
-                className={cn(
-                  'text-foreground w-0 pr-2 pl-3 text-left text-[13px] font-bold whitespace-nowrap',
-                  cellY
-                )}
+          {comparison.rows.map((row, index) => {
+            // Both the pill and the strikethrough hang off this one value, so the
+            // two can never disagree about whether a saving exists. It is also
+            // the last line of defence for the discount claim: `formatDiscount`
+            // refuses a ratio at or above 1, which covers a row that reached this
+            // table with the platform price above the vendor's. Those rows keep
+            // the `-`, and the neighbouring note about channels pricing cached
+            // reads above the direct rate carries the fact instead. A pill is the
+            // wrong place for it — on a page every visitor can see, "22.6折" is
+            // nonsense and "-126% off" is a self-inflicted wound.
+            const discountText =
+              row.discountRatio == null
+                ? null
+                : formatDiscount(row.discountRatio, t)
+
+            return (
+              <tr
+                key={row.key}
+                className={index > 0 ? 'border-border/30 border-t' : undefined}
               >
-                {t(row.labelKey)}
-              </th>
-              {/* The price the customer actually pays is the card's visual
+                <th
+                  scope='row'
+                  className={cn(
+                    'text-foreground w-0 pr-2 pl-3 text-left text-[13px] font-bold whitespace-nowrap',
+                    cellY
+                  )}
+                >
+                  {t(row.labelKey)}
+                </th>
+                {/* The price the customer actually pays is the card's visual
                   anchor, so it carries the accent colour and the most weight. */}
-              <td
-                className={cn(
-                  'text-right font-mono text-[15px] font-bold text-rose-600 tabular-nums dark:text-rose-400',
-                  platformX,
-                  cellY
-                )}
-              >
-                {row.platform}
-              </td>
-              {showComparison && (
-                <>
-                  {/* Struck through only when the platform price actually beats
+                <td
+                  className={cn(
+                    'text-right font-mono text-[15px] font-bold text-rose-600 tabular-nums dark:text-rose-400',
+                    platformX,
+                    cellY
+                  )}
+                >
+                  {row.platform}
+                </td>
+                {showComparison && (
+                  <>
+                    {/* Struck through only when the platform price actually beats
                       it. A strikethrough on a price we do not undercut would
                       claim a saving that is not there. */}
-                  <td
-                    className={cn(
-                      'text-muted-foreground/45 px-2 text-right font-mono text-[13px] tabular-nums',
-                      row.discountRatio != null && 'line-through',
-                      cellY
-                    )}
-                  >
-                    {row.official}
-                  </td>
-                  <td className={cn('pr-3 pl-2 text-center', cellY)}>
-                    {row.discountRatio == null ? (
-                      <span className='text-muted-foreground/45 font-mono text-[13px]'>
-                        -
-                      </span>
-                    ) : (
-                      <span className='inline-flex items-center rounded-md bg-orange-500/12 px-2 py-0.5 text-[13px] font-semibold text-orange-600 tabular-nums dark:bg-orange-400/15 dark:text-orange-400'>
-                        {formatDiscount(row.discountRatio, t)}
-                      </span>
-                    )}
-                  </td>
-                </>
-              )}
-            </tr>
-          ))}
+                    <td
+                      className={cn(
+                        'text-muted-foreground/45 px-2 text-right font-mono text-[13px] tabular-nums',
+                        discountText != null && 'line-through',
+                        cellY
+                      )}
+                    >
+                      {row.official}
+                    </td>
+                    <td className={cn('pr-3 pl-2 text-center', cellY)}>
+                      {discountText == null ? (
+                        <span className='text-muted-foreground/45 font-mono text-[13px]'>
+                          -
+                        </span>
+                      ) : (
+                        <span className='inline-flex items-center rounded-md bg-orange-500/12 px-2 py-0.5 text-[13px] font-semibold text-orange-600 tabular-nums dark:bg-orange-400/15 dark:text-orange-400'>
+                          {discountText}
+                        </span>
+                      )}
+                    </td>
+                  </>
+                )}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

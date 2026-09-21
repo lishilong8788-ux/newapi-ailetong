@@ -20,7 +20,11 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 
 import { PriceComparisonTable } from '../components/price-comparison-table'
-import { getPriceComparison } from '../lib/price-comparison'
+import {
+  getPriceComparison,
+  type PriceComparison,
+  type PriceComparisonRow,
+} from '../lib/price-comparison'
 import type { PricingModel } from '../types'
 
 // These tests cover the wiring between the comparison data and the rendered
@@ -51,6 +55,33 @@ function renderTable(model: PricingModel) {
     />
   )
   return comparison
+}
+
+/**
+ * Render straight from hand-built rows, bypassing `getPriceComparison`.
+ *
+ * `calcDiscountRatio` never emits a ratio at or above 1, so going through a model
+ * cannot reach the table's own handling of one. The table is a shared component
+ * with an exported prop type, and the ratios it is handed come from two builders
+ * plus whatever a future caller writes, so the ratio arrives as untrusted input
+ * and is tested as such.
+ */
+function renderRows(rows: PriceComparisonRow[]) {
+  const comparison: PriceComparison = {
+    rows,
+    ratio: 1,
+    hasDiscount: false,
+    hasOfficialPrice: true,
+    officialDiscountRatio: null,
+    isPerRequest: false,
+  }
+  render(
+    <PriceComparisonTable
+      comparison={comparison}
+      unitLabel='平台价/M'
+      officialLabel='官方价/M'
+    />
+  )
 }
 
 /** The data row for a price type, found via its label cell. */
@@ -147,5 +178,65 @@ describe('PriceComparisonTable official price columns', () => {
       expect(cells[1]).toHaveTextContent('-')
       expect(cells[2]).toHaveTextContent('-')
     }
+  })
+})
+
+describe('PriceComparisonTable discount pill above list price', () => {
+  // This table is on the public catalog, so a ratio above 1 has no good pill:
+  // "2.26折" claims a 77% saving and "-126% off" advertises the markup. The cell
+  // stays a `-` and the note under the channel list carries the fact.
+  test('leaves the discount cell empty for a platform price above official', () => {
+    renderRows([
+      {
+        key: 'cache',
+        labelKey: 'Cached',
+        platform: '¥0.678',
+        official: '¥0.3',
+        // 0.678 / 0.3 — the channel whose cached reads cost more than buying
+        // direct.
+        discountRatio: 2.26,
+      },
+    ])
+
+    const cells = within(rowFor('Cached')).getAllByRole('cell')
+    expect(cells[2]).toHaveTextContent('-')
+    expect(cells[2].textContent).not.toContain('折')
+    expect(cells[2].textContent).not.toContain('off')
+    // And no strikethrough: the official price is the cheaper of the two.
+    expect(cells[1].className).not.toContain('line-through')
+  })
+
+  test('leaves the discount cell empty at exactly list price', () => {
+    renderRows([
+      {
+        key: 'input',
+        labelKey: 'Input',
+        platform: '$15',
+        official: '$15',
+        discountRatio: 1,
+      },
+    ])
+
+    const cells = within(rowFor('Input')).getAllByRole('cell')
+    expect(cells[2]).toHaveTextContent('-')
+    expect(cells[1].className).not.toContain('line-through')
+  })
+
+  test('still renders the pill for a real discount', () => {
+    renderRows([
+      {
+        key: 'input',
+        labelKey: 'Input',
+        platform: '$6.6',
+        official: '$15',
+        discountRatio: 0.44,
+      },
+    ])
+
+    const cells = within(rowFor('Input')).getAllByRole('cell')
+    // The test env runs the English catalog; the same ratio reads "4.4折" under
+    // `zh`, pinned in discount-locale.test.ts.
+    expect(cells[2]).toHaveTextContent('56% off')
+    expect(cells[1].className).toContain('line-through')
   })
 })

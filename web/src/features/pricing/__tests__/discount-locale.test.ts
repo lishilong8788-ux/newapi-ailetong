@@ -65,6 +65,26 @@ describe('discount rendering against the real catalogues', () => {
     expect(formatDiscount(0.4, translateEn)).toBe('60% off')
   })
 
+  test('refuses a ratio that is not a discount, in either convention', () => {
+    // The live row that prompted this: a channel pricing cached reads at ¥0.678
+    // against a ¥0.3 vendor rate. Neither catalogue could state it — zh printed
+    // "22.6折", off the end of a scale that stops at 10, and en printed
+    // "-126% off", which advertises the markup. The markup is real, but it is not
+    // a discount, so there is no discount string to render.
+    expect(formatDiscount(2.26, translateZh)).toBeNull()
+    expect(formatDiscount(2.26, translateEn)).toBeNull()
+
+    // Exactly 1 is the boundary and it is on the null side: paying list price is
+    // not a saving. "10折" and "0% off" are both true and both worthless.
+    expect(formatDiscount(1, translateZh)).toBeNull()
+    expect(formatDiscount(1, translateEn)).toBeNull()
+
+    // Just inside the boundary still renders, so the guard cannot quietly widen
+    // into real discounts.
+    expect(formatDiscount(0.99, translateZh)).toBe('9.9折')
+    expect(formatDiscount(0.99, translateEn)).toBe('1% off')
+  })
+
   test('every key the official price sync adds is translated in Chinese', () => {
     // These are typed straight into the catalogues by hand (`i18n:sync` only
     // back-fills from English), so a missed paste shows up as English text on a

@@ -18,3 +18,4 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export { useFilters } from './use-filters'
 export { usePricingData } from './use-pricing-data'
+export { useChannelPricing } from './use-channel-pricing'

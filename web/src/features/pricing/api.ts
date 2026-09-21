@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import type { PricingData } from './types'
+import type { ChannelPricingData, PricingData } from './types'
 
 // ----------------------------------------------------------------------------
 // Pricing APIs
@@ -27,5 +27,21 @@ import type { PricingData } from './types'
 // Get model pricing data
 export async function getPricing(): Promise<PricingData> {
   const res = await api.get('/api/pricing')
+  return res.data
+}
+
+/**
+ * Per-channel price tiers for one model, cheapest first.
+ *
+ * Sell side only. The admin cost endpoints (`/api/cost/*`) carry purchase prices
+ * and margin and are gated accordingly; this one answers to whoever can see the
+ * catalog, so it must never be asked to fill in a cost column.
+ */
+export async function getModelChannelPricing(
+  modelName: string
+): Promise<ChannelPricingData> {
+  const res = await api.get('/api/pricing/channels', {
+    params: { model: modelName },
+  })
   return res.data
 }

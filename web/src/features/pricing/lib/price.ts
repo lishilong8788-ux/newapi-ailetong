@@ -36,10 +36,9 @@ export function formatGroupRatio(
   ratio: number,
   t: (key: string, options?: Record<string, unknown>) => string
 ): string {
-  if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) {
-    return `${ratio}x`
-  }
-  return formatDiscount(ratio, t)
+  // `formatDiscount` owns the "is this even a discount" test, so the sidebar and
+  // the badges can never disagree about where the boundary is.
+  return formatDiscount(ratio, t) ?? `${ratio}x`
 }
 
 /**

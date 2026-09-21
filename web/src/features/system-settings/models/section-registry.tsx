@@ -85,6 +85,8 @@ const MODELS_SECTIONS = [
     build: (settings: ModelSettings) => (
       <RoutingReliabilitySection
         defaultValues={{
+          'route_setting.auto_route_enabled':
+            settings['route_setting.auto_route_enabled'] ?? false,
           RetryTimes: settings.RetryTimes,
           ChannelDisableThreshold: settings.ChannelDisableThreshold,
           AutomaticDisableChannelEnabled:

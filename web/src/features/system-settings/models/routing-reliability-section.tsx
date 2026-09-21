@@ -76,6 +76,9 @@ const createRoutingReliabilitySchema = (
 ) =>
   z
     .object({
+      route_setting: z.object({
+        auto_route_enabled: z.boolean(),
+      }),
       RetryTimes: z.coerce.number().min(0).max(10),
       ChannelDisableThreshold: numericString,
       AutomaticDisableChannelEnabled: z.boolean(),
@@ -136,6 +139,7 @@ type RoutingReliabilityFormInput = z.input<RoutingReliabilitySchema>
 
 type RoutingReliabilitySectionProps = {
   defaultValues: {
+    'route_setting.auto_route_enabled': boolean
     RetryTimes: number
     ChannelDisableThreshold: string
     AutomaticDisableChannelEnabled: boolean
@@ -155,6 +159,7 @@ function normalizeLineEndings(value: string) {
 }
 
 type NormalizedRoutingReliabilityValues = {
+  'route_setting.auto_route_enabled': boolean
   RetryTimes: number
   ChannelDisableThreshold: string
   AutomaticDisableChannelEnabled: boolean
@@ -178,6 +183,9 @@ function normalizeChannelTestMode(value?: string): ChannelTestMode {
 const buildFormDefaults = (
   defaults: RoutingReliabilitySectionProps['defaultValues']
 ): RoutingReliabilityFormInput => ({
+  route_setting: {
+    auto_route_enabled: defaults['route_setting.auto_route_enabled'],
+  },
   RetryTimes: defaults.RetryTimes ?? 0,
   ChannelDisableThreshold: defaults.ChannelDisableThreshold ?? '',
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
@@ -203,6 +211,8 @@ const buildFormDefaults = (
 const normalizeDefaults = (
   defaults: RoutingReliabilitySectionProps['defaultValues']
 ): NormalizedRoutingReliabilityValues => ({
+  'route_setting.auto_route_enabled':
+    defaults['route_setting.auto_route_enabled'],
   RetryTimes: defaults.RetryTimes ?? 0,
   ChannelDisableThreshold: (defaults.ChannelDisableThreshold ?? '').trim(),
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
@@ -230,6 +240,7 @@ const normalizeDefaults = (
 const normalizeFormValues = (
   values: RoutingReliabilityFormValues
 ): NormalizedRoutingReliabilityValues => ({
+  'route_setting.auto_route_enabled': values.route_setting.auto_route_enabled,
   RetryTimes: values.RetryTimes,
   ChannelDisableThreshold: values.ChannelDisableThreshold.trim(),
   AutomaticDisableChannelEnabled: values.AutomaticDisableChannelEnabled,
@@ -337,6 +348,33 @@ export function RoutingReliabilitySection({
             onSave={form.handleSubmit(onSubmit)}
             isSaving={updateOption.isPending}
           />
+
+          <div className='grid min-w-0 gap-6 lg:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='route_setting.auto_route_enabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Lowest-price-first routing')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        "When several channels serve the same model at distinguishable prices, prefer the cheapest one. Falls back to the operator's channel order for models whose channels have no price difference."
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+          </div>
+
+          <Separator />
 
           <div className='flex min-w-0 flex-col gap-4'>
             <div className='flex flex-col gap-1'>

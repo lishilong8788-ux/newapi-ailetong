@@ -1272,7 +1272,12 @@ export function useChannelsColumns(
                 </span>
               ) : (
                 <span className='text-xs font-medium tabular-nums'>
-                  {formatDiscount(discount, t)}
+                  {/* 10折 is a legal setting and out-of-range JSON is possible
+                      through the raw editor, so this cell can hold a ratio that
+                      is no discount. Admins get the multiplier rather than a
+                      blank: `1x` says "sells at list price", which is what was
+                      configured, and hiding it would read as unconfigured. */}
+                  {formatDiscount(discount, t) ?? `${discount}x`}
                 </span>
               )}
               {modelOverrides > 0 && (

@@ -288,7 +288,8 @@ export function parseTimestampFromInput(value: string): number {
 // ============================================================================
 
 /**
- * Render a billing ratio (0 < ratio < 1) as a localized discount.
+ * Render a billing ratio as a localized discount, or null when the ratio is not
+ * a discount at all.
  *
  * Discount conventions differ by locale and are not a translation of a single
  * number: Chinese 折 states the fraction still paid (0.79 → 7.9折), while
@@ -296,12 +297,27 @@ export function parseTimestampFromInput(value: string): number {
  * i18next so each locale's string uses whichever it needs; unused interpolation
  * values are ignored.
  *
+ * Above 1 neither convention survives, and they fail in different ways: 折 runs
+ * off its own scale, which is defined over 0-10, so a platform price 2.26x the
+ * vendor's reads "22.6折" — and truncated or skim-read as "2.26折" it inverts the
+ * claim into 77% off. "% off" instead goes negative, "-126% off", advertising
+ * the markup. Both came out of one real row, a channel pricing cached reads at
+ * ¥0.678 against a ¥0.3 vendor rate. At exactly 1 the output is merely useless
+ * rather than false ("10折", "0% off"), but paying list price is not a saving,
+ * so it is refused on the same terms.
+ *
+ * Null rather than an empty string, so a caller that forgets to handle the
+ * absence fails at the type level instead of rendering a blank badge. What to
+ * put there is the caller's call: a customer-facing surface drops the element,
+ * an admin surface has the raw multiplier (`1x`) to fall back on.
+ *
  * `toFixed` trims binary float artifacts (0.79 * 10 → 7.900000000000001).
  */
 export function formatDiscount(
   ratio: number,
   t: (key: string, options?: Record<string, unknown>) => string
-): string {
+): string | null {
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) return null
   return t('{{percent}}% off', {
     percent: Number(((1 - ratio) * 100).toFixed(2)),
     tenths: Number((ratio * 10).toFixed(2)),

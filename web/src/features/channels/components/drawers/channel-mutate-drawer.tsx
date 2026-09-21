@@ -5172,12 +5172,19 @@ export function ChannelMutateDrawer({
                                             ? t(
                                                 'Applies to every model on this channel unless overridden below. Currently {{discount}}.',
                                                 {
-                                                  discount: formatDiscount(
-                                                    sellDiscountTenthsToFraction(
-                                                      currentPriceDiscount
-                                                    ),
-                                                    t
-                                                  ),
+                                                  // 10折 is in range and is not a
+                                                  // discount, so the multiplier
+                                                  // stands in — an interpolated
+                                                  // null would leave the sentence
+                                                  // reading "Currently .".
+                                                  discount:
+                                                    formatDiscount(
+                                                      sellDiscountTenthsToFraction(
+                                                        currentPriceDiscount
+                                                      ),
+                                                      t
+                                                    ) ??
+                                                    `${sellDiscountTenthsToFraction(currentPriceDiscount)}x`,
                                                 }
                                               )
                                             : t(

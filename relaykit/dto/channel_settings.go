@@ -156,6 +156,56 @@ const (
 	MaxSellDiscount = 1.0
 )
 
+// PriceSource marks which rung of the discount chain produced a sell price.
+// Reports must stratify on it: traffic still on the legacy ratio path and
+// traffic repriced off the vendor list price are not the same number, and
+// averaging them hides exactly the misconfiguration an operator needs to see.
+const (
+	PriceSourceExact    = "exact"    // 渠道 + 模型精确折扣
+	PriceSourceChannel  = "channel"  // 渠道级统一折扣
+	PriceSourceFallback = "fallback" // 未配折扣或官网价缺失 —— 走 modelRatio × group_ratio
+)
+
+// ValidSellDiscount screens a configured discount. Pointer-nil means "not
+// configured" and is a legal state — the caller falls through to the next rung
+// — so it is not an error here, just a miss.
+func ValidSellDiscount(d *float64) bool {
+	if d == nil {
+		return false
+	}
+	v := *d
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return false
+	}
+	return v >= MinSellDiscount && v <= MaxSellDiscount
+}
+
+// ResolveDiscount walks the discount chain for one upstream model and returns
+// the fraction of the vendor list price to charge.
+//
+// An unresolvable price reports ok=false and the caller must keep the existing
+// modelRatio × group_ratio result untouched — a zero here would mean giving the
+// request away. It lives on the settings type rather than in service/ so the
+// channel cache can rank channels by price without importing service, which
+// imports model.
+func (p *ChannelPriceSettings) ResolveDiscount(upstreamModel string) (float64, string, bool) {
+	if p == nil {
+		return 0, PriceSourceFallback, false
+	}
+
+	if len(p.Models) > 0 {
+		if d, ok := p.Models[upstreamModel]; ok && ValidSellDiscount(d) {
+			return *d, PriceSourceExact, true
+		}
+	}
+
+	if ValidSellDiscount(p.Discount) {
+		return *p.Discount, PriceSourceChannel, true
+	}
+
+	return 0, PriceSourceFallback, false
+}
+
 // Validate rejects discounts that would misbill, so a hand-rolled API call
 // cannot install what the form refuses. Resolution treats an out-of-range
 // discount as "not configured" and silently keeps the legacy price — correct

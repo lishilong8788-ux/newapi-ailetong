@@ -34,10 +34,16 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { DEFAULT_TOKEN_UNIT } from '../constants'
+import { useChannelPricing } from '../hooks/use-channel-pricing'
 import { usePricingData } from '../hooks/use-pricing-data'
 import type { PricingModel, TokenUnit } from '../types'
+import { AutoRouteCard } from './auto-route-card'
+import { AutoRouteSettings } from './auto-route-settings'
+import { ChannelPriceCards } from './channel-price-cards'
 import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { GroupPriceCards } from './group-price-cards'
 import { ModelApiQuickref } from './model-api-quickref'
@@ -115,6 +121,14 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
     props.model.billing_mode === 'tiered_expr' &&
     Boolean(props.model.billing_expr)
 
+  // Per-channel tiers load separately from the catalog and are allowed to come
+  // back empty: a model whose channels have no configured sell discount, or an
+  // install where the endpoint is unreachable, still renders every section
+  // below. Nothing here blocks on `isLoading` for that reason.
+  const { routes, autoRoute } = useChannelPricing(props.model.model_name)
+  const user = useAuthStore((state) => state.auth.user)
+  const canManageRouting = Boolean(user?.role && user.role >= ROLE.ADMIN)
+
   return (
     <div className='@container/details space-y-5'>
       <ModelDetailsHeader
@@ -165,6 +179,28 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             />
           </section>
 
+          {/* One card per channel, in the router's own candidate order. Sits
+              below "Your price" because the group multiplier above is what the
+              reader is actually billed at; these tiers are the supply side of
+              the same number, and they price at group ratio 1 so the two
+              sections do not apply the same multiplier twice. */}
+          {routes.length > 0 && (
+            <section>
+              <SectionTitle>{t('Price by channel')}</SectionTitle>
+              <AutoRouteCard routes={routes} autoRoute={autoRoute} />
+              <div className='mt-3'>
+                <ChannelPriceCards
+                  model={props.model}
+                  routes={routes}
+                  priceRate={props.priceRate}
+                  usdExchangeRate={props.usdExchangeRate}
+                  tokenUnit={props.tokenUnit}
+                  showRechargePrice={showRechargePrice}
+                />
+              </div>
+            </section>
+          )}
+
           <ModelApiQuickref
             model={props.model}
             endpointMap={props.endpointMap}
@@ -178,10 +214,24 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
           <ModelDetailsCatalog model={props.model} />
         </TabsContent>
 
-        <TabsContent value='performance' className='outline-none'>
+        <TabsContent value='performance' className='space-y-6 outline-none'>
           <ModelDetailsPerformance
             model={props.model}
             usableGroup={props.usableGroup}
+          />
+
+          {/* Which channel serves a request is a performance question as much
+              as a price one, so the routing policy and the candidate order live
+              next to the latency numbers rather than under the price cards. */}
+          <AutoRouteSettings
+            model={props.model}
+            routes={routes}
+            autoRoute={autoRoute}
+            priceRate={props.priceRate}
+            usdExchangeRate={props.usdExchangeRate}
+            tokenUnit={props.tokenUnit}
+            showRechargePrice={showRechargePrice}
+            canManage={canManageRouting}
           />
         </TabsContent>
 

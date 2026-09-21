@@ -126,6 +126,102 @@ export type PricingData = {
   auto_groups: string[]
 }
 
+/**
+ * Coarse supplier category for a channel, as classified by the backend. The raw
+ * channel type stays server-side: a category is as much as a catalog reader
+ * needs, and the adaptor name would identify the upstream provider.
+ */
+export type ChannelCategory =
+  | 'vendor'
+  | 'public_cloud'
+  | 'aggregator'
+  | 'self_hosted'
+  | 'other'
+
+/** Which rung of the discount chain produced a channel's price. */
+export type ChannelPriceSource = 'exact' | 'channel' | 'fallback'
+
+/**
+ * What one channel charges for one model. `quota_type` picks the unit: a
+ * per-token row carries ratios in exactly the same unit as
+ * `PricingModel.model_ratio`, a per-request row carries `model_price` in USD.
+ *
+ * Ratios rather than formatted prices so the per-channel card reuses the
+ * catalog's existing price pipeline (token unit, currency, recharge rate)
+ * instead of growing a second formatter that drifts from it.
+ */
+export type ChannelPrice = {
+  /** The model name this channel sends upstream, after `model_mapping`. */
+  upstream_model?: string
+  /**
+   * Configured fraction of the vendor list price. Absent means nobody
+   * configured one — which is not the same as 1.0, where an operator
+   * deliberately declared "sell at list price".
+   */
+  discount?: number
+  price_source: ChannelPriceSource
+  model_ratio: number
+  completion_ratio?: number
+  cache_ratio?: number
+  /**
+   * Neither a discount nor a platform ratio exists, so `model_ratio` is a
+   * fallback constant and must render as `-` rather than as a price.
+   */
+  price_unset?: boolean
+  /**
+   * 0 per-token, 1 per-request — the same vocabulary as
+   * `PricingModel.quota_type`. A per-request row prices from `model_price` and
+   * leaves `model_ratio` at 0, so a reader that only consults the ratio shows
+   * nothing for a model that is in fact priced.
+   */
+  quota_type?: number
+  /**
+   * USD per call, when `quota_type` says per-request. Sent even at 0: a free
+   * call is a price rather than a missing one, which is why the server omits
+   * `omitempty` on this field alone.
+   */
+  model_price?: number
+}
+
+/** One upstream line that can serve a model. */
+export type ChannelRoute = {
+  channel_id: number
+  /**
+   * Admin-only. Operators name channels after suppliers, so the public endpoint
+   * omits it and the card falls back to `code` / `#id`.
+   */
+  name?: string
+  /** Short line label from the `model_mapping` suffix, e.g. `hs4`. */
+  code?: string
+  category: ChannelCategory
+  /** Last channel-test round trip in ms; absent when never tested. */
+  latency_ms?: number
+  /** Viewer-reachable groups this channel serves the model in. */
+  groups?: string[]
+  price: ChannelPrice
+}
+
+/**
+ * Routing policy for one model.
+ *
+ * `enabled && !ranked` is a real and common state: the switch is on but no
+ * channel has a discount configured, so there is no price spread to order on and
+ * the operator's manual priority still decides. The UI must not promise
+ * price-first routing there.
+ */
+export type AutoRouteInfo = {
+  enabled: boolean
+  mode: 'lowest_price' | 'manual'
+  ranked: boolean
+}
+
+export type ChannelPricingData = {
+  success: boolean
+  message?: string
+  data: ChannelRoute[]
+  auto_route: AutoRouteInfo
+}
+
 export type TokenUnit = 'M' | 'K'
 export type PriceType =
   | 'input'

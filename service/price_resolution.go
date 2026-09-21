@@ -19,39 +19,15 @@ import (
 // Reports must stratify on it: traffic still on the legacy ratio path and
 // traffic repriced off the vendor list price are not the same number, and
 // averaging them hides exactly the misconfiguration an operator needs to see.
-const (
-	PriceSourceExact    = "exact"    // 渠道 + 模型精确折扣
-	PriceSourceChannel  = "channel"  // 渠道级统一折扣
-	PriceSourceFallback = "fallback" // 未配折扣或官网价缺失 —— 走 modelRatio × group_ratio
-)
-
-// Discount bounds. A discount of 0 is not "free by configuration", it is an
-// operator who typed into the wrong box: every token of every model on that
-// channel would ship at no charge. Reject it outright rather than honour it —
-// the legitimate way to give a model away is a free-model price rule, which
-// already exists and is visible in the catalog.
 //
-// The upper bound is 1.0 because the baseline is the vendor list price and
-// selling above list has no product meaning here; an operator who wants that
-// is describing a markup, which belongs on the cost side.
+// The values live on dto.ChannelPriceSettings so model/ can rank channels by
+// price without importing service (which imports model). These aliases keep the
+// existing call sites and tests reading off one vocabulary.
 const (
-	minSellDiscount = 0.001 // 0.01折，实质是防手滑的下限而非业务下限
-	maxSellDiscount = 1.0   // 10折 = 官网原价
+	PriceSourceExact    = dto.PriceSourceExact    // 渠道 + 模型精确折扣
+	PriceSourceChannel  = dto.PriceSourceChannel  // 渠道级统一折扣
+	PriceSourceFallback = dto.PriceSourceFallback // 未配折扣或官网价缺失 —— 走 modelRatio × group_ratio
 )
-
-// validSellDiscount screens a configured discount. Pointer-nil means "not
-// configured" and is a legal state — the caller falls through to the next rung
-// — so it is not an error here, just a miss.
-func validSellDiscount(d *float64) bool {
-	if d == nil {
-		return false
-	}
-	v := *d
-	if math.IsNaN(v) || math.IsInf(v, 0) {
-		return false
-	}
-	return v >= minSellDiscount && v <= maxSellDiscount
-}
 
 // ResolveSellDiscount walks the discount chain for one upstream model and
 // returns the fraction of the vendor list price to charge.
@@ -64,21 +40,7 @@ func validSellDiscount(d *float64) bool {
 // existing modelRatio × group_ratio result untouched. Never substitute a
 // number of our own invention into a customer's bill.
 func ResolveSellDiscount(price *dto.ChannelPriceSettings, upstreamModel string) (float64, string, bool) {
-	if price == nil {
-		return 0, PriceSourceFallback, false
-	}
-
-	if len(price.Models) > 0 {
-		if d, ok := price.Models[upstreamModel]; ok && validSellDiscount(d) {
-			return *d, PriceSourceExact, true
-		}
-	}
-
-	if validSellDiscount(price.Discount) {
-		return *price.Discount, PriceSourceChannel, true
-	}
-
-	return 0, PriceSourceFallback, false
+	return price.ResolveDiscount(upstreamModel)
 }
 
 // ComputeListPriceQuota prices a request at the vendor's list rates, in quota
