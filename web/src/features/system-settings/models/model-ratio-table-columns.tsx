@@ -44,6 +44,7 @@ type BuildModelRatioColumnsOptions = {
   onEdit: (model: ModelRow) => void
   deleteDisabled?: boolean
   t: (key: string) => string
+  currencySymbol?: string
 }
 
 export function buildModelRatioColumns({
@@ -51,6 +52,7 @@ export function buildModelRatioColumns({
   onEdit,
   deleteDisabled,
   t,
+  currencySymbol = '$',
 }: BuildModelRatioColumnsOptions): ColumnDef<ModelRow>[] {
   return [
     {
@@ -130,16 +132,16 @@ export function buildModelRatioColumns({
       cell: ({ row }) => (
         <div className='flex min-w-0 flex-col gap-1'>
           <span className='truncate font-medium'>
-            {getPriceSummary(row.original, t)}
+            {getPriceSummary(row.original, t, currencySymbol)}
           </span>
           <span className='text-muted-foreground truncate text-xs'>
-            {getPriceDetail(row.original, t)}
+            {getPriceDetail(row.original, t, currencySymbol)}
           </span>
         </div>
       ),
       sortingFn: (rowA, rowB) =>
-        getPriceSummary(rowA.original, t).localeCompare(
-          getPriceSummary(rowB.original, t)
+        getPriceSummary(rowA.original, t, currencySymbol).localeCompare(
+          getPriceSummary(rowB.original, t, currencySymbol)
         ),
       meta: { label: t('Price summary') },
     },

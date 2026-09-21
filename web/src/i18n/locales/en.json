@@ -2074,7 +2074,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Related Projects",
     "footer.defaultCopyright": "All rights reserved.",
-    "footer.newapi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
+    "footer.new\u0061pi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment",
     "For private deployments, format: https://fastgpt.run/api/openapi": "For private deployments, format: https://fastgpt.run/api/openapi",
     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.",
@@ -6293,6 +6293,20 @@
     "Candidate order": "Candidate order",
     "View all settings": "View all settings",
     "Lowest-price-first routing": "Lowest-price-first routing",
-    "When several channels serve the same model at distinguishable prices, prefer the cheapest one. Falls back to the operator's channel order for models whose channels have no price difference.": "When several channels serve the same model at distinguishable prices, prefer the cheapest one. Falls back to the operator's channel order for models whose channels have no price difference."
+    "When several channels serve the same model at distinguishable prices, prefer the cheapest one. Falls back to the operator's channel order for models whose channels have no price difference.": "When several channels serve the same model at distinguishable prices, prefer the cheapest one. Falls back to the operator's channel order for models whose channels have no price difference.",
+    "second": "second",
+    "per second": "per second",
+    "Per second": "Per second",
+    "Per call": "Per call",
+    "Billing unit": "Billing unit",
+    "Fixed per-second price": "Fixed per-second price",
+    "Each request is charged the price below once, regardless of tokens used.": "Each request is charged the price below once, regardless of tokens used.",
+    "Video models: the price below is multiplied by the generated duration in seconds.": "Video models: the price below is multiplied by the generated duration in seconds.",
+    "USD price per second of generated video. Actual charge = price x duration.": "USD price per second of generated video. Actual charge = price x duration.",
+    "Example: a {{seconds}}s video costs about {{total}}.": "Example: a {{seconds}}s video costs about {{total}}.",
+    "Price per 1M input tokens ({{currency}}).": "Price per 1M input tokens ({{currency}}).",
+    "Price per 1M tokens ({{currency}}).": "Price per 1M tokens ({{currency}}).",
+    "Cost per request ({{currency}}), regardless of tokens used.": "Cost per request ({{currency}}), regardless of tokens used.",
+    "Price per second of generated video ({{currency}}). Actual charge = price x duration.": "Price per second of generated video ({{currency}}). Actual charge = price x duration."
   }
 }

@@ -49,9 +49,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
 import { useMediaQuery } from '@/hooks'
+import { useBillingCurrency } from '@/lib/currency'
 
 import { safeJsonParse } from '../utils/json-parser'
-import type { PricingMode } from './model-pricing-core'
+import {
+  PRICE_UNIT_PER_CALL,
+  PRICE_UNIT_PER_SECOND,
+  type PriceUnit,
+  type PricingMode,
+} from './model-pricing-core'
 import {
   ModelPricingEditorPanel,
   type ModelPricingEditorPanelHandle,
@@ -136,6 +142,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
   ref
 ) {
   const { t } = useTranslation()
+  const { symbol: currencySymbol } = useBillingCurrency()
   const isMobile = useMediaQuery('(max-width: 767px)')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -271,11 +278,15 @@ const ModelRatioVisualEditorComponent = forwardRef<
     () =>
       models.reduce(
         (acc, model) => {
-          const mode =
+          let mode: 'per-token' | 'per-request' | 'tiered_expr' = 'per-token'
+          if (model.billingMode === PRICE_UNIT_PER_SECOND) {
+            mode = 'per-request'
+          } else if (
             model.billingMode === 'per-request' ||
             model.billingMode === 'tiered_expr'
-              ? model.billingMode
-              : 'per-token'
+          ) {
+            mode = model.billingMode
+          }
           acc[mode] += 1
           return acc
         },
@@ -292,6 +303,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
     (model: ModelRow) => {
       const editableModel = model.draft ?? model.saved ?? model
       let editBillingMode: PricingMode = 'per-token'
+      const savedUnit: PriceUnit =
+        editableModel.billingMode === PRICE_UNIT_PER_SECOND
+          ? PRICE_UNIT_PER_SECOND
+          : PRICE_UNIT_PER_CALL
       if (editableModel.billingMode === 'tiered_expr') {
         editBillingMode = 'tiered_expr'
       } else if (editableModel.price && editableModel.price !== '') {
@@ -310,6 +325,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingMode: editBillingMode,
         billingExpr: editableModel.billingExpr,
         requestRuleExpr: editableModel.requestRuleExpr,
+        priceUnit: savedUnit,
       })
       setEditorOpen(true)
       if (isMobile) setSheetOpen(true)
@@ -441,8 +457,9 @@ const ModelRatioVisualEditorComponent = forwardRef<
         onEdit: handleEdit,
         deleteDisabled: filterMode === 'unset',
         t,
+        currencySymbol,
       }),
-    [handleEdit, handleDelete, filterMode, t]
+    [handleEdit, handleDelete, filterMode, t, currencySymbol]
   )
 
   const ensurePageInRange = useCallback((pageCount: number) => {
@@ -527,7 +544,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         value: string | undefined
       ) => {
         if (!value || value === '') return
-        const parsed = parseFloat(value)
+        const parsed = Number.parseFloat(value)
         if (Number.isFinite(parsed)) target[name] = parsed
       }
 
@@ -566,6 +583,9 @@ const ModelRatioVisualEditorComponent = forwardRef<
           setIfPresent(audioCompletionMap, name, data.audioCompletionRatio)
         } else if (data.price && data.price !== '') {
           setIfPresent(priceMap, name, data.price)
+          if (data.priceUnit === PRICE_UNIT_PER_SECOND) {
+            billingModeMap[name] = PRICE_UNIT_PER_SECOND
+          }
         } else {
           setIfPresent(ratioMap, name, data.ratio)
           setIfPresent(cacheMap, name, data.cacheRatio)

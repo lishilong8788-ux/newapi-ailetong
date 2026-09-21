@@ -562,6 +562,48 @@ export function getCurrencyLabel(): string {
 }
 
 /**
+ * Get the currency symbol for billing/pricing displays (never tokens).
+ * E.g., '¥' for CNY, '$' for USD, or custom symbol.
+ */
+export function getBillingCurrencySymbol(): string {
+  const { config } = getCurrencyDisplay()
+  const meta = getBillingDisplayMeta(config)
+  return 'symbol' in meta ? meta.symbol : '$'
+}
+
+/**
+ * Get the currency label for billing/pricing displays (never tokens).
+ * E.g., 'CNY' for CNY, 'USD' for USD, or custom symbol.
+ */
+export function getBillingCurrencyLabel(): string {
+  const { meta } = getCurrencyDisplay()
+  if (meta.kind === 'tokens') {
+    return 'USD'
+  }
+  return getCurrencyLabel()
+}
+
+/**
+ * Hook to reactively get the current billing currency symbol, label, and meta.
+ */
+export function useBillingCurrency() {
+  const currency = useSystemConfigStore((state) => state.config.currency)
+  const config = {
+    ...DEFAULT_CURRENCY_CONFIG,
+    ...currency,
+  }
+  const meta = getBillingDisplayMeta(config)
+  const symbol = 'symbol' in meta ? meta.symbol : '$'
+  let label = 'USD'
+  if (meta.kind === 'currency') {
+    label = meta.currencyCode
+  } else if (meta.kind === 'custom') {
+    label = meta.symbol
+  }
+  return { symbol, label, meta }
+}
+
+/**
  * Check if currency display is enabled (not in token-only mode).
  *
  * @returns True if displaying in actual currency (USD/CNY/etc), false if tokens only

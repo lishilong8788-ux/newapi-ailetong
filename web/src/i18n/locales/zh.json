@@ -2074,7 +2074,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相关项目",
     "footer.defaultCopyright": "版权所有。",
-    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
+    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "出于安全考虑，现有访问令牌无法再次显示。仅在需要新令牌时重新生成。",
@@ -6293,6 +6293,20 @@
     "Candidate order": "候选顺序",
     "View all settings": "查看全部设置",
     "Lowest-price-first routing": "最低价优先路由",
-    "When several channels serve the same model at distinguishable prices, prefer the cheapest one. Falls back to the operator's channel order for models whose channels have no price difference.": "当同一模型有多个渠道且价格存在差异时，优先选择最便宜的那个。对于渠道之间没有价格差异的模型，回退到运营配置的渠道顺序。"
+    "When several channels serve the same model at distinguishable prices, prefer the cheapest one. Falls back to the operator's channel order for models whose channels have no price difference.": "当同一模型有多个渠道且价格存在差异时，优先选择最便宜的那个。对于渠道之间没有价格差异的模型，回退到运营配置的渠道顺序。",
+    "second": "秒",
+    "per second": "每秒",
+    "Per second": "按秒",
+    "Per call": "按次",
+    "Billing unit": "计量单位",
+    "Fixed per-second price": "固定按秒价格",
+    "Each request is charged the price below once, regardless of tokens used.": "每次请求按下方单价扣费一次，不考虑使用的令牌数。",
+    "Video models: the price below is multiplied by the generated duration in seconds.": "视频类模型：下方单价会乘以生成时长（秒）。",
+    "USD price per second of generated video. Actual charge = price x duration.": "每秒生成视频的美元单价。实际扣费 = 单价 × 时长（秒）。",
+    "Example: a {{seconds}}s video costs about {{total}}.": "举例：{{seconds}} 秒视频约扣 {{total}}。",
+    "Price per 1M input tokens ({{currency}}).": "每 100 万输入 token 的 {{currency}} 价格。",
+    "Price per 1M tokens ({{currency}}).": "每 100 万 token 的 {{currency}} 价格。",
+    "Cost per request ({{currency}}), regardless of tokens used.": "每请求的 {{currency}} 费用，不考虑使用的令牌数。",
+    "Price per second of generated video ({{currency}}). Actual charge = price x duration.": "每秒生成视频的 {{currency}} 单价。实际扣费 = 单价 × 时长（秒）。"
   }
 }

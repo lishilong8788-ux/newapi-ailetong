@@ -61,11 +61,15 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useBillingCurrency } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
 import {
   EMPTY_LANE_ENABLED,
   EMPTY_LANE_PRICES,
+  PRICE_UNIT_PER_CALL,
+  PRICE_UNIT_PER_SECOND,
+  PRICE_UNIT_SAMPLE_SECONDS,
   buildPreviewRows,
   createInitialLaneState,
   createModelPricingSchema,
@@ -77,6 +81,7 @@ import {
   type LaneKey,
   type ModelPricingFormValues,
   type ModelRatioData,
+  type PriceUnit,
   type PricingMode,
 } from './model-pricing-core'
 import { PriceInput, PriceLane } from './model-pricing-inputs'
@@ -145,7 +150,10 @@ export const ModelPricingEditorPanel = forwardRef<
   ref
 ) {
   const { t } = useTranslation()
+  const { symbol: currencySymbol, label: currencyLabel } = useBillingCurrency()
+  const isUSD = currencySymbol === '$' || currencyLabel === 'USD'
   const [pricingMode, setPricingMode] = useState<PricingMode>('per-token')
+  const [priceUnit, setPriceUnit] = useState<PriceUnit>(PRICE_UNIT_PER_CALL)
   const [promptPrice, setPromptPrice] = useState('')
   const [lanePrices, setLanePrices] = useState<Record<LaneKey, string>>({
     ...EMPTY_LANE_PRICES,
@@ -188,12 +196,17 @@ export const ModelPricingEditorPanel = forwardRef<
         audioRatio: editData.audioRatio || '',
         audioCompletionRatio: editData.audioCompletionRatio || '',
       })
-      setPricingMode(
-        editData.billingMode === 'tiered_expr'
-          ? 'tiered_expr'
-          : editData.price
-            ? 'per-request'
-            : 'per-token'
+      let nextPricingMode: PricingMode = 'per-token'
+      if (editData.billingMode === 'tiered_expr') {
+        nextPricingMode = 'tiered_expr'
+      } else if (editData.price) {
+        nextPricingMode = 'per-request'
+      }
+      setPricingMode(nextPricingMode)
+      setPriceUnit(
+        editData.priceUnit === PRICE_UNIT_PER_SECOND
+          ? PRICE_UNIT_PER_SECOND
+          : PRICE_UNIT_PER_CALL
       )
       setBillingExpr(editData.billingExpr || '')
       setRequestRuleExpr(editData.requestRuleExpr || '')
@@ -210,6 +223,7 @@ export const ModelPricingEditorPanel = forwardRef<
         audioCompletionRatio: '',
       })
       setPricingMode('per-token')
+      setPriceUnit(PRICE_UNIT_PER_CALL)
       setBillingExpr('')
       setRequestRuleExpr('')
     }
@@ -341,6 +355,15 @@ export const ModelPricingEditorPanel = forwardRef<
   }
 
   const watchedValues = form.watch()
+
+  const perSecondEstimate = useMemo(() => {
+    if (priceUnit !== PRICE_UNIT_PER_SECOND) return ''
+    const unitPrice = toNumberOrNull(watchedValues.price)
+    if (unitPrice === null || unitPrice <= 0) return ''
+    const total = unitPrice * PRICE_UNIT_SAMPLE_SECONDS
+    return `${currencySymbol}${formatPricingNumber(total)}`
+  }, [currencySymbol, priceUnit, watchedValues.price])
+
   const previewRows = useMemo(
     () =>
       buildPreviewRows(
@@ -351,12 +374,16 @@ export const ModelPricingEditorPanel = forwardRef<
         promptPrice,
         lanePrices,
         laneEnabled,
-        t
+        t,
+        priceUnit,
+        currencySymbol
       ),
     [
       billingExpr,
+      currencySymbol,
       laneEnabled,
       lanePrices,
+      priceUnit,
       pricingMode,
       promptPrice,
       requestRuleExpr,
@@ -458,9 +485,13 @@ export const ModelPricingEditorPanel = forwardRef<
         data.requestRuleExpr = requestRuleExpr
       }
 
+      if (pricingMode === 'per-request') {
+        data.priceUnit = priceUnit
+      }
+
       return data
     },
-    [billingExpr, pricingMode, requestRuleExpr]
+    [billingExpr, priceUnit, pricingMode, requestRuleExpr]
   )
 
   useImperativeHandle(
@@ -549,7 +580,7 @@ export const ModelPricingEditorPanel = forwardRef<
                       {t('Per-token')}
                     </TabsTrigger>
                     <TabsTrigger value='per-request'>
-                      {t('Per-request')}
+                      {t('Fixed price')}
                     </TabsTrigger>
                     <TabsTrigger value='tiered_expr'>
                       {t('Expression')}
@@ -563,10 +594,15 @@ export const ModelPricingEditorPanel = forwardRef<
                         <PriceInput
                           value={promptPrice}
                           placeholder='3'
+                          currencySymbol={currencySymbol}
                           onChange={handlePromptPriceChange}
                         />
                         <FieldDescription>
-                          {t('USD price per 1M input tokens.')}
+                          {isUSD
+                            ? t('USD price per 1M input tokens.')
+                            : t('Price per 1M input tokens ({{currency}}).', {
+                                currency: currencyLabel,
+                              })}
                         </FieldDescription>
                       </Field>
 
@@ -585,6 +621,8 @@ export const ModelPricingEditorPanel = forwardRef<
                               value={lanePrices[lane.key]}
                               enabled={laneEnabled[lane.key]}
                               disabled={disabled}
+                              currencySymbol={currencySymbol}
+                              currencyLabel={currencyLabel}
                               onEnabledChange={(checked) =>
                                 handleLaneToggle(lane.key, checked)
                               }
@@ -600,41 +638,104 @@ export const ModelPricingEditorPanel = forwardRef<
 
                   <TabsContent value='per-request' className='pt-0'>
                     <FieldGroup className='gap-5'>
+                      <Field>
+                        <FieldLabel>{t('Billing unit')}</FieldLabel>
+                        <Tabs
+                          value={priceUnit}
+                          onValueChange={(value) =>
+                            setPriceUnit(value as PriceUnit)
+                          }
+                        >
+                          <TabsList className='grid w-full grid-cols-2'>
+                            <TabsTrigger value={PRICE_UNIT_PER_CALL}>
+                              {t('Per call')}
+                            </TabsTrigger>
+                            <TabsTrigger value={PRICE_UNIT_PER_SECOND}>
+                              {t('Per second')}
+                            </TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                        <FieldDescription>
+                          {priceUnit === PRICE_UNIT_PER_SECOND
+                            ? t(
+                                'Video models: the price below is multiplied by the generated duration in seconds.'
+                              )
+                            : t(
+                                'Each request is charged the price below once, regardless of tokens used.'
+                              )}
+                        </FieldDescription>
+                      </Field>
+
                       <FormField
                         control={form.control}
                         name='price'
-                        render={({ field }) => (
-                          <FormItem className='contents'>
-                            <Field>
-                              <FieldLabel>{t('Fixed price')}</FieldLabel>
-                              <FormControl>
-                                <InputGroup>
-                                  <InputGroupAddon>$</InputGroupAddon>
-                                  <InputGroupInput
-                                    inputMode='decimal'
-                                    placeholder='0.01'
-                                    {...field}
-                                    onChange={(event) => {
-                                      const value = event.target.value
-                                      if (numericDraftRegex.test(value)) {
-                                        field.onChange(value)
-                                      }
-                                    }}
-                                  />
-                                  <InputGroupAddon align='inline-end'>
-                                    {t('per request')}
-                                  </InputGroupAddon>
-                                </InputGroup>
-                              </FormControl>
-                              <FieldDescription>
-                                {t(
+                        render={({ field }) => {
+                          let fixedPriceDescription = ''
+                          if (priceUnit === PRICE_UNIT_PER_SECOND) {
+                            fixedPriceDescription = isUSD
+                              ? t(
+                                  'USD price per second of generated video. Actual charge = price x duration.'
+                                )
+                              : t(
+                                  'Price per second of generated video ({{currency}}). Actual charge = price x duration.',
+                                  { currency: currencyLabel }
+                                )
+                          } else {
+                            fixedPriceDescription = isUSD
+                              ? t(
                                   'Cost in USD per request, regardless of tokens used.'
-                                )}
-                              </FieldDescription>
-                              <FormMessage />
-                            </Field>
-                          </FormItem>
-                        )}
+                                )
+                              : t(
+                                  'Cost per request ({{currency}}), regardless of tokens used.',
+                                  { currency: currencyLabel }
+                                )
+                          }
+
+                          return (
+                            <FormItem className='contents'>
+                              <Field>
+                                <FieldLabel>{t('Fixed price')}</FieldLabel>
+                                <FormControl>
+                                  <InputGroup>
+                                    <InputGroupAddon>{currencySymbol}</InputGroupAddon>
+                                    <InputGroupInput
+                                      inputMode='decimal'
+                                      placeholder='0.01'
+                                      {...field}
+                                      onChange={(event) => {
+                                        const value = event.target.value
+                                        if (numericDraftRegex.test(value)) {
+                                          field.onChange(value)
+                                        }
+                                      }}
+                                    />
+                                    <InputGroupAddon align='inline-end'>
+                                      {priceUnit === PRICE_UNIT_PER_SECOND
+                                        ? t('per second')
+                                        : t('per request')}
+                                    </InputGroupAddon>
+                                  </InputGroup>
+                                </FormControl>
+                                <FieldDescription>
+                                  {fixedPriceDescription}
+                                  {priceUnit === PRICE_UNIT_PER_SECOND &&
+                                    perSecondEstimate && (
+                                      <span className='mt-1 block'>
+                                        {t(
+                                          'Example: a {{seconds}}s video costs about {{total}}.',
+                                          {
+                                            seconds: PRICE_UNIT_SAMPLE_SECONDS,
+                                            total: perSecondEstimate,
+                                          }
+                                        )}
+                                      </span>
+                                    )}
+                                </FieldDescription>
+                                <FormMessage />
+                              </Field>
+                            </FormItem>
+                          )
+                        }}
                       />
                     </FieldGroup>
                   </TabsContent>

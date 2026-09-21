@@ -41,6 +41,11 @@ export type ModelPricingFormValues = z.infer<
 
 export type PricingMode = 'per-token' | 'per-request' | 'tiered_expr'
 
+export type PriceUnit = 'per_call' | 'per_second'
+export const PRICE_UNIT_PER_CALL: PriceUnit = 'per_call'
+export const PRICE_UNIT_PER_SECOND: PriceUnit = 'per_second'
+export const PRICE_UNIT_SAMPLE_SECONDS = 5
+
 export type LaneKey =
   | 'completion'
   | 'cache'
@@ -62,6 +67,7 @@ export type ModelRatioData = {
   billingMode?: PricingMode
   billingExpr?: string
   requestRuleExpr?: string
+  priceUnit?: PriceUnit
 }
 
 export type PreviewRow = {
@@ -215,7 +221,9 @@ export function buildPreviewRows(
   promptPrice: string,
   lanePrices: Record<LaneKey, string>,
   laneEnabled: Record<LaneKey, boolean>,
-  t: (key: string) => string
+  t: (key: string, params?: Record<string, unknown>) => string,
+  priceUnit: PriceUnit = PRICE_UNIT_PER_CALL,
+  currencySymbol = '$'
 ): PreviewRow[] {
   if (mode === 'tiered_expr') {
     const effectiveExpr = combineBillingExpr(billingExpr, requestRuleExpr)
@@ -231,27 +239,45 @@ export function buildPreviewRows(
   }
 
   if (mode === 'per-request') {
-    return [
+    const unitLabel =
+      priceUnit === PRICE_UNIT_PER_SECOND ? t('per second') : t('per request')
+    const rows: PreviewRow[] = [
       {
         key: 'price',
         label: 'ModelPrice',
-        value: values.price || t('Empty'),
+        value: values.price
+          ? `${currencySymbol}${values.price} / ${unitLabel}`
+          : t('Empty'),
       },
     ]
+    if (priceUnit === PRICE_UNIT_PER_SECOND) {
+      const unitPrice = toNumberOrNull(values.price)
+      if (unitPrice !== null && unitPrice > 0) {
+        rows.push({
+          key: 'perSecondEstimate',
+          label: t('Example'),
+          value: t('Example: a {{seconds}}s video costs about {{total}}.', {
+            seconds: PRICE_UNIT_SAMPLE_SECONDS,
+            total: `${currencySymbol}${formatPricingNumber(unitPrice * PRICE_UNIT_SAMPLE_SECONDS)}`,
+          }),
+        })
+      }
+    }
+    return rows
   }
 
   return [
     {
       key: 'inputPrice',
       label: t('Input price'),
-      value: promptPrice ? `$${promptPrice}` : t('Empty'),
+      value: promptPrice ? `${currencySymbol}${promptPrice}` : t('Empty'),
     },
     {
       key: 'completion',
       label: t('Completion price'),
       value:
         laneEnabled.completion && lanePrices.completion
-          ? `$${lanePrices.completion}`
+          ? `${currencySymbol}${lanePrices.completion}`
           : t('Empty'),
     },
     {
@@ -259,7 +285,7 @@ export function buildPreviewRows(
       label: t('Cache read price'),
       value:
         laneEnabled.cache && lanePrices.cache
-          ? `$${lanePrices.cache}`
+          ? `${currencySymbol}${lanePrices.cache}`
           : t('Empty'),
     },
     {
@@ -267,7 +293,7 @@ export function buildPreviewRows(
       label: t('Cache write price'),
       value:
         laneEnabled.createCache && lanePrices.createCache
-          ? `$${lanePrices.createCache}`
+          ? `${currencySymbol}${lanePrices.createCache}`
           : t('Empty'),
     },
     {
@@ -275,7 +301,7 @@ export function buildPreviewRows(
       label: t('Image input price'),
       value:
         laneEnabled.image && lanePrices.image
-          ? `$${lanePrices.image}`
+          ? `${currencySymbol}${lanePrices.image}`
           : t('Empty'),
     },
     {
@@ -283,7 +309,7 @@ export function buildPreviewRows(
       label: t('Audio input price'),
       value:
         laneEnabled.audioInput && lanePrices.audioInput
-          ? `$${lanePrices.audioInput}`
+          ? `${currencySymbol}${lanePrices.audioInput}`
           : t('Empty'),
     },
     {
@@ -291,7 +317,7 @@ export function buildPreviewRows(
       label: t('Audio output price'),
       value:
         laneEnabled.audioOutput && lanePrices.audioOutput
-          ? `$${lanePrices.audioOutput}`
+          ? `${currencySymbol}${lanePrices.audioOutput}`
           : t('Empty'),
     },
   ]
