@@ -63,6 +63,15 @@ interface PlaygroundChatProps {
   messageLayoutMode?: PlaygroundMessageLayoutMode
   /** Forwarded to the empty state, which renders this model's guide. */
   selectedModel?: ModelOption
+  /**
+   * Whether each assistant message offers its debug panel.
+   *
+   * Owned by the page and switched from the topbar rather than per message: the
+   * panel answers "what did this request actually do", which is a mode you are
+   * in or not, and a per-message toggle would have to be re-opened for every
+   * reply while comparing channels.
+   */
+  isDebugEnabled?: boolean
 }
 
 export function PlaygroundChat({
@@ -80,6 +89,7 @@ export function PlaygroundChat({
   onSaveEditAndSubmit,
   messageLayoutMode = 'alternating',
   selectedModel,
+  isDebugEnabled = false,
 }: PlaygroundChatProps) {
   const { t } = useTranslation()
   const [editText, setEditText] = useState('')
@@ -209,6 +219,11 @@ export function PlaygroundChat({
                   isSourceVisible={isSourceVisible}
                   isGenerating={isGenerating}
                   alwaysVisible={alwaysShowActions}
+                  isDebugEnabled={isDebugEnabled}
+                  // The transcript is per model, so the selected model is the
+                  // model of every message in it — which is what the debug panel
+                  // needs to look up the channel's published figures.
+                  modelName={selectedModel?.value}
                   className='mt-1.5'
                 />
               }

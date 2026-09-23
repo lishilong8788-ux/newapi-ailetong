@@ -42,6 +42,62 @@ export interface Message {
   startedAt?: number
   completedAt?: number
   durationMs?: number
+  /**
+   * Which channel actually served this reply, read from the response headers.
+   *
+   * The whole point of pinning a channel is being able to check it was honoured,
+   * so `pinned` is recorded separately from "a channel is known": automatic
+   * routing also reports a channel, and a pin that silently fell through to
+   * another line must not read the same as one that held.
+   *
+   * Absent on messages predating this field and on any reply whose headers were
+   * unreadable, which the debug panel states rather than guessing.
+   */
+  channel?: {
+    id: number
+    /** Short line code (`hs4`); absent falls back to `#id` for display. */
+    code?: string
+    pinned: boolean
+  }
+  /**
+   * Time to first token, measured client-side from request start to the first
+   * content chunk.
+   *
+   * Only exists for streaming requests — a non-streaming response has no
+   * observable first token — and that absence is reported as such instead of as
+   * a missing measurement.
+   */
+  ttftMs?: number
+  /**
+   * Token counts as the gateway reported them, never as the client counted them.
+   *
+   * Present on both transports: the relay defaults `includeUsage` to true for
+   * streams (`relay/compatible_handler.go`) and synthesises a final usage chunk
+   * before `[DONE]`, so a stream carries this as well as a plain response.
+   * Absent means the upstream reported none — which is why the debug panel omits
+   * the row rather than printing zeros.
+   *
+   * Field names stay snake_case, matching the `usage` object they are parsed
+   * from verbatim: renaming three fields on the way in buys nothing and puts a
+   * translation step between the wire and the panel that reads them.
+   *
+   * Each count is optional on its own — an upstream may report totals without
+   * the split — so a partial report loses only the lines it lacks.
+   */
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    total_tokens?: number
+  }
+  /**
+   * The gateway's own request id, from the `X-Oneapi-Request-Id` response header.
+   *
+   * Worth surfacing only because it resolves: `middleware.RequestId()` is
+   * registered globally and the same id is written to the consume log, so it
+   * joins a reply on screen to its billing row. The upstream's `chatcmpl-…` id
+   * does not, and a client-generated uuid would be worse than nothing.
+   */
+  requestId?: string
   sources?: { href: string; title: string }[]
   reasoning?: {
     content: string
@@ -235,6 +291,19 @@ export interface PlaygroundConfig {
   model: string
   group: string
   stream: boolean
+  /**
+   * Pinned upstream channel, or `undefined` for automatic routing.
+   *
+   * Automatic routing is the default and the only thing a non-admin can use —
+   * pinning is gated on `model.IsAdmin` server-side (`middleware/auth.go`), so a
+   * stored value from an account that later loses admin is simply ignored rather
+   * than turning every request into a 403.
+   *
+   * Scoped to one model: a channel serves specific models, so the id carried
+   * across a model switch would name a line that cannot answer. `usePlaygroundOptions`
+   * clears it for that reason.
+   */
+  channelId?: number
 }
 
 /**

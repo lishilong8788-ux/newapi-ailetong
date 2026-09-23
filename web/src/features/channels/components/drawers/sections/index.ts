@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export * from './channel-advanced-section'
 export * from './channel-api-access-section'
 export * from './channel-auth-section'
 export * from './channel-basic-section'
 export * from './channel-editor-loading-state'
 export * from './channel-models-section'
+export * from './channel-pricing-section'

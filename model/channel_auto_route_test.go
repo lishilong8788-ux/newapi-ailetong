@@ -60,6 +60,10 @@ func autoRouteFixture(t *testing.T, specs []autoRouteChannelSpec) {
 				Price: &dto.ChannelPriceSettings{Discount: &discount},
 			})
 		}
+		if spec.lineCode != "" {
+			lineCode := spec.lineCode
+			channel.LineCode = &lineCode
+		}
 		require.NoError(t, DB.Create(channel).Error)
 		require.NoError(t, DB.Create(&Ability{
 			Group:     "default",
@@ -84,6 +88,7 @@ type autoRouteChannelSpec struct {
 	id       int
 	priority int64
 	discount *float64
+	lineCode string
 }
 
 // selectedChannelIDs samples selection many times for one retry level, so a

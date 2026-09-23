@@ -59,6 +59,9 @@ export const channelSchema = z.object({
   auto_ban: z.number().nullish(),
   other_info: z.string().default(''),
   tag: z.string().nullish(),
+  // Short line code this channel is published under; customers pin it with
+  // `<model>/<code>`.
+  line_code: z.string().nullish(),
   setting: z.string().nullish(),
   param_override: z.string().nullish(),
   header_override: z.string().nullish(),
@@ -133,14 +136,16 @@ export interface ModelCostPrice {
   image_out?: number
   reasoning?: number
   per_call?: number
+  // Overrides ChannelCostSettings.default_markup for this one model, as a
+  // fraction (0.3 = +30%). The sell price is derived from cost × (1 + markup),
+  // so a per-model markup is the only way one model can price differently
+  // without restating the channel's whole rate card.
+  markup?: number
 }
 
 export interface ChannelCostSettings {
-  mode?: 'ratio' | 'per_call' | 'expr' | ''
   default_markup?: number
-  discount?: number
   models?: Record<string, ModelCostPrice>
-  expr?: string
   currency?: string
   updated_at?: number
 }

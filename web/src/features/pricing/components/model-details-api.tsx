@@ -16,14 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  ChevronRight,
-  Gauge,
-  KeyRound,
-  ScrollText,
-  Sigma,
-  Zap,
-} from 'lucide-react'
+import { ChevronRight, Gauge, KeyRound, ScrollText, Sigma } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { BundledLanguage } from 'shiki/bundle/web'
@@ -39,6 +32,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useStatus } from '@/hooks/use-status'
+import { cn } from '@/lib/utils'
 
 import {
   buildRateLimits,
@@ -48,6 +42,7 @@ import {
 } from '../lib/mock-stats'
 import { replaceModelInPath } from '../lib/model-helpers'
 import type { PricingModel } from '../types'
+import { DetailsCard } from './model-details-shared'
 
 // ---------------------------------------------------------------------------
 // Code-sample registry
@@ -443,6 +438,13 @@ function buildSample(
 function CodeSamplesSection(props: {
   model: PricingModel
   endpointMap: Record<string, { path?: string; method?: string }>
+  /**
+   * The string to put in `model`, which is not always the model's own name: with
+   * a line pinned it is `<model>/<code>`. Every sample and every URL that
+   * interpolates a model name uses this one value, so a reader can copy any
+   * block in the panel and reach the line the panel says they are reading about.
+   */
+  clientModelName: string
 }) {
   const { t } = useTranslation()
   const { status } = useStatus()
@@ -467,12 +469,17 @@ function CodeSamplesSection(props: {
         const info = props.endpointMap[type] || {}
         let path = info.path || ''
         if (path && path.includes('{model}')) {
-          path = replaceModelInPath(path, props.model.model_name || '')
+          // The Gemini-style path carries the model in the URL, so a pinned line
+          // has to go in there too: `/v1beta/models/glm-5.2/hs10:generateContent`
+          // is what the backend parses back out (it reads everything between
+          // `/models/` and the `:`), and putting the bare name here instead would
+          // silently drop the pin for that one dialect.
+          path = replaceModelInPath(path, props.clientModelName)
         }
         return { type, path, method: info.method || 'POST' }
       })
       .filter((e) => Boolean(e.path))
-  }, [props.model, props.endpointMap])
+  }, [props.model, props.endpointMap, props.clientModelName])
 
   const [endpointType, setEndpointType] = useState<string>(
     endpoints[0]?.type ?? ''
@@ -490,7 +497,7 @@ function CodeSamplesSection(props: {
   const code = buildSample(lang, activeEndpoint.type, {
     baseUrl,
     apiKeyEnv: 'NEW_API_KEY',
-    modelName: props.model.model_name || '',
+    modelName: props.clientModelName,
     endpointType: activeEndpoint.type,
     endpointPath: activeEndpoint.path,
   })
@@ -531,11 +538,20 @@ function CodeSamplesSection(props: {
         </Tabs>
       </div>
 
-      <div className='mt-3'>
-        <CodeBlock code={code} language={LANG_HIGHLIGHT[lang]}>
-          <CodeBlockCopyButton />
-        </CodeBlock>
-      </div>
+      {/* `bg-card` over the frame's own `bg-muted/20`: at 20% the tray showed
+          straight through the code, so the sample read as part of the panel
+          rather than as a block sitting on it. `my-3` is the frame's default
+          vertical margin, replaced here by the row gap above. The frame's own
+          `shadow-xs` is left alone — `shadow-raised` is a theme key
+          `tailwind-merge` does not know to collapse against it, so the two would
+          both be emitted and the winner would come down to stylesheet order. */}
+      <CodeBlock
+        className='bg-card border-border/70 my-0 mt-3 rounded-xl'
+        code={code}
+        language={LANG_HIGHLIGHT[lang]}
+      >
+        <CodeBlockCopyButton />
+      </CodeBlock>
 
       <p className='text-muted-foreground mt-2 text-xs'>
         {t('Replace')}{' '}
@@ -565,7 +581,13 @@ function SupportedParametersSection(props: { model: PricingModel }) {
     <section>
       <SectionTitle icon={Sigma}>{t('Supported parameters')}</SectionTitle>
       <StaticDataTable
-        className={tableStyles.sectionContainer}
+        className={cn(
+          tableStyles.sectionContainer,
+          // The table's own rows are `--table-row` (card white); only the
+          // container was transparent, which left the header strip and the
+          // rounded corners showing tray through them.
+          'bg-card border-border/70 shadow-raised rounded-xl'
+        )}
         headerRowClassName={tableStyles.mutedHeaderRow}
         data={params}
         getRowKey={(param) => param.name}
@@ -675,7 +697,10 @@ function RateLimitsSection(props: { model: PricingModel }) {
     <section>
       <SectionTitle icon={Gauge}>{t('Rate limits')}</SectionTitle>
       <StaticDataTable
-        className={tableStyles.sectionContainer}
+        className={cn(
+          tableStyles.sectionContainer,
+          'bg-card border-border/70 shadow-raised rounded-xl'
+        )}
         headerRowClassName={tableStyles.mutedHeaderRow}
         data={limits}
         getRowKey={(limit) => limit.group}
@@ -729,7 +754,7 @@ function AuthSection() {
   return (
     <section>
       <SectionTitle icon={KeyRound}>{t('Authentication')}</SectionTitle>
-      <div className='border-border/60 bg-muted/20 flex items-start gap-2 rounded-lg border p-3'>
+      <DetailsCard className='flex items-start gap-2 p-3'>
         <ChevronRight className='text-muted-foreground mt-0.5 size-3.5 shrink-0' />
         <div className='space-y-1.5 text-xs leading-relaxed'>
           <p>
@@ -749,7 +774,7 @@ function AuthSection() {
             )}
           </p>
         </div>
-      </div>
+      </DetailsCard>
     </section>
   )
 }
@@ -761,10 +786,21 @@ function AuthSection() {
 export function ModelDetailsApi(props: {
   model: PricingModel
   endpointMap: Record<string, { path?: string; method?: string }>
+  /**
+   * The callable model string, `<model>/<code>` when a line is pinned. Required
+   * rather than defaulted to `model.model_name`: every caller knows which line it
+   * is documenting, and a silent fallback is how a panel ends up printing samples
+   * for automatic routing under a heading naming one channel.
+   */
+  clientModelName: string
 }) {
   return (
     <div className='space-y-6'>
-      <CodeSamplesSection model={props.model} endpointMap={props.endpointMap} />
+      <CodeSamplesSection
+        model={props.model}
+        endpointMap={props.endpointMap}
+        clientModelName={props.clientModelName}
+      />
       <AuthSection />
       <SupportedParametersSection model={props.model} />
       <RateLimitsSection model={props.model} />
@@ -788,6 +824,3 @@ function SectionTitle(props: {
     </h3>
   )
 }
-
-// Re-export so the parent can keep its own SectionTitle if it wants:
-export { Zap as ApiTabIcon }

@@ -324,6 +324,8 @@ const (
 	MsgDistributorNoAvailableChannel      = "distributor.no_available_channel"
 	MsgDistributorInvalidMidjourney       = "distributor.invalid_midjourney_request"
 	MsgDistributorInvalidParseModel       = "distributor.invalid_request_parse_model"
+	MsgDistributorPinNotAdmin             = "distributor.pin_not_admin"
+	MsgDistributorPinModelMismatch        = "distributor.pin_model_mismatch"
 )
 
 // Agent (distributor programme) setting related messages

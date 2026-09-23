@@ -191,11 +191,44 @@ export type ChannelRoute = {
    * omits it and the card falls back to `code` / `#id`.
    */
   name?: string
-  /** Short line label from the `model_mapping` suffix, e.g. `hs4`. */
+  /**
+   * The channel's own line code (`channel.line_code`), e.g. `hs10`. Public: it is
+   * how a customer names this line, as `<model>/<code>` in the request's `model`
+   * field. Absent when the operator configured none, and such a channel is
+   * reachable through automatic routing only.
+   */
   code?: string
   category: ChannelCategory
   /** Last channel-test round trip in ms; absent when never tested. */
   latency_ms?: number
+  /**
+   * Share of real requests this channel served successfully over the last 7
+   * days. Absent means no traffic was measured, which is a different statement
+   * from 0 ("everything failed") and must not render as the same thing.
+   *
+   * Only real relay traffic feeds this — a manual channel test does not — so a
+   * newly configured line reports nothing until it has served a request.
+   */
+  availability_pct?: number
+  /**
+   * Mean time to first token over the same window. Absent when no streaming
+   * request has been measured: a non-streaming request has no observable first
+   * token, so a channel serving only those reports none.
+   */
+  ttft_ms?: number
+  /**
+   * Which measurement `availability_pct` came from. `channel` is this channel's
+   * own traffic; `group` means it had none and the figure is the model+group
+   * aggregate every channel in that group shares, which the UI marks rather than
+   * presenting as a per-channel fact.
+   */
+  availability_source?: 'channel' | 'group'
+  /**
+   * Same distinction for `ttft_ms`, tracked separately: a channel serving only
+   * non-streaming traffic has a measured availability and a borrowed first-token
+   * time, so the two are not always from the same source.
+   */
+  ttft_source?: 'channel' | 'group'
   /** Viewer-reachable groups this channel serves the model in. */
   groups?: string[]
   price: ChannelPrice

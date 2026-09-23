@@ -22,6 +22,40 @@ import { cn } from '@/lib/utils'
 
 import { MODALITY_LABEL_KEYS } from '../lib/catalog-fields'
 
+/**
+ * The one card surface every block of the details view sits on.
+ *
+ * The drawer's body is a tinted tray (`--surface-sunken`), which only reads as a
+ * tray if something white is floating in it. The Channels tab got that for free —
+ * it is nothing but cards — while Basic Info and API were built as bare sections
+ * on the panel background, so those tabs resolved to one flat expanse of tint
+ * with text on it: no depth, no grouping, and the tray itself misread as "the
+ * panel is grey".
+ *
+ * Hence a single helper rather than the class trio repeated per section: card
+ * white, a hairline, and the raised shadow, matching the cards on the Channels
+ * tab exactly so the three tabs read as one surface language.
+ *
+ * `overflow-hidden` because the most common child is a table or a grid that
+ * paints its own edge-to-edge rows, which would otherwise square off the
+ * corners this rounds.
+ */
+export function DetailsCard(props: {
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'bg-card border-border/70 shadow-raised overflow-hidden rounded-xl border',
+        props.className
+      )}
+    >
+      {props.children}
+    </div>
+  )
+}
+
 /** Uppercase rule above each block of the details view. */
 export function SectionTitle(props: {
   children: React.ReactNode
@@ -76,9 +110,9 @@ export function ModalityLabels(props: { items: string[] }) {
 }
 
 /** Neutral pill used for capability / group / endpoint / tag lists. */
-export function CatalogPillList(props: { items: string[] }) {
+export function CatalogPillList(props: { items: string[]; className?: string }) {
   return (
-    <div className='flex min-w-0 flex-wrap gap-1.5'>
+    <div className={cn('flex min-w-0 flex-wrap gap-1.5', props.className)}>
       {props.items.map((item) => (
         <span
           key={item}

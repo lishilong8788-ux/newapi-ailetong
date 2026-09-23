@@ -182,9 +182,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}()
 
 	retryParam := &service.RetryParam{
-		Ctx:         c,
-		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.OriginModelName,
+		Ctx:        c,
+		TokenGroup: relayInfo.TokenGroup,
+		ModelName:  relayInfo.OriginModelName,
+		// Carried across retries: the pin is a preference, so a retry keeps
+		// preferring the named line rather than reverting to automatic routing the
+		// moment the first attempt fails.
+		LineCode:    common.GetContextKeyString(c, constant.ContextKeyPinnedLineCode),
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}
@@ -237,6 +241,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+
+		// Per attempt, not per request: a channel that failed here and was
+		// rescued by the next iteration still failed, and the catalog's
+		// availability figure is the one place that has to say so. The
+		// after-the-loop RecordRelaySample below only speaks for the model.
+		gopool.Go(func() {
+			perfmetrics.RecordChannelFailure(relayInfo)
+		})
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
@@ -325,6 +337,10 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	if newAPIError != nil {
 		return nil, newAPIError
 	}
+	// 必须排在 SetupContextForSelectedChannel 之后：重定价读的是 context 里的渠道
+	// 成本配置，那是上面这行才刷新的。也必须排在 HandleGroupRatio 之后，否则卖价
+	// 置 1 的分组倍率会被它覆盖回去。
+	helper.RepriceForChannel(c, info)
 	return channel, nil
 }
 
@@ -523,6 +539,7 @@ func RelayTask(c *gin.Context) {
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
+		LineCode:    common.GetContextKeyString(c, constant.ContextKeyPinnedLineCode),
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}

@@ -25,6 +25,11 @@ export {
   ChannelPriceCards,
   type ChannelPriceCardsProps,
 } from './channel-price-cards'
+export {
+  ChannelRouteDetail,
+  CachePricingNotice,
+  type ChannelRouteDetailProps,
+} from './channel-route-detail'
 export { PricingSidebar, type PricingSidebarProps } from './pricing-sidebar'
 export { PricingToolbar } from './pricing-toolbar'
 export { ModelCard } from './model-card'
@@ -37,4 +42,8 @@ export {
   ModelDetailsContent,
   ModelDetailsDrawer,
 } from './model-details'
+export {
+  ModelCodeSamplesDrawer,
+  type ModelCodeSamplesDrawerProps,
+} from './model-code-samples-drawer'
 export { PricingTable } from './pricing-table'

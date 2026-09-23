@@ -28,10 +28,15 @@ For commercial licensing, please contact support@quantumnous.com
 import * as LobeIcons from '@lobehub/icons'
 import type React from 'react'
 
+import { IconGenericEndpoint } from '@/assets/custom/icon-generic-endpoint'
 import { IconSub2api } from '@/assets/custom/icon-sub2api'
+import { IconUnknownChannel } from '@/assets/custom/icon-unknown-channel'
+import { MonogramFallback } from '@/components/monogram-fallback'
 
 const CUSTOM_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   Sub2API: IconSub2api,
+  GenericEndpoint: IconGenericEndpoint,
+  UnknownChannel: IconUnknownChannel,
 }
 
 /**
@@ -96,14 +101,7 @@ export function getLobeIcon(
 
   const trimmedName = iconName.trim()
   if (!trimmedName) {
-    return (
-      <div
-        className='bg-muted text-muted-foreground flex items-center justify-center rounded-full text-xs font-medium'
-        style={{ width: size, height: size }}
-      >
-        ?
-      </div>
-    )
+    return <MonogramFallback name='' size={size} />
   }
 
   // Parse component path and chained properties
@@ -132,20 +130,13 @@ export function getLobeIcon(
     propStartIndex = segments.length > 1 && /^[A-Z]/.test(segments[1]) ? 2 : 1
   }
 
-  // Fallback if icon not found
+  // Fallback if icon not found. `baseKey` rather than the raw string, so
+  // "OhMyGPT.Color" and "OhMyGPT" hash to the same colour.
   if (
     !IconComponent ||
     (typeof IconComponent !== 'function' && typeof IconComponent !== 'object')
   ) {
-    const firstLetter = trimmedName.charAt(0).toUpperCase()
-    return (
-      <div
-        className='bg-muted text-muted-foreground flex items-center justify-center rounded-full text-xs font-medium'
-        style={{ width: size, height: size }}
-      >
-        {firstLetter}
-      </div>
-    )
+    return <MonogramFallback name={baseKey} size={size} />
   }
 
   // Parse chained properties (e.g., "type={'platform'}", "shape='square'")

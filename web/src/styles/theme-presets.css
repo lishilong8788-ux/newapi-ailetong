@@ -299,6 +299,11 @@ For commercial licensing, please contact support@quantumnous.com
    * step below card white that the default palette resolves to, rather than the
    * 1% `--background` carried, which was too small to read as a ladder. */
   --canvas: oklch(0.972 0 0);
+  /* Neutral for the same reason as the canvas above. A 13% mix of this preset's
+   * near-black primary would land ~0.89 — a charcoal tray, not a page. Depth
+   * tracks the default's ~3.2% step below card white: deeper than that and a tab
+   * with few cards on it reads as a grey pane rather than as a tray. */
+  --surface-sunken: oklch(0.968 0 0);
   --foreground: oklch(0.15 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.15 0 0);
@@ -360,6 +365,8 @@ For commercial licensing, please contact support@quantumnous.com
 .dark [data-theme-preset='simple-large'] {
   --background: oklch(0.215 0 0);
   --canvas: var(--background);
+  /* Neutral, one step under the 0.215 → 0.27 card ladder above. */
+  --surface-sunken: oklch(0.195 0 0);
   --foreground: oklch(0.97 0 0);
   --card: oklch(0.27 0 0);
   --card-foreground: oklch(0.97 0 0);
@@ -441,6 +448,9 @@ For commercial licensing, please contact support@quantumnous.com
    * See the `--canvas` comment in theme.css for why that is necessary, and for
    * how the 0.984 base resolves to the intended ~0.972. */
   --canvas: color-mix(in oklch, var(--primary) 4%, oklch(0.984 0 0));
+  /* Redeclared for the same reason as the canvas: resolves against the preset's
+   * own primary. 13% against a 3% card keeps the ~10-point gap the default has. */
+  --surface-sunken: color-mix(in oklch, var(--primary) 13%, var(--background));
   --card: color-mix(in oklch, var(--primary) 3%, var(--background));
   --popover: color-mix(in oklch, var(--primary) 5%, var(--background));
   --muted: color-mix(in oklch, var(--primary) 7%, var(--background));
@@ -467,6 +477,10 @@ For commercial licensing, please contact support@quantumnous.com
     [data-theme-preset='anthropic']
   ):not([data-theme-preset='simple-large']) {
   --canvas: var(--background);
+  /* Darkened toward black rather than mixed with primary: in dark mode the
+   * primary is the lighter colour, so the usual mix would pull the tray *up*
+   * into the card and erase the step. */
+  --surface-sunken: color-mix(in oklch, var(--background) 92%, oklch(0 0 0));
   --card: color-mix(in oklch, var(--primary) 8%, var(--background));
   --popover: color-mix(in oklch, var(--primary) 12%, var(--background));
   --muted: color-mix(in oklch, var(--primary) 12%, var(--background));
@@ -511,6 +525,10 @@ For commercial licensing, please contact support@quantumnous.com
    * ladder the other way (card #efe9de sits darker than the canvas), so the
    * alias preserves that intent rather than imposing the primary-mixed tint. */
   --canvas: var(--background);
+  /* Same inversion: the cream page is already lighter than the card, so a tray
+   * pushed darker still would put the cards *above* it in the wrong direction.
+   * Aliasing to the cream keeps this preset's own ladder intact. */
+  --surface-sunken: var(--background);
   --foreground: oklch(0.205 0.005 60); /* ≈ #141413 ink */
 
   /* Warm-neutral surfaces (NOT primary-tinted). Stepped opacity matches
@@ -579,6 +597,8 @@ For commercial licensing, please contact support@quantumnous.com
    * personality even when inverted. Coral lifts slightly for legibility. */
   --background: oklch(0.215 0.004 60);
   --canvas: var(--background);
+  /* Warm, one step under the 0.215 → 0.255 card ladder above. */
+  --surface-sunken: oklch(0.195 0.004 60);
   --foreground: oklch(0.965 0.005 92);
   --card: oklch(0.255 0.004 60);
   --card-foreground: oklch(0.965 0.005 92);

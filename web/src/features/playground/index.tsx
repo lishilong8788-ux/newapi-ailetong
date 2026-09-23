@@ -16,9 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+
+import { useChannelPricing } from '@/features/pricing/hooks/use-channel-pricing'
 
 import { PlaygroundChat } from './components/chat/playground-chat'
+import { PlaygroundTopbar } from './components/chat/playground-topbar'
 import { PlaygroundInput } from './components/input/playground-input'
 import { ModelLibrary } from './components/model-library/model-library'
 import {
@@ -43,6 +46,7 @@ export function Playground() {
     setModels,
     setGroups,
     updateConfig,
+    updateConfigFields,
     clearMessages,
     paramChipValues,
     updateParamChip,
@@ -150,16 +154,78 @@ export function Playground() {
   const handleSelectModel = useCallback(
     (value: string) => {
       handleEditOpenChange(false)
-      updateConfig('model', value)
+      // One write, not two. A pinned channel serves specific models, so carrying
+      // it across a model switch names a line that cannot answer the new model —
+      // the relay rejects that with a 400. Done as two `updateConfig` calls the
+      // first one persists the new model beside the stale channel, a pairing that
+      // is never valid and that a reload landing in between would restore.
+      updateConfigFields({ model: value, channelId: undefined })
     },
-    [handleEditOpenChange, updateConfig]
+    [handleEditOpenChange, updateConfigFields]
   )
 
-  /** Group is a billing/routing choice, not a different model, so history stays. */
+  /**
+   * Group is a billing/routing choice, not a different model, so history stays.
+   *
+   * The pinned channel does not: `/api/pricing/channels` filters routes to the
+   * groups the caller can reach, so a channel reachable in one group may not be
+   * in another, and the pin would survive as an id absent from the list beside it.
+   */
   const handleGroupChange = useCallback(
-    (value: string) => updateConfig('group', value),
+    (value: string) =>
+      updateConfigFields({ group: value, channelId: undefined }),
+    [updateConfigFields]
+  )
+
+  /** Stable identity, because the library's channel rows are memoised too. */
+  const handleChannelChange = useCallback(
+    (channelId: number | undefined) => updateConfig('channelId', channelId),
     [updateConfig]
   )
+
+  /**
+   * Debug mode, owned here because two surfaces share it: the topbar switch and
+   * every assistant message's panel entry. In-memory only — it is a posture for
+   * the current sitting, not a preference worth restoring three weeks later.
+   */
+  const [isDebugEnabled, setIsDebugEnabled] = useState(false)
+
+  /**
+   * The pinned channel's own details, for the topbar.
+   *
+   * The config stores only an id, because that is all a request needs; the line
+   * code and category live on the route list. Same query key and 60s staleTime as
+   * the sidebar's channel block, so this shares that cache rather than adding a
+   * request.
+   */
+  const { routes: channelRoutes, isLoading: isLoadingChannels } =
+    useChannelPricing(config.model || undefined)
+
+  const pinnedRoute = config.channelId
+    ? channelRoutes.find((route) => route.channel_id === config.channelId)
+    : undefined
+
+  /**
+   * Drop a pin that the current model and group can no longer reach.
+   *
+   * Channels get deleted, disabled, or moved out of a group between sittings, and
+   * the id survives in localStorage. Left in place it reaches `Distribute()`,
+   * which answers 403 for a disabled channel — on every send, with a message that
+   * reads as the playground being broken rather than as one stale setting.
+   *
+   * Guarded on a settled, non-empty list: while the query is loading or has
+   * failed, `routes` is `[]` for reasons that say nothing about the pin, and
+   * clearing on that would discard a perfectly good choice.
+   */
+  useEffect(() => {
+    if (!config.channelId || isLoadingChannels) return
+    if (channelRoutes.length === 0) return
+    if (channelRoutes.some((route) => route.channel_id === config.channelId)) {
+      return
+    }
+
+    updateConfig('channelId', undefined)
+  }, [config.channelId, channelRoutes, isLoadingChannels, updateConfig])
 
   const { isLoadingModels } = usePlaygroundOptions({
     currentGroup: config.group,
@@ -197,10 +263,31 @@ export function Playground() {
           groups={groups}
           groupValue={config.group}
           onGroupChange={handleGroupChange}
+          channelId={config.channelId}
+          onChannelChange={handleChannelChange}
         />
       </aside>
 
       <div className='flex min-w-0 flex-1 flex-col overflow-hidden'>
+        {/* Outside the scroll container below, so it stays put while the
+            transcript scrolls under it. Rendered at every breakpoint: the library
+            sidebar is `hidden lg:flex`, so below `lg` this is the only thing on
+            screen naming the channel the next request will use. */}
+        <PlaygroundTopbar
+          modelName={config.model}
+          channel={
+            pinnedRoute
+              ? { id: pinnedRoute.channel_id, code: pinnedRoute.code }
+              : undefined
+          }
+          isStreamEnabled={config.stream}
+          onStreamEnabledChange={(streamEnabled) =>
+            updateConfig('stream', streamEnabled)
+          }
+          isDebugEnabled={isDebugEnabled}
+          onDebugEnabledChange={setIsDebugEnabled}
+        />
+
         {/* Full-width scroll container: scrolling works even over side whitespace */}
         <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
           <PlaygroundChat
@@ -216,6 +303,7 @@ export function Playground() {
             onSaveEdit={(newContent) => applyEdit(newContent, false)}
             onSaveEditAndSubmit={(newContent) => applyEdit(newContent, true)}
             selectedModel={selectedModelOption}
+            isDebugEnabled={isDebugEnabled}
           />
         </div>
 

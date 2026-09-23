@@ -97,6 +97,59 @@ export function extractRedirectModels(modelMapping: string): string[] {
 }
 
 /**
+ * The upstream model names this channel will actually request, after walking
+ * every `model_mapping` redirect chain to its end.
+ *
+ * Cost pricing is keyed by upstream name (`ChannelCostSettings.Models`), which
+ * is what the relay sends and therefore what the vendor invoices. A channel that
+ * publishes `gpt-4o` but remaps it to `gpt-4o-2024-11-20` must be priced under
+ * the latter, so anything offering to fill the pricing table has to resolve the
+ * chain the same way the backend's `ResolveMappedModelName` does — including
+ * treating a self-map as the end of the chain and bailing out of a cycle.
+ */
+export function resolveUpstreamModelNames(
+  models: string[],
+  modelMapping: string
+): string[] {
+  let mapping: Record<string, string> = {}
+  const trimmed = typeof modelMapping === 'string' ? modelMapping.trim() : ''
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        mapping = parsed as Record<string, string>
+      }
+    } catch {
+      mapping = {}
+    }
+  }
+
+  const resolved = new Set<string>()
+  for (const model of models) {
+    const start = normalizeModelName(model)
+    if (!start) continue
+
+    let current = start
+    const visited = new Set<string>([current])
+    for (;;) {
+      const next = normalizeModelName(mapping[current] ?? '')
+      if (!next) break
+      if (visited.has(next)) {
+        // A self-map is the end of the chain; a longer cycle is a broken
+        // mapping, and the backend keeps the client name in that case.
+        if (next !== current) current = start
+        break
+      }
+      visited.add(next)
+      current = next
+    }
+    resolved.add(current)
+  }
+
+  return [...resolved]
+}
+
+/**
  * Check if model configuration has changed
  */
 export function hasModelConfigChanged(

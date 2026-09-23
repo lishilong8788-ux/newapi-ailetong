@@ -35,6 +35,7 @@ import {
   filterModels,
 } from '../../lib/model-library/filters'
 import type { GroupOption, ModelOption } from '../../types'
+import { ChannelBlock } from '../channel-picker/channel-block'
 import { GroupRow } from './group-row'
 import { ModelCard } from './model-card'
 import { VendorFilter } from './vendor-filter'
@@ -48,6 +49,17 @@ type ModelLibraryProps = {
   groups: GroupOption[]
   groupValue: string
   onGroupChange: (value: string) => void
+  /** Pinned channel id; `undefined` means automatic routing. */
+  channelId?: number
+  /**
+   * Called with a channel id to pin it, or `undefined` for automatic routing.
+   *
+   * Optional only so a caller that has not wired routing yet still compiles.
+   * Without it the channel block renders read-only rather than as controls that
+   * swallow clicks — the same treatment a non-admin gets, and for the same
+   * reason: a row that cannot change anything must not look like it can.
+   */
+  onChannelChange?: (channelId: number | undefined) => void
 }
 
 /**
@@ -78,6 +90,8 @@ export function ModelLibrary({
   groups,
   groupValue,
   onGroupChange,
+  channelId,
+  onChannelChange,
 }: ModelLibraryProps) {
   const { t } = useTranslation()
   const user = useAuthStore((s) => s.auth.user)
@@ -229,6 +243,17 @@ export function ModelLibrary({
           ) : null}
         </div>
       </div>
+
+      {/* Below the scroll container and outside it: which line serves the request
+          is a property of the selected model, so it must stay on screen while the
+          list above it is scrolled. `ChannelBlock` caps its own height and folds
+          away, because this column cannot afford both lists at full size. */}
+      <ChannelBlock
+        modelName={selectedModel}
+        channelId={channelId}
+        canPin={isAdmin}
+        onChannelChange={onChannelChange}
+      />
     </div>
   )
 }

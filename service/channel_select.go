@@ -11,9 +11,14 @@ import (
 )
 
 type RetryParam struct {
-	Ctx          *gin.Context
-	TokenGroup   string
-	ModelName    string
+	Ctx        *gin.Context
+	TokenGroup string
+	ModelName  string
+	// LineCode is the line the caller pinned via `<model>/<code>`, "" when
+	// unpinned. A preference, not a constraint: selection falls back to the full
+	// candidate set when the line has nothing usable, so a named line being down
+	// degrades to automatic routing instead of failing the request.
+	LineCode     string
 	RequestPath  string
 	Retry        *int
 	resetNextTry bool
@@ -115,7 +120,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath)
+			channel, _ = model.GetRandomSatisfiedChannelOnLine(autoGroup, param.ModelName, priorityRetry, param.RequestPath, param.LineCode)
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -153,7 +158,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		channel, err = model.GetRandomSatisfiedChannelOnLine(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath, param.LineCode)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}

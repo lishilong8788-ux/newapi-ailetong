@@ -54,16 +54,16 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
   'upstream_model_update_ignored_models',
-  // Pricing fields live in the advanced section too, so a rejected discount or
-  // cost price has to open it. Without these the form only raises a toast and
-  // leaves the offending input collapsed out of sight.
+])
+
+/**
+ * Pricing owns its own editor tab, so a rejected markup or buy price must route
+ * there rather than to the advanced tab it used to be nested under.
+ */
+const PRICING_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'cost_markup_percent',
-  'cost_discount_percent',
   'cost_models',
   'cost_json',
-  'price_discount',
-  'price_models',
-  'price_json',
 ])
 
 export function isAdvancedSettingsField(
@@ -78,4 +78,43 @@ export function hasAdvancedSettingsErrors(
   return Object.keys(errors).some((fieldName) =>
     isAdvancedSettingsField(fieldName)
   )
+}
+
+export function hasPricingErrors(errors: ChannelFormErrorMap): boolean {
+  return Object.keys(errors).some((fieldName) =>
+    PRICING_FIELDS.has(fieldName as FieldPath<ChannelFormValues>)
+  )
+}
+
+export const CHANNEL_EDITOR_TAB_IDS = {
+  basics: 'basics',
+  pricing: 'pricing',
+  advanced: 'advanced',
+} as const
+
+export type ChannelEditorTabId =
+  (typeof CHANNEL_EDITOR_TAB_IDS)[keyof typeof CHANNEL_EDITOR_TAB_IDS]
+
+/**
+ * The editor keeps only the active tab mounted, so a rejected field on a hidden
+ * tab would otherwise show nothing but a toast. Resolve which tab to reveal.
+ *
+ * Basics wins over the other two: its fields are the ones that block a save
+ * outright, and a channel that cannot identify or authenticate itself has no
+ * use for a corrected price.
+ */
+export function resolveChannelEditorErrorTab(
+  errors: ChannelFormErrorMap
+): ChannelEditorTabId {
+  const fieldNames = Object.keys(errors)
+  const hasBasicsError = fieldNames.some(
+    (fieldName) =>
+      !isAdvancedSettingsField(fieldName) &&
+      !PRICING_FIELDS.has(fieldName as FieldPath<ChannelFormValues>)
+  )
+
+  if (hasBasicsError) return CHANNEL_EDITOR_TAB_IDS.basics
+  if (hasPricingErrors(errors)) return CHANNEL_EDITOR_TAB_IDS.pricing
+  if (hasAdvancedSettingsErrors(errors)) return CHANNEL_EDITOR_TAB_IDS.advanced
+  return CHANNEL_EDITOR_TAB_IDS.basics
 }

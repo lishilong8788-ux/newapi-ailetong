@@ -45,6 +45,10 @@ type ModelLibrarySheetProps = {
   groups: GroupOption[]
   groupValue: string
   onGroupChange: (value: string) => void
+  /** Pinned channel id; `undefined` means automatic routing. */
+  channelId?: number
+  /** Called with a channel id to pin it, or `undefined` for automatic routing. */
+  onChannelChange?: (channelId: number | undefined) => void
 }
 
 /**
@@ -66,6 +70,8 @@ export function ModelLibrarySheet({
   groups,
   groupValue,
   onGroupChange,
+  channelId,
+  onChannelChange,
 }: ModelLibrarySheetProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -131,6 +137,8 @@ export function ModelLibrarySheet({
             groups={groups}
             groupValue={groupValue}
             onGroupChange={onGroupChange}
+            channelId={channelId}
+            onChannelChange={onChannelChange}
           />
         </div>
       </SheetContent>

@@ -37,6 +37,7 @@ import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
 import { Route as AuthenticatedAgentAnalyticsIndexRouteImport } from './routes/_authenticated/agent-analytics/index'
 import { Route as AuthenticatedAgentManagementIndexRouteImport } from './routes/_authenticated/agent-management/index'
 import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authenticated/agent/index'
+import { Route as AuthenticatedCatalogIndexRouteImport } from './routes/_authenticated/catalog/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedCostAnalyticsIndexRouteImport } from './routes/_authenticated/cost-analytics/index'
@@ -215,6 +216,12 @@ const AuthenticatedAgentIndexRoute = AuthenticatedAgentIndexRouteImport.update({
   path: '/agent/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCatalogIndexRoute =
+  AuthenticatedCatalogIndexRouteImport.update({
+    id: '/catalog/',
+    path: '/catalog/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedChannelsIndexRoute =
   AuthenticatedChannelsIndexRouteImport.update({
     id: '/channels/',
@@ -460,6 +467,7 @@ export interface FileRoutesByFullPath {
   '/agent-analytics/': typeof AuthenticatedAgentAnalyticsIndexRoute
   '/agent-management/': typeof AuthenticatedAgentManagementIndexRoute
   '/agent/': typeof AuthenticatedAgentIndexRoute
+  '/catalog/': typeof AuthenticatedCatalogIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/cost-analytics/': typeof AuthenticatedCostAnalyticsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -523,6 +531,7 @@ export interface FileRoutesByTo {
   '/agent-analytics': typeof AuthenticatedAgentAnalyticsIndexRoute
   '/agent-management': typeof AuthenticatedAgentManagementIndexRoute
   '/agent': typeof AuthenticatedAgentIndexRoute
+  '/catalog': typeof AuthenticatedCatalogIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/cost-analytics': typeof AuthenticatedCostAnalyticsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
@@ -590,6 +599,7 @@ export interface FileRoutesById {
   '/_authenticated/agent-analytics/': typeof AuthenticatedAgentAnalyticsIndexRoute
   '/_authenticated/agent-management/': typeof AuthenticatedAgentManagementIndexRoute
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
+  '/_authenticated/catalog/': typeof AuthenticatedCatalogIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/cost-analytics/': typeof AuthenticatedCostAnalyticsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -656,6 +666,7 @@ export interface FileRouteTypes {
     | '/agent-analytics/'
     | '/agent-management/'
     | '/agent/'
+    | '/catalog/'
     | '/channels/'
     | '/cost-analytics/'
     | '/dashboard/'
@@ -719,6 +730,7 @@ export interface FileRouteTypes {
     | '/agent-analytics'
     | '/agent-management'
     | '/agent'
+    | '/catalog'
     | '/channels'
     | '/cost-analytics'
     | '/dashboard'
@@ -785,6 +797,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent-analytics/'
     | '/_authenticated/agent-management/'
     | '/_authenticated/agent/'
+    | '/_authenticated/catalog/'
     | '/_authenticated/channels/'
     | '/_authenticated/cost-analytics/'
     | '/_authenticated/dashboard/'
@@ -1033,6 +1046,13 @@ declare module '@tanstack/react-router' {
       path: '/agent'
       fullPath: '/agent/'
       preLoaderRoute: typeof AuthenticatedAgentIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/catalog/': {
+      id: '/_authenticated/catalog/'
+      path: '/catalog'
+      fullPath: '/catalog/'
+      preLoaderRoute: typeof AuthenticatedCatalogIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/channels/': {
@@ -1384,6 +1404,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgentAnalyticsIndexRoute: typeof AuthenticatedAgentAnalyticsIndexRoute
   AuthenticatedAgentManagementIndexRoute: typeof AuthenticatedAgentManagementIndexRoute
   AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
+  AuthenticatedCatalogIndexRoute: typeof AuthenticatedCatalogIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedCostAnalyticsIndexRoute: typeof AuthenticatedCostAnalyticsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
@@ -1414,6 +1435,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgentManagementIndexRoute:
     AuthenticatedAgentManagementIndexRoute,
   AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
+  AuthenticatedCatalogIndexRoute: AuthenticatedCatalogIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedCostAnalyticsIndexRoute: AuthenticatedCostAnalyticsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,

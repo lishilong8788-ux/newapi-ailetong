@@ -138,4 +138,8 @@ var channelNonSensitiveFields = map[string]struct{}{
 	"remark":              {},
 	"channel_info":        {},
 	"multi_key_mode":      {},
+	// line_code is a customer-facing label that steers routing but reaches no
+	// upstream and carries no credential, so it sits with priority and group
+	// rather than with the sensitive set.
+	"line_code": {},
 }

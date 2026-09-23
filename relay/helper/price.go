@@ -5,11 +5,14 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -70,6 +73,83 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 	return groupRatioInfo
 }
 
+// applyChannelSellPrice 用当前渠道的卖价（进价 × (1 + 利润率)）改写 priceData 里的
+// 倍率，返回 false 表示这个渠道-模型没配进价/利润率，老倍率计费原样成立。
+//
+// 这就是渐进上线的开关本体：填一个渠道-模型的进价+利润率，它就走卖价；没填的
+// 一律不受影响，不额外加 feature flag。
+//
+// 只改 model/completion/cache 三个维度，因为卖价也只在这三个维度上有答案
+// （service.ResolveSellPrice 只用官方倍率表推导，覆盖面同 ComputeListPriceQuota）。
+// cache write、音频、图片的倍率留着平台原值：它们在结算侧本就是"相对 input 的
+// 倍数"，是上游的定价结构而不是我们的售价口径，换了 input 基准照样成立。
+func applyChannelSellPrice(c *gin.Context, priceData *hosttypes.PriceData, clientModel string) bool {
+	otherSettings, ok := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)
+	if !ok || otherSettings.Cost == nil {
+		return false
+	}
+
+	// 进价按【上游模型名】索引（运营配的是"我们付给上游多少"），而算价跑在
+	// ModelMappedHelper 之前，只能自己用同一个函数把映射链走一遍。映射本身有
+	// 环时这里不报错：该由中继那边统一拒掉，计费不该是先发现问题的人。
+	upstreamModel, _, err := ResolveMappedModelName(c.GetString("model_mapping"), clientModel)
+	if err != nil {
+		return false
+	}
+
+	sell, ok := service.ResolveSellPrice(otherSettings.Cost, upstreamModel)
+	if !ok {
+		return false
+	}
+	ratios, ok := service.SellPriceToRatios(sell)
+	if !ok {
+		return false
+	}
+
+	priceData.ModelRatio = ratios.ModelRatio
+	if ratios.CompletionRatio != nil {
+		priceData.CompletionRatio = *ratios.CompletionRatio
+	}
+	if ratios.CacheRatio != nil {
+		priceData.CacheRatio = *ratios.CacheRatio
+	}
+	// 卖价是绝对价（USD），分组倍率不再参与——否则同一条卖价对不同分组收不同的
+	// 钱，"渠道-模型-卖价"就不成立了。唯一例外是 0：那是把整个分组关成免费的
+	// 开关，不是折扣，改成 1 等于开始向本来不该付费的分组收钱。
+	if priceData.GroupRatioInfo.GroupRatio != 0 {
+		priceData.GroupRatioInfo.GroupRatio = 1
+	}
+	return true
+}
+
+// RepriceForChannel 在跨渠道重试落到新渠道后重算倍率。
+//
+// 入口算价（ModelPriceHelper）跑在重试循环之前，锁的是分发中间件选的第一条渠道。
+// 重试换了渠道却不重算，就会拿 A 的卖价去卖 B 的成本——客户付 A 的价，我们付 B
+// 的钱，毛利报表跟着错。预扣费不用动：那只是占额，结算按最终倍率补差价。
+//
+// 点名线路（`<模型>/<线路码>`）的请求不重算：客户点的是这条线，价格在入口就已经
+// 许诺出去了，failover 不该改价。没点名的按实际服务渠道计价。
+//
+// 必须先把倍率还原成平台值再套新渠道的卖价：上一条渠道的卖价可能已经改写过
+// model/completion/cache，applyChannelSellPrice 返回 false 时不碰任何字段，
+// 残留的就是 A 的价。平台倍率只按模型名索引、与渠道无关，所以重读一次就是精确
+// 还原。音频/图片/cache write 几项卖价从不改写，不需要还原。
+func RepriceForChannel(c *gin.Context, info *relaycommon.RelayInfo) {
+	if info == nil || info.PriceData.UsePrice {
+		return
+	}
+	if common.GetContextKeyString(c, constant.ContextKeyPinnedLineCode) != "" {
+		return
+	}
+
+	info.PriceData.ModelRatio, _, _ = ratio_setting.GetModelRatio(info.OriginModelName)
+	info.PriceData.CompletionRatio = ratio_setting.GetCompletionRatio(info.OriginModelName)
+	info.PriceData.CacheRatio, _ = ratio_setting.GetCacheRatio(info.OriginModelName)
+
+	applyChannelSellPrice(c, &info.PriceData, info.OriginModelName)
+}
+
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (hosttypes.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
@@ -99,15 +179,6 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		var success bool
 		var matchName string
 		modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
-		if !success {
-			acceptUnsetRatio := false
-			if info.UserSetting.AcceptUnsetRatioModel {
-				acceptUnsetRatio = true
-			}
-			if !acceptUnsetRatio {
-				return hosttypes.PriceData{}, modelPriceNotConfiguredError(matchName, info.UserId)
-			}
-		}
 		completionRatio = ratio_setting.GetCompletionRatio(info.OriginModelName)
 		cacheRatio, _ = ratio_setting.GetCacheRatio(info.OriginModelName)
 		cacheCreationRatio, _ = ratio_setting.GetCreateCacheRatio(info.OriginModelName)
@@ -117,6 +188,28 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		imageRatio, _ = ratio_setting.GetImageRatio(info.OriginModelName)
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
+
+		// 卖价优先于平台倍率。放在读完平台倍率之后：卖价只覆盖 model/completion/
+		// cache 三项，其余维度要保留上面读到的平台值。
+		staged := hosttypes.PriceData{
+			ModelRatio:      modelRatio,
+			CompletionRatio: completionRatio,
+			CacheRatio:      cacheRatio,
+			GroupRatioInfo:  groupRatioInfo,
+		}
+		if applyChannelSellPrice(c, &staged, info.OriginModelName) {
+			modelRatio = staged.ModelRatio
+			completionRatio = staged.CompletionRatio
+			cacheRatio = staged.CacheRatio
+			groupRatioInfo = staged.GroupRatioInfo
+			// 卖价是完整价格，不依赖平台倍率表存不存在这个模型。运营给这个
+			// 渠道-模型填了进价+利润率，就是已经定过价了。
+			success = true
+		}
+		if !success && !info.UserSetting.AcceptUnsetRatioModel {
+			return hosttypes.PriceData{}, modelPriceNotConfiguredError(matchName, info.UserId)
+		}
+
 		ratio := modelRatio * groupRatioInfo.GroupRatio
 		quota, err := common.QuotaFromFloatStrict(float64(preConsumedTokens) * ratio)
 		if err != nil {

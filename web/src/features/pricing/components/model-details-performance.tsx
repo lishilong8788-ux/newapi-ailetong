@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils'
 import { type UptimeDayPoint } from '../lib/mock-stats'
 import type { PricingModel } from '../types'
 import { LatencyTrendChart, UptimeTrendChart } from './model-details-charts'
+import { DetailsCard } from './model-details-shared'
 import { UptimeSparkline } from './model-details-uptime-sparkline'
 
 function StatCard(props: {
@@ -50,7 +51,10 @@ function StatCard(props: {
 }) {
   const Icon = props.icon
   return (
-    <div className='bg-background flex flex-col gap-1 rounded-lg border p-3'>
+    // `bg-card`, not `bg-background`: they are the same white on the default
+    // palette, but only `--card` is guaranteed to stay above the tray in a preset
+    // that tints its page background.
+    <div className='bg-card border-border/70 shadow-raised flex flex-col gap-1 rounded-xl border p-3'>
       <span className='text-muted-foreground inline-flex items-center gap-1.5 text-[10px] font-medium tracking-wider uppercase'>
         <Icon className='size-3' />
         {props.label}
@@ -200,9 +204,9 @@ export function ModelDetailsPerformance(props: {
     // Card level, because it stands in for the whole stat grid, whose tiles are
     // card surfaces too.
     return (
-      <div className='text-muted-foreground bg-card rounded-lg border p-6 text-center text-sm'>
+      <DetailsCard className='text-muted-foreground p-6 text-center text-sm'>
         {t('Performance data is not yet available for this model.')}
-      </div>
+      </DetailsCard>
     )
   }
 
@@ -260,7 +264,7 @@ export function ModelDetailsPerformance(props: {
           description={t('Average latency, TTFT, TPS, and success rate')}
         />
         <StaticDataTable
-          className='rounded-lg'
+          className='bg-card border-border/70 shadow-raised rounded-xl'
           tableClassName='text-sm'
           headerRowClassName={tableStyles.compactHeaderRow}
           data={performances}
@@ -322,7 +326,11 @@ export function ModelDetailsPerformance(props: {
           title={t('Latency trend (last 24h)')}
           description={t('Average TTFT')}
         />
-        <LatencyTrendChart series={latencySeries} />
+        {/* Charts paint on transparent, so without a card they were plotting
+            straight onto the tray. */}
+        <DetailsCard className='p-3'>
+          <LatencyTrendChart series={latencySeries} />
+        </DetailsCard>
       </section>
 
       <section>
@@ -350,7 +358,9 @@ export function ModelDetailsPerformance(props: {
             ) : null
           }
         />
-        <UptimeTrendChart series={uptimeSeries} />
+        <DetailsCard className='p-3'>
+          <UptimeTrendChart series={uptimeSeries} />
+        </DetailsCard>
       </section>
     </div>
   )

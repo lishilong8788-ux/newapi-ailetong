@@ -16,15 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  CalendarClock,
-  ChevronDown,
-  FileText,
-  Layers,
-  Maximize2,
-  Sparkles,
-} from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
@@ -34,203 +26,9 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 import { resolveTagList } from '@/lib/model-tags'
 import { cn } from '@/lib/utils'
 
-import {
-  formatCatalogTokenCount,
-  formatCatalogYearMonth,
-  normalizeCatalogItems,
-} from '../lib/catalog-fields'
 import { getPriceComparison } from '../lib/price-comparison'
 import type { PricingModel, TokenUnit } from '../types'
-import { FieldPlaceholder, ModalityLabels } from './model-details-shared'
 import { PromoBadge } from './promo-badge'
-
-// ----------------------------------------------------------------------------
-// Description
-// ----------------------------------------------------------------------------
-
-/** Lines shown before the description collapses behind a toggle. */
-const DESCRIPTION_CLAMP_LINES = 3
-
-/**
- * The model's own blurb, falling back to the vendor's.
- *
- * Clamped to three lines with a toggle, and the toggle only appears when the
- * text actually overflows — measured rather than guessed from length, because
- * the drawer is resizable and the same string overflows at 400px but not at
- * 900px. Overflow is only ever measured while collapsed: once expanded the
- * element is its full height, so a naive re-measure would decide there is
- * nothing to collapse and strip the control the reader needs to get back.
- */
-function ModelDescription(props: { model: PricingModel }) {
-  const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
-  const [overflows, setOverflows] = useState(false)
-  const textRef = useRef<HTMLParagraphElement>(null)
-  const description =
-    props.model.description || props.model.vendor_description || ''
-
-  useLayoutEffect(() => {
-    setExpanded(false)
-  }, [description])
-
-  useEffect(() => {
-    const element = textRef.current
-    if (!element || expanded) return
-
-    const measure = () => {
-      // 1px of tolerance: sub-pixel line heights make scrollHeight exceed
-      // clientHeight by a fraction on text that visually fits exactly.
-      setOverflows(element.scrollHeight - element.clientHeight > 1)
-    }
-    measure()
-
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [description, expanded])
-
-  if (!description) {
-    return (
-      <p className='text-muted-foreground/50 mt-3 text-sm'>
-        {t('No description has been added for this model yet.')}
-      </p>
-    )
-  }
-
-  return (
-    <div className='mt-3'>
-      <p
-        ref={textRef}
-        className={cn(
-          'text-muted-foreground text-[15px] leading-relaxed',
-          !expanded && 'line-clamp-3'
-        )}
-        style={
-          expanded ? undefined : { WebkitLineClamp: DESCRIPTION_CLAMP_LINES }
-        }
-      >
-        {description}
-      </p>
-      {(overflows || expanded) && (
-        <button
-          type='button'
-          onClick={() => setExpanded((value) => !value)}
-          className='text-info hover:text-info/80 mt-1 inline-flex items-center gap-0.5 text-xs font-medium transition-colors'
-          aria-expanded={expanded}
-        >
-          {expanded ? t('Collapse') : t('Expand')}
-          <ChevronDown
-            className={cn(
-              'size-3 transition-transform duration-200',
-              expanded && 'rotate-180'
-            )}
-          />
-        </button>
-      )}
-    </div>
-  )
-}
-
-// ----------------------------------------------------------------------------
-// Spec strip
-// ----------------------------------------------------------------------------
-
-/**
- * Five fixed cells of objective model specs.
- *
- * Fixed on purpose: none of these fields is served by `/api/pricing` yet, and a
- * strip that hid its empty cells would render as nothing today and rearrange
- * itself later, field by field, as the backend catches up. Placeholders keep the
- * shape final and make the gaps legible.
- */
-function ModelSpecStrip(props: { model: PricingModel }) {
-  const { t } = useTranslation()
-  const model = props.model
-  const inputModalities = normalizeCatalogItems(model.input_modalities)
-  const outputModalities = normalizeCatalogItems(model.output_modalities)
-  const context = formatCatalogTokenCount(model.context_length)
-  const maxOutput = formatCatalogTokenCount(model.max_output_tokens)
-  const knowledgeCutoff = formatCatalogYearMonth(model.knowledge_cutoff)
-  const released = formatCatalogYearMonth(model.release_date)
-  const hasModalities =
-    inputModalities.length > 0 || outputModalities.length > 0
-
-  const cells: {
-    key: string
-    icon: React.ComponentType<{ className?: string }>
-    label: string
-    value: React.ReactNode
-    hint?: string
-  }[] = [
-    {
-      key: 'context',
-      icon: Layers,
-      label: t('Context'),
-      value: context || <FieldPlaceholder />,
-      hint: t('Maximum input window'),
-    },
-    {
-      key: 'max-output',
-      icon: Maximize2,
-      label: t('Max output'),
-      value: maxOutput || <FieldPlaceholder />,
-      hint: t('Maximum tokens per response'),
-    },
-    {
-      key: 'modalities',
-      icon: FileText,
-      label: t('Modalities'),
-      value: hasModalities ? (
-        <span className='inline-flex items-center gap-1'>
-          <ModalityLabels items={inputModalities} />
-          {inputModalities.length > 0 && outputModalities.length > 0 && (
-            <span className='text-muted-foreground/40'>→</span>
-          )}
-          <ModalityLabels items={outputModalities} />
-        </span>
-      ) : (
-        <FieldPlaceholder />
-      ),
-    },
-    {
-      key: 'knowledge',
-      icon: Sparkles,
-      label: t('Knowledge cutoff'),
-      value: knowledgeCutoff || <FieldPlaceholder />,
-    },
-    {
-      key: 'release',
-      icon: CalendarClock,
-      label: t('Released'),
-      value: released || <FieldPlaceholder />,
-    },
-  ]
-
-  return (
-    <div className='bg-border/60 mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border @md/details:grid-cols-3 @2xl/details:grid-cols-5'>
-      {cells.map((cell) => {
-        const Icon = cell.icon
-        return (
-          <div
-            key={cell.key}
-            className='bg-card flex min-w-0 flex-col gap-1 px-3.5 py-3.5'
-          >
-            <span className='text-muted-foreground inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium'>
-              <Icon className='size-4 shrink-0' />
-              <span className='truncate'>{cell.label}</span>
-            </span>
-            <span className='text-foreground truncate text-lg font-bold tabular-nums'>
-              {cell.value}
-            </span>
-            <span className='text-muted-foreground/70 truncate text-xs'>
-              {cell.hint ?? ' '}
-            </span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 // ----------------------------------------------------------------------------
 // Header
@@ -250,23 +48,48 @@ export interface ModelDetailsHeaderProps {
   priceRate: number
   usdExchangeRate: number
   showRechargePrice?: boolean
+  /**
+   * Drawer mode: the band is the panel's fixed top bar rather than the first
+   * thing in a scrolling column. It keeps its own horizontal padding (the drawer
+   * body no longer supplies any), reserves room on the right for the drawer's
+   * close button, and stays one line tall so the content below gets the height.
+   */
+  docked?: boolean
+  /**
+   * Right-hand slot, used for the tab switcher. It rides in the identity bar
+   * instead of a second row of its own: a pinned bar that only holds a name
+   * wastes the height twice, once on the bar and once on the strip under it.
+   */
+  trailing?: ReactNode
 }
 
 /**
- * Identity block above the tabs: who this model is, what it costs at a glance,
- * and what it can do.
+ * Masthead above the tabs: the model's identity, and nothing else.
  *
- * The billing-mode badge deliberately does not appear here — every price table
- * below carries it, and stating it twice on one screen buys nothing. Tags come
- * up from the old bottom metadata grid because "限时 / 推荐" is the kind of thing
- * a buyer reads with the name, not after the endpoint list.
+ * Deliberately not a card. A bordered box floating inside the drawer's padding
+ * reads as a widget someone dropped on the page; the band bleeds to all three
+ * edges instead and separates itself with a hairline under it and a single accent
+ * rule along the top, so the drawer opens on the model's name rather than on a
+ * frame around it. Identity sits left, commercial standing (vendor, headline
+ * discount, offer tags) right — the eye lands on what the model *is*, then
+ * travels to what it *costs*, and the right column stops the wide drawer from
+ * leaving half the band empty.
+ *
+ * The blurb and the spec grid deliberately live in the Basic Info tab instead:
+ * this band is read on every tab, and prose that only matters once belongs where
+ * the reader goes looking for it. The billing-mode badge is likewise absent —
+ * every price table below carries it.
+ *
+ * In the drawer the band is pinned and the tab switcher rides in it (`trailing`),
+ * which is why everything here is sized to one line: whatever height this takes
+ * is height the price tables never get back.
  */
 export function ModelDetailsHeader(props: ModelDetailsHeaderProps) {
   const { t } = useTranslation()
   const tagRegistry = useTagRegistry()
   const model = props.model
   const modelIconKey = model.icon || model.vendor_icon
-  const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 22) : null
+  const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 26) : null
   // Not sorted by prominence: the details panel shows every tag, so there is no
   // truncation for an offer tag to be pushed out of.
   const tags = resolveTagList(model.tags, tagRegistry)
@@ -284,56 +107,136 @@ export function ModelDetailsHeader(props: ModelDetailsHeaderProps) {
     discountRatio == null ? null : formatDiscount(discountRatio, t)
 
   return (
-    <header>
-      <div className='flex items-start gap-3'>
-        {modelIcon && (
-          <div className='bg-card border-border/80 mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-xl border'>
-            {modelIcon}
-          </div>
+    <header
+      className={cn(
+        // Saturated brand band, not another white bar. The panel opens on colour
+        // and the white cards in the tray below read as sitting *in* something
+        // rather than continuing the header. No hairline under it — the band
+        // already ends itself against the tinted tray.
+        'from-band-start to-band-end relative shrink-0 bg-linear-to-br text-white',
+        // Room on the right for the drawer's own close button (top-3 right-3,
+        // 32px wide), so the trailing tabs stop short of it instead of sliding
+        // under. No top padding: the bar is the first thing in the panel now, and
+        // the button sits inside its height rather than above it.
+        props.docked
+          ? 'px-4 pr-13 sm:px-6 sm:pr-14'
+          : // Standalone the band is not flush to a panel edge, so it rounds into
+            // a hero block instead of bleeding into the page's own padding.
+            'rounded-2xl px-4 sm:px-6'
+      )}
+    >
+      {/* Soft highlight off the top-right, the one piece of the reference band's
+          lighting that is safe to keep: it lifts the corner the eye reads as
+          "glossy" without lightening the left side where the name sits. Capped at
+          18% white — the gradient stops are pinned just above the AA floor for
+          white text, so anything stronger here would spend that margin.
+          Pointer-events off: it spans the whole band, including the drawer's
+          close button, and would otherwise swallow its clicks. */}
+      <div
+        aria-hidden
+        className='pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] bg-[radial-gradient(circle_at_78%_-40%,rgba(255,255,255,0.18),transparent_62%)]'
+      />
+
+      <div
+        className={cn(
+          'relative flex flex-wrap items-center gap-x-4 gap-y-2',
+          props.docked ? 'py-2.5' : 'justify-between py-4 sm:py-5'
         )}
-        <div className='min-w-0 flex-1'>
+      >
+        <div
+          className={cn(
+            'flex min-w-0 items-center',
+            props.docked ? 'gap-2.5' : 'flex-1 gap-3'
+          )}
+        >
+          {/* Frosted tile rather than the old muted-grey one: on the band a grey
+              fill reads as a hole punched in the colour. White at 15% with a
+              brighter hairline is the same tile the reference uses for the marks
+              in its hero. Most vendor logos are dark-on-transparent, so the tile
+              has to stay light enough to hold one. */}
+          {modelIcon && (
+            <div
+              className={cn(
+                'flex shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-white/40',
+                props.docked ? 'size-9' : 'size-11'
+              )}
+            >
+              {modelIcon}
+            </div>
+          )}
           <div className='flex min-w-0 items-center gap-2'>
-            <h1 className='min-w-0 font-mono text-xl font-bold tracking-tight break-all sm:text-2xl'>
+            {/* Truncated in the pinned bar, wrapped otherwise: a long name may
+                take two lines in a band that scrolls away, but not in one that
+                every tab is read through. The full string is a click away on the
+                copy button and spelled out in Basic Info. */}
+            <h1
+              className={cn(
+                'min-w-0 font-mono font-bold tracking-tight',
+                props.docked
+                  ? 'truncate text-lg'
+                  : 'text-xl break-all sm:text-[1.6rem] sm:leading-8'
+              )}
+            >
               {model.model_name}
             </h1>
             <CopyButton
               value={model.model_name || ''}
-              className='size-6 shrink-0'
+              className='size-6 shrink-0 text-white/70 hover:bg-white/15 hover:text-white'
               iconClassName='size-3'
               tooltip={t('Copy model name')}
               successTooltip={t('Copied!')}
               aria-label={t('Copy model name')}
             />
           </div>
-
-          <div className='mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5'>
-            {model.vendor_name && (
-              <span className='text-muted-foreground text-sm'>
-                {model.vendor_name}
-              </span>
-            )}
-            {discountText && (
-              <PromoBadge
-                label={discountText}
-                variant='orange'
-                flow
-                title={t('Platform price vs. official price')}
-              />
-            )}
-            {tags.map((tag) => (
-              <PromoBadge
-                key={tag.slug}
-                label={tag.label}
-                variant={tag.variant}
-                flow={tag.kind === 'promo'}
-              />
-            ))}
-          </div>
         </div>
-      </div>
 
-      <ModelDescription model={model} />
-      <ModelSpecStrip model={model} />
+        {/* Right cluster. `justify-end` only from sm: on a phone the band is one
+            column and the badges read better flush-left under the name than
+            pushed to an edge the title does not reach. */}
+        <div
+          className={cn(
+            'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5',
+            !props.docked && 'sm:justify-end'
+          )}
+        >
+          {/* Vendor pill is outline only, no fill. A `bg-white/15` lightens the
+              band under the label to ~2.9:1 against white, which 12px text cannot
+              carry; unfilled, the label sits on the band itself at 4.76:1. */}
+          {model.vendor_name && (
+            <span className='inline-flex max-w-full items-center rounded-full border border-white/35 px-2.5 py-0.5 text-xs font-medium text-white'>
+              <span className='truncate'>{model.vendor_name}</span>
+            </span>
+          )}
+          {discountText && (
+            <PromoBadge
+              label={discountText}
+              variant='orange'
+              flow
+              onBand
+              title={t('Platform price vs. official price')}
+            />
+          )}
+          {tags.map((tag) => (
+            <PromoBadge
+              key={tag.slug}
+              label={tag.label}
+              variant={tag.variant}
+              flow={tag.kind === 'promo'}
+              onBand
+            />
+          ))}
+        </div>
+
+        {/* `ms-auto` from sm so the switcher holds the far right of the bar
+            whether or not the badges filled the middle. Below that it takes its
+            own full-width line, where three tab labels do not fit beside a model
+            name. */}
+        {props.trailing && (
+          <div className='w-full min-w-0 sm:ms-auto sm:w-auto'>
+            {props.trailing}
+          </div>
+        )}
+      </div>
     </header>
   )
 }

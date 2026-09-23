@@ -41,16 +41,32 @@ export function getChannelTypeLabel(type: number): string {
 }
 
 /**
+ * Channels that are real third-party vendors but have no icon in
+ * @lobehub/icons. They deliberately resolve to their own name, which
+ * getLobeIcon renders as a coloured monogram. Showing OpenAI's mark here
+ * would claim a vendor identity the channel does not have — these are
+ * OpenAI-*compatible* relays, not OpenAI.
+ */
+export const MONOGRAM_ONLY_CHANNEL_TYPES: Record<number, string> = {
+  7: 'OhMyGPT',
+  44: 'MokaAI',
+  53: 'Submodel',
+}
+
+/**
  * Get channel type icon name for getLobeIcon
  * Maps channel types to Lobe icon names using type number (language-independent)
  */
 export function getChannelTypeIcon(type: number): string {
+  const monogram = MONOGRAM_ONLY_CHANNEL_TYPES[type]
+  if (monogram) return monogram
+
   const TYPE_TO_ICON: Record<number, string> = {
+    0: 'UnknownChannel', // Unknown — not a vendor
     // OpenAI family
     1: 'OpenAI', // OpenAI
     6: 'OpenAI', // OpenAIMax
-    7: 'OpenAI', // OhMyGPT
-    8: 'OpenAI', // Custom
+    8: 'GenericEndpoint', // Custom — not a vendor
     58: 'NewAPI', // Advanced Custom
     59: 'Sub2API', // Sub2API
     60: 'NewAPI', // New API
@@ -91,7 +107,6 @@ export function getChannelTypeIcon(type: number): string {
     48: 'XAI', // xAI
     49: 'Coze', // Coze
     40: 'SiliconCloud', // SiliconFlow
-    44: 'OpenAI', // MokaAI
     20: 'OpenRouter', // OpenRouter
 
     // Image/Video generation
@@ -101,7 +116,7 @@ export function getChannelTypeIcon(type: number): string {
     51: 'Jimeng', // Jimeng
     52: 'Vidu', // Vidu
     36: 'Suno', // SunoAPI
-    55: 'OpenAI', // Sora
+    55: 'Sora', // Sora
     54: 'Doubao', // DoubaoVideo
     56: 'Replicate', // Replicate
 
@@ -110,7 +125,7 @@ export function getChannelTypeIcon(type: number): string {
     38: 'Jina', // Jina
     22: 'FastGPT', // FastGPT
     47: 'Xinference', // Xinference
-    53: 'OpenAI', // Submodel
+    57: 'Codex', // ChatGPT Subscription (Codex)
 
     // AI Proxy services
     10: 'OpenAI', // AI Proxy
@@ -120,7 +135,10 @@ export function getChannelTypeIcon(type: number): string {
     9: 'OpenAI', // AILS
   }
 
-  return TYPE_TO_ICON[type] || 'OpenAI'
+  // Unmapped types are unrecognised, not OpenAI. The backend can define a
+  // type before the frontend maps it (e.g. ChannelTypeMiniMaxH3 = 61), and
+  // labelling those as OpenAI is worse than admitting we don't know.
+  return TYPE_TO_ICON[type] || 'UnknownChannel'
 }
 
 // ============================================================================

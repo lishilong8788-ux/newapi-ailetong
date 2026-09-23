@@ -36,7 +36,8 @@ func TestSnapshotWiring_CostAndPriceLandTogether(t *testing.T) {
 		Tokens: tokens, Revenue: charged,
 	})
 	writeCostSnapshotForTest(other, costQuota, costSource)
-	writeSellPriceSnapshot(priceSettings, "wiring-fixture", charged, tokens, other)
+	writeSellPriceSnapshot(dto.ChannelOtherSettings{Price: priceSettings}, "wiring-fixture",
+		sellPriceChannel{Id: 11, LineCode: "hs10"}, charged, tokens, other)
 
 	admin, ok := other["admin_info"].(map[string]interface{})
 	if !ok {
@@ -81,9 +82,8 @@ func TestSnapshotWiring_UnconfiguredChannelRecordsNoExpectation(t *testing.T) {
 	seedOfficialRatios(t, `{"wiring-fixture":2}`, `{"wiring-fixture":3}`, `{}`)
 
 	other := map[string]interface{}{}
-	writeSellPriceSnapshot(nil, "wiring-fixture", 5000, CostTokenBreakdown{
-		PromptTokens: 1000, CompletionTokens: 500,
-	}, other)
+	writeSellPriceSnapshot(dto.ChannelOtherSettings{}, "wiring-fixture", sellPriceChannel{Id: 11}, 5000,
+		CostTokenBreakdown{PromptTokens: 1000, CompletionTokens: 500}, other)
 
 	price := other["admin_info"].(map[string]interface{})["price"].(map[string]interface{})
 	if price["price_source"] != PriceSourceFallback {

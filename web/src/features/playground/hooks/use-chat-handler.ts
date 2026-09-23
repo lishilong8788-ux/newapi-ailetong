@@ -20,8 +20,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { sendChatCompletion } from '../api'
-import { ERROR_MESSAGES } from '../constants'
+import { parseChannelEcho, parseRequestId, sendChatCompletion } from '../api'
+import { CHANNEL_HEADERS, ERROR_MESSAGES } from '../constants'
 import {
   applyStreamingChunk,
   buildChatCompletionPayload,
@@ -53,6 +53,21 @@ type PendingStreamChunks = {
   generation: number
   content: string
   reasoning: string
+}
+
+/**
+ * The pin header, or nothing at all.
+ *
+ * Automatic routing is the default and by far the common path, so it must send
+ * no channel header whatsoever — an empty or `0` value is a request to pin a
+ * channel that does not exist, which is a different thing from not asking.
+ */
+function buildChannelRequestHeaders(
+  channelId: number | undefined
+): Record<string, string> | undefined {
+  if (channelId === undefined) return undefined
+
+  return { [CHANNEL_HEADERS.REQUEST_CHANNEL_ID]: String(channelId) }
 }
 
 function mergePendingStreamChunk(
@@ -267,6 +282,27 @@ export function useChatHandler({
     [flushStreamUpdates, getDisplayError, onMessageUpdate, t]
   )
 
+  /**
+   * Record which channel answered, and how fast it started.
+   *
+   * Both land on the pending assistant message of the transcript that asked, via
+   * the same model-pinned write every chunk uses, so a model switch mid-flight
+   * cannot file the reply's provenance under the wrong conversation.
+   */
+  const applyReplyMetadata = useCallback(
+    (generation: number, patch: Partial<Message>) => {
+      if (generation !== requestGenerationRef.current) return
+      onMessageUpdate((prev) => {
+        if (generation !== requestGenerationRef.current) return prev
+        return updateLastAssistantMessage(prev, (message) => ({
+          ...message,
+          ...patch,
+        }))
+      }, requestModelRef.current)
+    },
+    [onMessageUpdate]
+  )
+
   // Send streaming chat request
   const sendStreamingChat = useCallback(
     (messages: Message[]) => {
@@ -280,9 +316,29 @@ export function useChatHandler({
       const payload = buildChatCompletionPayload(messages, config)
       void sendStreamRequest(
         payload,
-        (type, chunk) => handleStreamUpdate(generation, type, chunk),
-        () => handleStreamComplete(generation),
-        (error, errorCode) => handleStreamError(generation, error, errorCode)
+        {
+          onUpdate: (type, chunk) =>
+            handleStreamUpdate(generation, type, chunk),
+          onComplete: () => handleStreamComplete(generation),
+          onError: (error, errorCode) =>
+            handleStreamError(generation, error, errorCode),
+          onHeaders: (headers) => {
+            const channel = parseChannelEcho(headers)
+            const requestId = parseRequestId(headers)
+            // One write for whatever the headers yielded. Either can be absent
+            // independently, and writing an explicit `undefined` would overwrite
+            // a value the other transport had already recorded.
+            if (channel || requestId) {
+              applyReplyMetadata(generation, {
+                ...(channel ? { channel } : {}),
+                ...(requestId ? { requestId } : {}),
+              })
+            }
+          },
+          onFirstToken: (ttftMs) => applyReplyMetadata(generation, { ttftMs }),
+          onUsage: (usage) => applyReplyMetadata(generation, { usage }),
+        },
+        buildChannelRequestHeaders(config.channelId)
       )
     },
     [
@@ -292,6 +348,7 @@ export function useChatHandler({
       handleStreamUpdate,
       handleStreamComplete,
       handleStreamError,
+      applyReplyMetadata,
     ]
   )
 
@@ -311,9 +368,10 @@ export function useChatHandler({
 
       try {
         setIsRequesting(true)
-        const response = await sendChatCompletion(
+        const result = await sendChatCompletion(
           payload,
-          abortController.signal
+          abortController.signal,
+          buildChannelRequestHeaders(config.channelId)
         )
         if (
           abortController.signal.aborted ||
@@ -322,20 +380,36 @@ export function useChatHandler({
           return
         }
 
-        if (!hasChatCompletionChoice(response)) {
+        if (!hasChatCompletionChoice(result.data)) {
           handleStreamError(generation, ERROR_MESSAGES.API_REQUEST_ERROR)
           return
         }
+
+        /*
+         * No `ttftMs` on this path. A non-streaming response arrives whole, so
+         * there is no first token to observe — reporting the total round trip as
+         * a first-token time would invent a measurement.
+         */
+        const channel = parseChannelEcho(result.headers)
+        const requestId = parseRequestId(result.headers)
+        // Taken straight off the body on this path. A non-streaming reply carries
+        // its own `usage`, so there is nothing to reassemble from chunks.
+        const usage = result.data.usage
 
         onMessageUpdate((prev) => {
           if (requestGenerationRef.current !== generation) return prev
           return updateLastAssistantMessage(prev, (message) => {
             const updatedMessage = applyChatCompletionResponse(
               message,
-              response
+              result.data
             )
 
-            return updatedMessage ?? message
+            return {
+              ...(updatedMessage ?? message),
+              ...(channel && { channel }),
+              ...(requestId && { requestId }),
+              ...(usage && { usage }),
+            }
           })
         }, requestModelRef.current)
       } catch (error: unknown) {

@@ -274,6 +274,8 @@ distributor.get_channel_failed: "Failed to get available channel for model {{.Mo
 distributor.no_available_channel: "No available channel for model {{.Model}} under group {{.Group}} (distributor)"
 distributor.invalid_midjourney_request: "Invalid Midjourney request: {{.Error}}"
 distributor.invalid_request_parse_model: "Invalid request, unable to parse model"
+distributor.pin_not_admin: "Regular users cannot pin a specific channel"
+distributor.pin_model_mismatch: "Channel #{{.Channel}} does not serve model {{.Model}}"
 
 # Agent (distributor programme) setting messages
 agent.rate_invalid: "Commission rate must be a number"

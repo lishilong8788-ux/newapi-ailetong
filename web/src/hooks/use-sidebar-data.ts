@@ -33,6 +33,7 @@ import {
   ServerCog,
   Settings,
   Share2,
+  Store,
   Ticket,
   User,
   UserCog,
@@ -135,6 +136,13 @@ export function useSidebarData(): SidebarData {
         id: 'admin',
         title: t('Admin'),
         items: [
+          {
+            // Above Channels on purpose: the catalog is the model-facing lens on
+            // the same data, and it is where day-to-day product work starts.
+            title: t('Product catalog'),
+            url: '/catalog',
+            icon: Store,
+          },
           {
             title: t('Channels'),
             url: '/channels',

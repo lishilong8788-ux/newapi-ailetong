@@ -28,23 +28,56 @@ import {
   isStreamDoneMessage,
   parseStreamErrorDetails,
   parseStreamMessageUpdates,
+  parseStreamUsage,
 } from '../lib'
-import type { ChatCompletionRequest } from '../types'
+import type { ChatCompletionRequest, Message } from '../types'
 
+/**
+ * The `sse.js` surface this module uses.
+ *
+ * `headers` rides on the `open` event: `sse.js` parses the response headers once
+ * the underlying `XMLHttpRequest` reaches `HEADERS_RECEIVED`, lowercases every
+ * key and wraps each value in an array (`sse.js/lib/sse.js`, `_onReadyStateChange`).
+ * It is not on `readystatechange` — that event carries only `readyState`, and
+ * `sse.js` numbers its own states (`INITIALIZING -1`, `CONNECTING 0`, `OPEN 1`,
+ * `CLOSED 2`) rather than the XHR's, so `readyState === 2` there means the stream
+ * has closed.
+ */
 interface StreamEventSource {
   readyState?: number
   addEventListener: (
     type: string,
-    listener: (event: Event & { data?: string; readyState?: number }) => void
+    listener: (
+      event: Event & {
+        data?: string
+        readyState?: number
+        headers?: Record<string, string[]>
+      }
+    ) => void
   ) => void
   close: () => void
   stream: () => void
 }
 
-interface StreamRequestCallbacks {
+export interface StreamRequestCallbacks {
   onUpdate: (type: 'reasoning' | 'content', chunk: string) => void
   onComplete: () => void
   onError: (error: string, errorCode?: string) => void
+  /** Response headers, flattened to one value per key, keys lowercased. */
+  onHeaders?: (headers: Record<string, string>) => void
+  /**
+   * Time to first token in ms, measured from the moment this request was put on
+   * the wire. Fires at most once per request. See `dispatchedAt` below for why
+   * the controller owns this measurement.
+   */
+  onFirstToken?: (ttftMs: number) => void
+  /**
+   * Token counts from the stream's closing usage frame.
+   *
+   * Fires at most once in practice, but not enforced: if an upstream sent two,
+   * the later figure is the more complete one and overwriting is correct.
+   */
+  onUsage?: (usage: Message['usage']) => void
 }
 
 interface StreamRequestControllerRuntime {
@@ -72,7 +105,8 @@ export function createStreamRequestController(
 
   const send = async (
     payload: ChatCompletionRequest,
-    callbacks: StreamRequestCallbacks
+    callbacks: StreamRequestCallbacks,
+    requestHeaders?: Record<string, string>
   ) => {
     const requestGeneration = generation + 1
     generation = requestGeneration
@@ -95,10 +129,26 @@ export function createStreamRequestController(
     }
     if (generation !== requestGeneration) return
 
-    const nextSource = runtime.createSource(payload, headers)
+    const nextSource = runtime.createSource(
+      payload,
+      requestHeaders ? { ...headers, ...requestHeaders } : headers
+    )
     source = nextSource
     runtime.setStreaming(true)
     let completed = false
+    /*
+     * When this request went on the wire, and the start of the first-token
+     * measurement.
+     *
+     * Set right before `stream()` rather than at submit time: the message's
+     * `startedAt` is stamped when the user/assistant pair is appended, which is
+     * before this function is even called and before `getHeaders()` — a call that
+     * silently becomes a token-refresh round trip when the access token is near
+     * expiry. Measuring from there would charge that refresh to the upstream's
+     * first token and report a number the channel card can never match.
+     */
+    let dispatchedAt: number | undefined
+    let firstTokenReported = false
 
     const isCurrent = () =>
       generation === requestGeneration && source === nextSource
@@ -118,6 +168,40 @@ export function createStreamRequestController(
         closeActiveSource(nextSource)
         callbacks.onComplete()
         return
+      }
+
+      /*
+       * First token, on the same terms the backend uses.
+       *
+       * `relay/helper/stream_scanner.go` calls `SetFirstResponseTime()` on the
+       * first upstream SSE frame that is not `[DONE]`, without parsing it, and
+       * `pkg/perf_metrics.RecordRelaySample` turns that into
+       * `FirstResponseTime - StartTime` for streaming requests only. So the
+       * published figure counts *any* first frame — a `reasoning_content` delta,
+       * and equally an opening `role` delta carrying no text.
+       *
+       * This fires on the same event for that reason. Scoring only `content`, or
+       * waiting for a frame that parses into something, would time a later event
+       * than the channel card does and make the panel's comparison meaningless —
+       * the two numbers are only worth showing side by side if they measure the
+       * same thing. `[DONE]` is already handled above, so this is exactly the
+       * backend's trigger.
+       *
+       * Deliberately before `parseStreamMessageUpdates`: a frame that fails to
+       * parse still arrived, and the backend counted it.
+       */
+      if (!firstTokenReported && dispatchedAt !== undefined) {
+        firstTokenReported = true
+        callbacks.onFirstToken?.(Math.max(0, Date.now() - dispatchedAt))
+      }
+
+      // Outside the try below, and before it: the usage frame carries an empty
+      // `choices`, so it is precisely the frame the message parser treats as
+      // having nothing in it. Reading it first means a token count survives even
+      // if that parser goes on to reject the same frame.
+      const usage = parseStreamUsage(data)
+      if (usage) {
+        callbacks.onUsage?.(usage)
       }
 
       try {
@@ -155,8 +239,25 @@ export function createStreamRequestController(
       }
     })
 
+    /*
+     * Response headers, once. Flattened to the first value per key because every
+     * header this reads is single-valued; `sse.js` arrays them unconditionally.
+     */
+    nextSource.addEventListener('open', (event) => {
+      if (!isCurrent() || completed || !event.headers) return
+
+      const flattened: Record<string, string> = {}
+      for (const [name, values] of Object.entries(event.headers)) {
+        const value = values[0]
+        if (value !== undefined) flattened[name] = value
+      }
+
+      callbacks.onHeaders?.(flattened)
+    })
+
     try {
       if (!isCurrent()) return
+      dispatchedAt = Date.now()
       nextSource.stream()
     } catch (error: unknown) {
       if (!isCurrent() || completed) return
@@ -201,18 +302,17 @@ export function useStreamRequest() {
     })
   }
 
+  /**
+   * `callbacks` as one object rather than positional arguments: there are five of
+   * them now, two optional, and a call site passing four arrows in a fixed order
+   * had already stopped being readable.
+   */
   const sendStreamRequest = useCallback(
     (
       payload: ChatCompletionRequest,
-      onUpdate: (type: 'reasoning' | 'content', chunk: string) => void,
-      onComplete: () => void,
-      onError: (error: string, errorCode?: string) => void
-    ) =>
-      controllerRef.current?.send(payload, {
-        onUpdate,
-        onComplete,
-        onError,
-      }),
+      callbacks: StreamRequestCallbacks,
+      requestHeaders?: Record<string, string>
+    ) => controllerRef.current?.send(payload, callbacks, requestHeaders),
     []
   )
 

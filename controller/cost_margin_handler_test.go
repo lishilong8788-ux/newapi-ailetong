@@ -145,3 +145,77 @@ func TestCostChannelModelsHandler_RanksChannelsForOneModel(t *testing.T) {
 	require.InDelta(t, -0.2, lossy["margin_rate"].(float64), 1e-9)
 	require.Equal(t, float64(-200), lossy["margin_quota"])
 }
+
+// 毛利排序必须按 pricedMargin 的口径排，而不是按 SQL 的 revenue-cost。这两个
+// 数字在有未定价流量时会分叉：下面 ch=21 的 revenue-cost 是 +400（看着最赚），
+// 但它一半收入是未定价的，真实毛利只有 +100，排第二。榜单排错等于让运营照着
+// 一个假名次去调渠道。
+func TestCostChannelModelsHandler_MarginSortUsesPricedBasis(t *testing.T) {
+	db := newCostTestDB(t)
+	seedCostDaily(t, db,
+		// 定价完整：毛利 800 - 500 = 300
+		model.ChannelCostDaily{
+			ChannelId: 20, ModelName: "gpt-5", RequestCount: 10,
+			RevenueQuota: 800, CostQuota: 500,
+		},
+		// 一半收入未定价：SQL 口径 1000-600=400，真实口径 (1000-500)-600=-100
+		model.ChannelCostDaily{
+			ChannelId: 21, ModelName: "gpt-5", RequestCount: 10,
+			RevenueQuota: 1000, CostQuota: 600,
+			UnknownCount: 5, UnknownQuota: 500,
+		},
+	)
+
+	envelope := callCostHandler(t, CostChannelModels, "/api/cost/channel-models?days=30&model=gpt-5&sort=margin")
+	rows := envelope["data"].([]any)
+	require.Len(t, rows, 2)
+
+	first := rows[0].(map[string]any)
+	second := rows[1].(map[string]any)
+	require.Equal(t, float64(20), first["channel_id"], "按真实毛利，300 的那条该在前")
+	require.Equal(t, float64(300), first["margin_quota"])
+	require.Equal(t, float64(21), second["channel_id"])
+	require.Equal(t, float64(-100), second["margin_quota"])
+}
+
+// 不传 sort 时维持收入降序：既有调用方（前端成本页）依赖这个顺序。
+func TestCostChannelModelsHandler_DefaultSortStaysRevenue(t *testing.T) {
+	db := newCostTestDB(t)
+	seedCostDaily(t, db,
+		model.ChannelCostDaily{
+			ChannelId: 30, ModelName: "gpt-5", RequestCount: 10,
+			RevenueQuota: 200, CostQuota: 10,
+		},
+		model.ChannelCostDaily{
+			ChannelId: 31, ModelName: "gpt-5", RequestCount: 10,
+			RevenueQuota: 900, CostQuota: 800,
+		},
+	)
+
+	envelope := callCostHandler(t, CostChannelModels, "/api/cost/channel-models?days=30&model=gpt-5")
+	rows := envelope["data"].([]any)
+	require.Len(t, rows, 2)
+	require.Equal(t, float64(31), rows[0].(map[string]any)["channel_id"], "默认按收入降序")
+}
+
+// 毛利率排序里算不出率的行（全是未定价流量）必须排在最后：那不是毛利为 0，
+// 是这笔账还没法看，混进低毛利行里比就会把它当成亏损渠道。
+func TestCostChannelModelsHandler_MarginRateSortPutsUnrankableLast(t *testing.T) {
+	db := newCostTestDB(t)
+	seedCostDaily(t, db,
+		model.ChannelCostDaily{
+			ChannelId: 40, ModelName: "gpt-5", RequestCount: 10,
+			RevenueQuota: 500, CostQuota: 500, UnknownCount: 10, UnknownQuota: 500,
+		},
+		model.ChannelCostDaily{
+			ChannelId: 41, ModelName: "gpt-5", RequestCount: 10,
+			RevenueQuota: 1000, CostQuota: 900,
+		},
+	)
+
+	envelope := callCostHandler(t, CostChannelModels, "/api/cost/channel-models?days=30&model=gpt-5&sort=margin_rate")
+	rows := envelope["data"].([]any)
+	require.Len(t, rows, 2)
+	require.Equal(t, float64(41), rows[0].(map[string]any)["channel_id"])
+	require.Nil(t, rows[1].(map[string]any)["margin_rate"], "算不出率的行排最后")
+}

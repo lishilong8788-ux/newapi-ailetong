@@ -19,6 +19,7 @@ func flushLoop() {
 			continue
 		}
 		flushCompletedBuckets()
+		flushCompletedChannelBuckets()
 		cleanupExpiredMetrics(setting.RetentionDays)
 	}
 }
@@ -61,6 +62,47 @@ func flushCompletedBuckets() {
 	})
 }
 
+func flushCompletedChannelBuckets() {
+	currentBucket := bucketStart(time.Now().Unix())
+	channelHotBuckets.Range(func(key, value any) bool {
+		k := key.(channelBucketKey)
+		if k.bucketTs >= currentBucket {
+			return true
+		}
+
+		bucket := value.(*atomicBucket)
+		drained := bucket.drain()
+		if drained.requestCount == 0 {
+			deleteOldEmptyChannelBucket(k, key)
+			return true
+		}
+
+		err := model.UpsertChannelPerfMetric(&model.ChannelPerfMetric{
+			ChannelId:    k.channelID,
+			ModelName:    k.model,
+			BucketTs:     k.bucketTs,
+			RequestCount: drained.requestCount,
+			SuccessCount: drained.successCount,
+			TtftSumMs:    drained.ttftSumMs,
+			TtftCount:    drained.ttftCount,
+		})
+		if err != nil {
+			bucket.addCounters(drained)
+			common.SysError(fmt.Sprintf("failed to flush channel perf metric bucket channel=%d model=%s bucket=%d: %s", k.channelID, k.model, k.bucketTs, err.Error()))
+			return true
+		}
+
+		deleteOldEmptyChannelBucket(k, key)
+		return true
+	})
+}
+
+func deleteOldEmptyChannelBucket(k channelBucketKey, rawKey any) {
+	if k.bucketTs < bucketStart(time.Now().Add(-24*time.Hour).Unix()) {
+		channelHotBuckets.Delete(rawKey)
+	}
+}
+
 func deleteOldEmptyBucket(k bucketKey, rawKey any) {
 	if k.bucketTs < bucketStart(time.Now().Add(-24*time.Hour).Unix()) {
 		hotBuckets.Delete(rawKey)
@@ -74,6 +116,9 @@ func cleanupExpiredMetrics(retentionDays int) {
 	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour).Unix()
 	if err := model.DeletePerfMetricsBefore(cutoff); err != nil {
 		common.SysError("failed to cleanup expired perf metrics: " + err.Error())
+	}
+	if err := model.DeleteChannelPerfMetricsBefore(cutoff); err != nil {
+		common.SysError("failed to cleanup expired channel perf metrics: " + err.Error())
 	}
 }
 

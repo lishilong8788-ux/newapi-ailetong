@@ -43,6 +43,7 @@ export interface AutoRouteSettingsProps {
   showRechargePrice?: boolean
   /** Admins get a link to the setting that governs this; others do not. */
   canManage?: boolean
+  hideTitle?: boolean
 }
 
 /**
@@ -77,35 +78,54 @@ export function AutoRouteSettings(props: AutoRouteSettingsProps) {
 
   return (
     <section>
-      <SectionTitle>{t('Automatic routing settings')}</SectionTitle>
+      {!props.hideTitle && (
+        <SectionTitle>{t('Automatic routing settings')}</SectionTitle>
+      )}
 
-      <div className='bg-card rounded-xl border p-3'>
-        <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
-          <span
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold',
-              pricePreferred
-                ? 'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-400'
-                : 'bg-muted/60 text-muted-foreground'
-            )}
-          >
-            <Settings2 className='size-3' aria-hidden />
-            {pricePreferred ? t('Lowest price mode') : t('Manual order mode')}
-          </span>
-          <span className='text-muted-foreground text-xs'>
-            {enabled ? t('Enabled') : t('Disabled')}
-          </span>
+      <div className='bg-card border-border/70 shadow-raised space-y-3 rounded-2xl border p-3.5'>
+        <div className='flex min-w-0 flex-wrap items-center justify-between gap-2'>
+          <div className='flex items-center gap-1.5'>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold',
+                pricePreferred
+                  ? 'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-400'
+                  : 'bg-muted/60 text-muted-foreground'
+              )}
+            >
+              <Settings2 className='size-3' aria-hidden />
+              {pricePreferred ? t('Lowest price mode') : t('Manual order mode')}
+            </span>
+          </div>
+          <div className='flex items-center gap-1.5 text-xs'>
+            <span className='text-muted-foreground'>
+              {t('Auto route for this model')}:
+            </span>
+            <span
+              className={cn(
+                'font-medium',
+                enabled
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-muted-foreground'
+              )}
+            >
+              {enabled ? t('Enabled') : t('Disabled')}
+            </span>
+          </div>
         </div>
 
-        <p className='text-muted-foreground mt-1.5 text-xs leading-relaxed'>
+        <p className='text-muted-foreground text-xs leading-relaxed'>
           {t(policyExplanationKey)}
         </p>
 
-        <div className='mt-2.5'>
-          <div className='text-muted-foreground/70 mb-1 text-[11px] font-medium'>
-            {t('Candidate order')}
+        <div>
+          <div className='flex items-center justify-between text-[11px] font-medium text-muted-foreground/80 mb-2'>
+            <span>{t('Candidate order')}</span>
+            <span className='font-mono'>
+              {props.routes.length} {t('channels')}
+            </span>
           </div>
-          <ol className='space-y-1'>
+          <ol className='space-y-1.5'>
             {props.routes.map((route, index) => {
               const channelModel = toChannelPricedModel(props.model, route)
               const inputPrice = getTokenUnitPrice(
@@ -120,17 +140,18 @@ export function AutoRouteSettings(props: AutoRouteSettingsProps) {
               return (
                 <li
                   key={route.channel_id}
-                  className='flex items-center justify-between gap-2 text-xs'
+                  className='border-border bg-muted/60 flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs'
                 >
-                  <span className='flex min-w-0 items-center gap-1.5'>
-                    <span className='text-muted-foreground/50 w-3 shrink-0 text-right font-mono tabular-nums'>
-                      {index + 1}
+                  <span className='flex min-w-0 items-center gap-2'>
+                    <span className='text-muted-foreground/60 w-4 shrink-0 font-mono text-[11px] tabular-nums'>
+                      {index + 1}.
                     </span>
-                    <span className='text-foreground truncate font-mono'>
+                    <span className='text-foreground truncate font-mono font-medium'>
                       {getChannelLabel(route)}
                     </span>
                   </span>
-                  <span className='text-muted-foreground shrink-0 font-mono tabular-nums'>
+                  <span className='text-muted-foreground shrink-0 font-mono text-[11px] tabular-nums'>
+                    {t('Input')}{' '}
                     {formatCurrencyFromUSD(inputPrice, {
                       digitsLarge: 4,
                       digitsSmall: 6,
@@ -145,13 +166,15 @@ export function AutoRouteSettings(props: AutoRouteSettingsProps) {
         </div>
 
         {props.canManage && (
-          <Link
-            to='/system-settings/models/$section'
-            params={{ section: 'routing-reliability' }}
-            className='text-primary mt-2.5 inline-block text-xs hover:underline'
-          >
-            {t('View all settings')}
-          </Link>
+          <div className='pt-1 border-t border-border/40 flex justify-end'>
+            <Link
+              to='/system-settings/models/$section'
+              params={{ section: 'routing-reliability' }}
+              className='text-primary inline-flex items-center gap-1 text-xs hover:underline'
+            >
+              {t('View all settings')} →
+            </Link>
+          </div>
         )}
       </div>
     </section>

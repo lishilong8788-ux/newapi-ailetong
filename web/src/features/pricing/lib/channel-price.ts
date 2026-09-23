@@ -69,6 +69,33 @@ export function toChannelPricedModel(
 }
 
 /**
+ * The model as this channel prices it, *with* the group multipliers left in
+ * place.
+ *
+ * The sibling `toChannelPricedModel` empties `enable_groups` so a channel tier
+ * reads as the channel's own rate, undivided by whichever group the viewer
+ * happens to sit in. That is right for the channel cards in the route list, and
+ * wrong for the group cards: what a request actually costs is the
+ * channel's rate scaled by the group's ratio, so the group list has to keep both
+ * factors. Pass the result to `getPriceComparison` with a `selectedGroup` and the
+ * platform column comes out as channel × group.
+ *
+ * Official ratios ride along untouched, so each group card's discount column
+ * still compares against the vendor's published price rather than against the
+ * channel's own rate.
+ */
+export function toChannelGroupPricedModel(
+  model: PricingModel,
+  route: ChannelRoute
+): PricingModel {
+  return {
+    ...toChannelPricedModel(model, route),
+    enable_groups: model.enable_groups,
+    group_ratio: model.group_ratio,
+  }
+}
+
+/**
  * The discount to badge on a channel card, or null when there is nothing to
  * claim.
  *
@@ -130,4 +157,25 @@ export function getChannelLabel(route: ChannelRoute): string {
   if (route.code) return route.code
   if (route.name) return route.name
   return `#${route.channel_id}`
+}
+
+/**
+ * The string a customer actually puts in `model` to reach one line.
+ *
+ * `<model>/<code>` is a backend contract, not a display convention: the
+ * distributor splits the suffix off before anything else reads the model name
+ * (`model.SplitModelLineCode`), pins the request to channels publishing that
+ * code, and falls back to the full candidate list when the line is down. So a
+ * line-coded name is a preference and never a different model — pricing, the
+ * token model limit and logging all still see the bare name.
+ *
+ * Without a code the bare model name is the only callable string: a channel the
+ * operator gave no line code can be reached by automatic routing alone.
+ */
+export function getClientModelName(
+  modelName: string,
+  lineCode?: string
+): string {
+  if (!lineCode) return modelName
+  return `${modelName}/${lineCode}`
 }

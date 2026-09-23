@@ -42,6 +42,9 @@ For commercial licensing, please contact support@quantumnous.com
 
   --color-background: var(--background);
   --color-canvas: var(--canvas);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-band-start: var(--band-start);
+  --color-band-end: var(--band-end);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -144,6 +147,74 @@ For commercial licensing, please contact support@quantumnous.com
    * hand-written fallback declaration does not help: the bundler folds
    * same-selector rules together and the generated base wins regardless. */
   --canvas: color-mix(in oklch, var(--primary) 4%, oklch(0.984 0 0));
+  /* Sunken surface — the tray a stack of cards sits *in*, for panels that are
+   * nothing but cards (the model details drawer). Deliberately past the
+   * threshold `--canvas` stops at: it lands ~0.968, a ~3.2% step below card
+   * white, so white cards visibly float rather than dissolve. `--canvas` cannot
+   * be pushed here — its whole contract is staying un-nameable for page shells,
+   * and it is shared with the public site.
+   *
+   * The step is deliberately *shallow*. An earlier ~4% (L 0.960) read as a grey
+   * panel rather than as a tray once a tab had few cards on it to be a tray for:
+   * with nothing white floating above it, the eye has no reference for "sunken"
+   * and simply calls the whole pane dark. The depth that matters comes from the
+   * cards, so this stops as soon as they can be told apart from it.
+   *
+   * Two mixes rather than one because lightness and chroma have to be set
+   * independently. A plain `primary N%, background` cannot do that: primary's own
+   * C/L ratio is fixed, so the 13% that used to produce the ~4% lightness step
+   * dragged chroma to ~0.018 with it and the tray resolved to #e8f4fe — a sky
+   * blue, where the reference tray is the near-neutral cool grey #f1f4fa
+   * (C 0.009). Darkening the background first, then tinting only 5.5%, hits both:
+   * #f0f5f9 (L 0.968, C 0.008) — the reference tray to within a shade, chroma
+   * included.
+   *
+   * Still mixed against `--background` rather than a hard-coded white so presets
+   * derive their own tray: they build `--card` off `--background` too, and a
+   * literal white here would sit *above* a tinted preset card and invert the
+   * ladder. Presets whose ladder is not white-card-on-tinted-page
+   * (`anthropic` inverts it, `simple-large` has a near-black primary that a 13%
+   * mix would drag far too dark) override this in theme-presets.css — as does the
+   * shared preset block, which keeps its own 13% because its `--card` is a tinted
+   * `primary 3%` rather than white and needs the wider gap to clear it.
+   *
+   * Dark mode goes the other way, one step *below* `--background`: mixing
+   * primary into a dark base lightens it, which would close the gap to `--card`
+   * instead of opening it. */
+  --surface-sunken: color-mix(
+    in oklch,
+    var(--primary) 5.5%,
+    color-mix(in oklch, var(--background) 98.4%, oklch(0 0 0))
+  );
+  /* Masthead band — the saturated brand wash the model details drawer opens on,
+   * so the panel starts on colour and the white cards below read as sitting *in*
+   * the tray rather than continuing a white header.
+   *
+   * Both stops are held under oklch L 0.57 on purpose. White on L 0.56 blue is
+   * ~4.5:1 (AA for body text); one step lighter and the band carries text it
+   * cannot legibly hold. The reference this is drawn from lets
+   * its gradient run up to ~L 0.71, where white text lands at ~2.5:1 — the hue
+   * is copied, the contrast failure is not. The lift that gradient was providing
+   * comes from a decorative radial highlight in the band instead, which sits
+   * behind no small text.
+   *
+   * Literal, NOT mixed off `--primary` the way `--surface-sunken` is. That was
+   * tried and it does not survive a non-blue preset: the band needs C ~0.21 to
+   * read as this colour at all, and mixing a preset's hue toward a blue anchor at
+   * that chroma lands outside sRGB. `anthropic` (an orange primary) resolved to
+   * #008dc3 — cyan, neither hue, out of gamut, and 3.75:1 under white. Hue
+   * interpolation across a wide angle simply has no safe value here.
+   *
+   * So the masthead is brand blue for every preset. A preset that wants to band
+   * in its own colour overrides these two tokens with values it has checked for
+   * gamut and contrast itself — the inverse of the `--surface-sunken` deal, where
+   * the default derives and the odd preset opts out.
+   *
+   * Start is the reference's own top stop, #1C6BF0, exactly. End stops a hair
+   * short of its #2472F2: that colour is 4.39:1 under white, just below AA, and
+   * L 0.574 buys the 4.55:1 back for an imperceptible shift. */
+  --band-start: oklch(0.5639 0.2138 260.7); /* #1c6bf0 — white 4.76:1 */
+  --band-end: oklch(0.5741 0.2113 260.4); /* #206ff2 — white 4.55:1 */
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -232,6 +303,16 @@ For commercial licensing, please contact support@quantumnous.com
   /* Dark mode already separates canvas from card, so the alias keeps
    * `bg-canvas` honest without adding a fourth grey. */
   --canvas: var(--background);
+  /* One step below `--background`, not above: the card ladder here runs
+   * 0.235 → 0.285, so the tray has to go down to 0.215 to keep a ~7% gap. */
+  --surface-sunken: oklch(0.215 0.008 250);
+  /* Dark mode bands lower: the light palette's band is already darker than its
+   * page, but here it has to stay darker than a dark page too, or the masthead
+   * glows as the brightest thing on screen. White text only gains contrast as
+   * this goes down, so the AA floor the light pair is pinned to is not at risk.
+   * Same hue as the light pair, two steps down in lightness. */
+  --band-start: oklch(0.455 0.175 261); /* #134eb6 — white 7.54:1 */
+  --band-end: oklch(0.492 0.168 260); /* #1e5bbe — white 6.37:1 */
   --foreground: oklch(0.965 0 0);
   --card: oklch(0.285 0 0);
   --card-foreground: oklch(0.965 0 0);

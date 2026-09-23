@@ -70,7 +70,7 @@ func SetRelayRouter(router *gin.Engine) {
 		common.SetContextKey(c, constant.ContextKeyTrafficSource, "playground")
 		c.Next()
 	})
-	playgroundRouter.Use(middleware.UserAuth(), middleware.Distribute())
+	playgroundRouter.Use(middleware.UserAuth(), middleware.PlaygroundChannelPin(), middleware.Distribute())
 	{
 		playgroundRouter.POST("/chat/completions", func(c *gin.Context) {
 			controller.Playground(c, types.RelayFormatOpenAI)

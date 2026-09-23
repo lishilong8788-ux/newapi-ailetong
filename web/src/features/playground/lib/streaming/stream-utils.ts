@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { ERROR_MESSAGES } from '../../constants'
-import type { ChatCompletionChunk } from '../../types'
+import type { ChatCompletionChunk, Message } from '../../types'
 
 const STREAM_DONE_MESSAGE = '[DONE]'
 const STREAM_CLOSED_READY_STATE = 2
@@ -83,6 +83,48 @@ export function parseStreamMessageUpdates(data: string): StreamMessageUpdate[] {
   }
 
   return updates
+}
+
+/**
+ * Token counts from a stream's final usage chunk, if this frame is one.
+ *
+ * A separate pass rather than another `StreamMessageUpdate` variant, because
+ * usage is not an update to the message text and every consumer of that union
+ * would have to learn to ignore it.
+ *
+ * The frame this reads is why `parseStreamMessageUpdates` cannot: the relay
+ * synthesises a closing chunk whose `choices` is empty and whose `usage` is the
+ * whole payload, so that function's `if (!delta) return []` bails before ever
+ * reaching it. Both run over each frame; at most one of them finds anything.
+ *
+ * Nothing needs to be requested for this to arrive — the relay defaults
+ * `includeUsage` to true and only honours `stream_options` when the client sends
+ * one, which the playground does not.
+ */
+export function parseStreamUsage(data: string): Message['usage'] {
+  let chunk: { usage?: Message['usage'] }
+  try {
+    chunk = JSON.parse(data) as { usage?: Message['usage'] }
+  } catch {
+    // Malformed frames are the message parser's problem to report; a missing
+    // token count must not turn into a failed reply.
+    return undefined
+  }
+
+  const usage = chunk?.usage
+  if (!usage) {
+    return undefined
+  }
+
+  // An upstream may report the totals without the split, or send an all-zero
+  // object on a request that produced nothing. Neither is worth a row.
+  const hasAnyCount = [
+    usage.prompt_tokens,
+    usage.completion_tokens,
+    usage.total_tokens,
+  ].some((count) => typeof count === 'number' && count > 0)
+
+  return hasAnyCount ? usage : undefined
 }
 
 export function isStreamDoneMessage(data: string): boolean {

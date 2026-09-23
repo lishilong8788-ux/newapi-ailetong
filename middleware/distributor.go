@@ -55,6 +55,24 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 		} else {
+			// A `<model>/<code>` suffix names a line; strip it before anything else
+			// reads the model name. Everything downstream — the token model limit,
+			// ability lookup, pricing, logging — must see the bare model, because the
+			// line is a routing preference and not a model anyone registered. The
+			// code is carried in context instead, where retry can still honor it.
+			//
+			// Resolved against the caller's own group so a code only parses as a pin
+			// when a channel the caller can actually reach publishes it.
+			pinnedLine := ""
+			if bareModel, lineCode, pinned := model.SplitModelLineCode(
+				common.GetContextKeyString(c, constant.ContextKeyUsingGroup), modelRequest.Model,
+			); pinned {
+				modelRequest.Model = bareModel
+				pinnedLine = lineCode
+				common.SetContextKey(c, constant.ContextKeyPinnedLineCode, lineCode)
+				common.SetContextKey(c, constant.ContextKeyOriginalModel, bareModel)
+			}
+
 			// Select a channel for the user
 			// check token model mapping
 			modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
@@ -136,6 +154,7 @@ func Distribute() func(c *gin.Context) {
 					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
+						LineCode:    pinnedLine,
 						TokenGroup:  usingGroup,
 						RequestPath: c.Request.URL.Path,
 						Retry:       common.GetPointer(0),
@@ -448,7 +467,53 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+	// Echo the serving channel back to the playground. This is the one point every
+	// path passes through once a channel is settled — first attempt (Distribute),
+	// cross-channel retry (controller.getChannel) and task retry all call it — and
+	// all of them are still ahead of the first body byte, so the same three headers
+	// cover streaming and non-streaming alike. A retry after a stream already
+	// started cannot rewrite them; Written() is checked so the attempt is silent
+	// rather than logged by net/http, and the header keeps naming the channel that
+	// produced the bytes the client is reading.
+	if common.GetContextKeyString(c, constant.ContextKeyTrafficSource) == trafficSourcePlayground &&
+		c.Writer != nil && !c.Writer.Written() {
+		// "1" only when the pin is what actually served the request, not merely
+		// when one was asked for. A cross-channel retry keeps the pin in context
+		// while serving from a different line, and reporting that as pinned would
+		// have the header assert the opposite of the id beside it — which is the
+		// one thing a caller checking whether its pin held cannot afford.
+		pinnedFlag := "0"
+		if pinned, ok := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId); ok {
+			if pinnedID, err := strconv.Atoi(pinned.(string)); err == nil && pinnedID == channel.Id {
+				pinnedFlag = "1"
+			}
+		}
+		// A line pin counts as held when the serving channel publishes the code
+		// that was asked for. Same reason the id pin is checked against the serving
+		// channel rather than the request: a `<model>/<code>` request that failed
+		// over to another line must report "0", because the whole point of the flag
+		// is telling the caller whether the line it named is what answered.
+		if pinnedLine := common.GetContextKeyString(c, constant.ContextKeyPinnedLineCode); pinnedLine != "" {
+			if channel.GetLineCode() == pinnedLine {
+				pinnedFlag = "1"
+			} else {
+				pinnedFlag = "0"
+			}
+		}
+		c.Header(HeaderChannelId, strconv.Itoa(channel.Id))
+		c.Header(HeaderChannelPinned, pinnedFlag)
+		// Unset rather than empty when the channel names no line: the playground
+		// falls back to "#<id>", and an empty header would be a value it has to
+		// special-case.
+		if lineCode := model.ChannelLineCode(channel); lineCode != "" {
+			c.Header(HeaderChannelCode, lineCode)
+		}
+	}
+
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)
+	// 记的是实际服务渠道的线路码，与客户点名的那个分开存：failover 之后两者会不
+	// 一致，毛利报表要的是真正应答的那条线。
+	common.SetContextKey(c, constant.ContextKeyServingLineCode, channel.GetLineCode())
 	common.SetContextKey(c, constant.ContextKeyChannelName, channel.Name)
 	common.SetContextKey(c, constant.ContextKeyChannelType, channel.Type)
 	common.SetContextKey(c, constant.ContextKeyChannelCreateTime, channel.CreatedTime)

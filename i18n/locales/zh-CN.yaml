@@ -275,6 +275,8 @@ distributor.get_channel_failed: "获取分组 {{.Group}} 下模型 {{.Model}} �
 distributor.no_available_channel: "分组 {{.Group}} 下模型 {{.Model}} 无可用渠道（distributor）"
 distributor.invalid_midjourney_request: "无效的midjourney请求，{{.Error}}"
 distributor.invalid_request_parse_model: "无效的请求，无法解析模型"
+distributor.pin_not_admin: "普通用户不支持指定渠道"
+distributor.pin_model_mismatch: "渠道 #{{.Channel}} 不支持模型 {{.Model}}"
 
 # Agent (distributor programme) setting messages
 agent.rate_invalid: "分佣比例必须是数字"

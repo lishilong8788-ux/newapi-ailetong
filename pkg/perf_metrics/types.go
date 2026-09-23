@@ -66,6 +66,25 @@ type bucketKey struct {
 	bucketTs int64
 }
 
+type channelBucketKey struct {
+	channelID int
+	model     string
+	bucketTs  int64
+}
+
+// ChannelHealth is one channel's measured behaviour on one model, as the public
+// catalog is allowed to see it.
+//
+// AvailabilityPct is a pointer so "no requests in the window" stays distinct
+// from "every request failed": the first must render as no data, the second as a
+// red 0%. RequestCount is for server-side confidence checks only and is never
+// serialized to the catalog — request volume is operating data.
+type ChannelHealth struct {
+	AvailabilityPct *float64
+	TtftMs          int64
+	RequestCount    int64
+}
+
 type counters struct {
 	requestCount   int64
 	successCount   int64

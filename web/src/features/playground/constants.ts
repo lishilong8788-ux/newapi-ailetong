@@ -46,6 +46,40 @@ export const API_ENDPOINTS = {
   USER_GROUPS: '/api/user/self/groups',
   /** Catalog metadata (icon, description, vendor, endpoint types). */
   PRICING: '/api/pricing',
+  /** Per-channel price tiers, stability and first-token time for one model. */
+  PRICING_CHANNELS: '/api/pricing/channels',
+} as const
+
+/**
+ * Channel pinning and echo travel in headers, never in the body.
+ *
+ * The request body is OpenAI-shaped and forwarded to the upstream provider
+ * verbatim, so an extra field there would be sent to a vendor that never asked
+ * for it. Headers are ours to add and are already how the relay reports
+ * out-of-band facts (`X-New-Api-Other-Ratios` in `relay/relay_task.go`).
+ *
+ * The response trio is readable from both transports: axios exposes them
+ * directly, and `sse.js` surfaces them on the `readystatechange` event once
+ * `readyState` reaches `HEADERS_RECEIVED` (lowercased keys, array values).
+ */
+/**
+ * The gateway's request-id response header, lowercased for lookup.
+ *
+ * Spelled `Oneapi` rather than `New-Api`: `middleware.RequestId()` predates the
+ * rename and the wire name is what it is. Worth reading because the same id goes
+ * into the consume log, so it ties a reply to its billing row.
+ */
+export const REQUEST_ID_HEADER = 'x-oneapi-request-id' as const
+
+export const CHANNEL_HEADERS = {
+  /** Request: pin this channel. Omitted entirely for automatic routing. */
+  REQUEST_CHANNEL_ID: 'X-New-Api-Channel-Id',
+  /** Response: the channel that actually served the request. */
+  RESPONSE_CHANNEL_ID: 'x-new-api-channel-id',
+  /** Response: its short line code, absent when the mapping carries no suffix. */
+  RESPONSE_CHANNEL_CODE: 'x-new-api-channel-code',
+  /** Response: `1` when the pin was honoured, `0` when the router chose. */
+  RESPONSE_CHANNEL_PINNED: 'x-new-api-channel-pinned',
 } as const
 
 // Default group — uses 'default' as the safe fallback; auto-group is

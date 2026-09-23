@@ -48,6 +48,12 @@ export const playgroundConfigSchema = z.object({
   model: z.string().optional(),
   group: z.string().optional(),
   stream: z.boolean().optional(),
+  /**
+   * Positive integer only. A stored `0` or a negative id would reach the relay
+   * as a pinned channel that cannot exist, so an out-of-range value is dropped
+   * back to automatic routing rather than carried into a request.
+   */
+  channelId: z.number().int().positive().optional(),
 })
 
 const messageRoleSchema = z.enum(['user', 'assistant', 'system'])
@@ -86,6 +92,28 @@ const messageSchema = z.object({
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),
   durationMs: z.number().optional(),
+  /**
+   * Persisted, because comparing channels is the reason this is recorded and a
+   * comparison spans more than one sitting. Omitted here, a restored streamed
+   * reply came back indistinguishable from a non-streamed one — the debug panel
+   * read the absence as "no first token exists" and said so.
+   */
+  channel: z
+    .object({
+      id: z.number().int().positive(),
+      code: z.string().optional(),
+      pinned: z.boolean(),
+    })
+    .optional(),
+  ttftMs: z.number().nonnegative().optional(),
+  usage: z
+    .object({
+      prompt_tokens: z.number().nonnegative().optional(),
+      completion_tokens: z.number().nonnegative().optional(),
+      total_tokens: z.number().nonnegative().optional(),
+    })
+    .optional(),
+  requestId: z.string().optional(),
   sources: z.array(sourceSchema).optional(),
   reasoning: reasoningSchema.optional(),
   isReasoningStreaming: z.boolean().optional(),

@@ -9,6 +9,19 @@ const (
 
 	ContextKeyOriginalModel    ContextKey = "original_model"
 	ContextKeyRequestStartTime ContextKey = "request_start_time"
+	// ContextKeyPinnedLineCode is the line code the client pinned by asking for
+	// `<model>/<code>`, set only when the suffix resolved to a real line. Held for
+	// the whole request: retry re-selects a channel and must keep preferring the
+	// pinned line, and billing reads it to decide whether the price was promised
+	// up front (pinned) or advertised as a range (unpinned).
+	ContextKeyPinnedLineCode ContextKey = "pinned_line_code"
+	// ContextKeyServingLineCode is the line code of the channel that actually
+	// served the request, refreshed on every channel selection including retries.
+	// Distinct from ContextKeyPinnedLineCode, which is what the client ASKED for:
+	// a pin that failed over leaves those two disagreeing, and the margin report
+	// needs the one that answered. Set here rather than looked up at settlement so
+	// the billing path pays no cache read for a reporting field.
+	ContextKeyServingLineCode ContextKey = "serving_line_code"
 
 	/* token related keys */
 	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"

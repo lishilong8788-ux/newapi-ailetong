@@ -34,10 +34,9 @@ func TestComputeUpstreamCost_ExactRatioMode(t *testing.T) {
 	withCostEnabled(t, true)
 
 	cost := &dto.ChannelCostSettings{
-		Mode: "ratio",
 		Models: map[string]dto.ModelCostPrice{
 			"claude-sonnet-4": {
-				Input:  floatPtr(3.0),  // USD / 1M tokens
+				Input:  floatPtr(3.0), // USD / 1M tokens
 				Output: floatPtr(15.0),
 			},
 		},
@@ -62,7 +61,6 @@ func TestComputeUpstreamCost_ExactDistinguishesZeroFromUnset(t *testing.T) {
 	// Free model: explicit zero input price is a legal $0 cost (exact), not
 	// "unknown".
 	cost := &dto.ChannelCostSettings{
-		Mode: "ratio",
 		Models: map[string]dto.ModelCostPrice{
 			"free-model": {Input: floatPtr(0)},
 		},
@@ -85,7 +83,6 @@ func TestComputeUpstreamCost_PerCallMode(t *testing.T) {
 	withCostEnabled(t, true)
 
 	cost := &dto.ChannelCostSettings{
-		Mode: "per_call",
 		Models: map[string]dto.ModelCostPrice{
 			"mj-imagine": {PerCall: floatPtr(0.1)},
 		},
@@ -95,21 +92,42 @@ func TestComputeUpstreamCost_PerCallMode(t *testing.T) {
 	assert.Equal(t, 50000, quota) // $0.1 * 500000
 }
 
-func TestComputeUpstreamCost_MarkupFallback(t *testing.T) {
+// 利润率不再反推成本：它现在是「进价 × (1 + 利润率) = 卖价」的正推方向，
+// 拿收入除回去等于把卖价当成本。只配了利润率、没配进价的渠道必须是 unknown，
+// 不参与毛利——报一个反推值出来会让毛利报表看起来正好等于配置的利润率，
+// 那是自证预言，不是观测。
+func TestComputeUpstreamCost_MarkupAloneIsUnknown(t *testing.T) {
 	withCostEnabled(t, true)
 
-	// markup = 0.3 → cost = revenue / 1.3
 	cost := &dto.ChannelCostSettings{DefaultMarkup: floatPtr(0.3)}
 	quota, source := ComputeUpstreamCost(cost, "any-model", CostInputs{Revenue: 1300000})
-	require.Equal(t, CostSourceMarkup, source)
-	// $2.6 / 1.3 = $2 → 1000000
-	assert.Equal(t, 1000000, quota)
+	require.Equal(t, CostSourceUnknown, source)
+	assert.Equal(t, 0, quota)
+}
+
+// 进价配了、利润率也配了，成本仍然只看进价：利润率与成本核算无关，它只影响
+// 卖价（ResolveSellPrice）。
+func TestComputeUpstreamCost_MarkupDoesNotAlterExactCost(t *testing.T) {
+	withCostEnabled(t, true)
+
+	cost := &dto.ChannelCostSettings{
+		DefaultMarkup: floatPtr(0.3),
+		Models: map[string]dto.ModelCostPrice{
+			"m": {Input: floatPtr(3.0), Markup: floatPtr(2.0)},
+		},
+	}
+	quota, source := ComputeUpstreamCost(cost, "m", CostInputs{
+		Revenue: 9_999_999,
+		Tokens:  CostTokenBreakdown{PromptTokens: 1_000_000},
+	})
+	require.Equal(t, CostSourceExact, source)
+	assert.Equal(t, 1500000, quota) // $3 × 500000，与两个 markup 都无关
 }
 
 func TestComputeUpstreamCost_ReportedFallback(t *testing.T) {
 	withCostEnabled(t, true)
 
-	// No channel cost config; usage.Cost (OpenRouter truth) takes tier 3.
+	// No channel cost config; usage.Cost (OpenRouter truth) is the last rung.
 	inputs := CostInputs{
 		Revenue: 123,
 		Usage:   &dto.Usage{Cost: 0.005},
@@ -127,10 +145,9 @@ func TestComputeUpstreamCost_RejectsAbsurdUnitPrices(t *testing.T) {
 	inf := math.Inf(1)
 	nan := math.NaN()
 	cost := &dto.ChannelCostSettings{
-		Mode: "ratio",
 		Models: map[string]dto.ModelCostPrice{
-			"bad-inf": {Input: &inf},
-			"bad-nan": {Input: &nan},
+			"bad-inf":  {Input: &inf},
+			"bad-nan":  {Input: &nan},
 			"bad-huge": {Input: floatPtr(1e9)},
 		},
 	}
@@ -242,7 +259,6 @@ func TestComputeUpstreamCost_DisabledAlwaysUnknown(t *testing.T) {
 	withCostEnabled(t, false)
 
 	cost := &dto.ChannelCostSettings{
-		Mode: "ratio",
 		Models: map[string]dto.ModelCostPrice{
 			"claude-sonnet-4": {Input: floatPtr(3.0)},
 		},

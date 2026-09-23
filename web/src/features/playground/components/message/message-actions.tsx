@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Check,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Edit,
   FileCode2,
@@ -26,6 +28,7 @@ import {
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -48,6 +51,7 @@ import {
 } from '../../lib'
 import type { Message } from '../../types'
 import { MessageActionButton } from './message-action-button'
+import { MessageDebugPanel, type MessageUsage } from './message-debug-panel'
 
 interface MessageActionsProps {
   message: Message
@@ -60,6 +64,20 @@ interface MessageActionsProps {
   isGenerating?: boolean
   alwaysVisible?: boolean
   className?: string
+  /**
+   * Whether the debug entry is offered at all, owned by the topbar switch.
+   *
+   * Off by default: these rows answer "why was this reply slow", which is not a
+   * question most sessions are asking, and a permanent extra control on every
+   * message would cost more than it returns.
+   */
+  isDebugEnabled?: boolean
+  /** The model this reply came from, for the panel's published figures. */
+  modelName?: string
+  /** Token counts, when the transport reported any. */
+  usage?: MessageUsage
+  /** The gateway's request id for this reply, when it was captured. */
+  requestId?: string
 }
 
 type MessageActionItem = {
@@ -82,14 +100,28 @@ export function MessageActions({
   isGenerating = false,
   alwaysVisible = false,
   className = '',
+  isDebugEnabled = false,
+  modelName,
+  usage,
+  requestId,
 }: MessageActionsProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard()
   const { guardAction } = useMessageActionGuard(isGenerating)
+  /*
+   * Expansion is per message and interests nobody else, so it stays here. A
+   * plain toggle rather than a popover: Base UI's layered components mount a
+   * portal that jsdom cannot drive, which would leave the one panel whose
+   * wording has to be verified untestable.
+   */
+  const [isDebugExpanded, setIsDebugExpanded] = useState(false)
+  const debugPanelId = useId()
 
   const { content, hasContent, isAssistant, isLoading, isUser } =
     getMessageActionState(message)
   const isCopied = copiedText === content
+  /** Only an assistant reply has a channel and a first-token time to report. */
+  const showDebugEntry = isDebugEnabled && isAssistant && !isLoading
 
   const handleCopy = () => {
     if (!content) {
@@ -157,7 +189,25 @@ export function MessageActions({
     })
   }
 
-  if (actions.length === 0) return null
+  if (actions.length === 0 && !showDebugEntry) return null
+
+  const debugToggle = showDebugEntry ? (
+    <Button
+      aria-controls={isDebugExpanded ? debugPanelId : undefined}
+      aria-expanded={isDebugExpanded}
+      className='text-muted-foreground hover:text-foreground h-7 px-1.5 text-[11px] font-normal'
+      onClick={() => setIsDebugExpanded((expanded) => !expanded)}
+      size='xs'
+      variant='ghost'
+    >
+      {isDebugExpanded ? (
+        <ChevronDown aria-hidden='true' className='size-3' />
+      ) : (
+        <ChevronRight aria-hidden='true' className='size-3' />
+      )}
+      {t('Debug')}
+    </Button>
+  ) : null
 
   return (
     <>
@@ -176,6 +226,7 @@ export function MessageActions({
               variant={action.variant}
             />
           ))}
+          {debugToggle}
         </div>
       </TooltipProvider>
 
@@ -213,9 +264,43 @@ export function MessageActions({
                 </DropdownMenuItem>
               )
             })}
+
+            {/* Mobile gets the same toggle as a menu item rather than a second
+                button: two controls with one accessible name would both sit in
+                the accessibility tree, since only CSS hides either of them. */}
+            {showDebugEntry && (
+              <DropdownMenuItem
+                className='min-h-11'
+                onClick={() => setIsDebugExpanded((expanded) => !expanded)}
+              >
+                {t('Debug')}
+                <DropdownMenuShortcut>
+                  {isDebugExpanded ? (
+                    <ChevronDown aria-hidden='true' className='size-4' />
+                  ) : (
+                    <ChevronRight aria-hidden='true' className='size-4' />
+                  )}
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Both fall back to the message's own record, which is where the chat
+          handler writes them — the explicit props stay ahead of it so a caller
+          holding fresher data (or a test) can still override. Without the
+          fallback these two rows would need threading down through the chat and
+          message layers to reach a value already sitting on `message`. */}
+      {showDebugEntry && isDebugExpanded && (
+        <MessageDebugPanel
+          id={debugPanelId}
+          message={message}
+          modelName={modelName}
+          requestId={requestId ?? message.requestId}
+          usage={usage ?? message.usage}
+        />
+      )}
     </>
   )
 }

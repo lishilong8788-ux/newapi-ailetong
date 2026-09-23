@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Check, Sparkles, Timer } from 'lucide-react'
+import { Check, Sparkles, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -28,7 +28,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
-import { formatLatency } from '@/features/performance-metrics/lib/format'
+import {
+  formatLatency,
+  getSuccessRateTextClass,
+} from '@/features/performance-metrics/lib/format'
 import { cn } from '@/lib/utils'
 
 import { getAvailableGroups, getDisplayGroupRatio } from '../lib/model-helpers'
@@ -96,10 +99,18 @@ export function GroupPriceCards(props: GroupPriceCardsProps) {
   })
 
   const healthByGroup = useMemo(() => {
-    const map = new Map<string, { successRate: number; latencyMs: number }>()
+    const map = new Map<
+      string,
+      { successRate: number; ttftMs: number; latencyMs: number }
+    >()
     for (const group of metricsQuery.data?.data.groups ?? []) {
       map.set(group.group, {
         successRate: group.success_rate,
+        // Lead with first-token time, not end-to-end: the channel cards next to
+        // this one show TTFT, and an unlabelled end-to-end number sitting beside
+        // a labelled "first token" reads as the same metric disagreeing with
+        // itself. End-to-end stays available in the tooltip.
+        ttftMs: group.avg_ttft_ms,
         latencyMs: group.avg_latency_ms,
       })
     }
@@ -157,8 +168,10 @@ export function GroupPriceCards(props: GroupPriceCardsProps) {
               'transition-[border-color,box-shadow,background-color] duration-200 ease-out',
               'hover:border-primary/40',
               'focus-visible:ring-primary/50 focus-visible:ring-2',
-              isBestValue && 'border-orange-500/40 bg-orange-500/[0.04]',
-              // Selection outranks the best-value tint: the reader put it there,
+              // Edge only, no fill: `bg-orange-500/[0.04]` would replace the
+              // card's own `bg-card` and let the tinted tray bleed through.
+              isBestValue && 'border-orange-500/60',
+              // Selection outranks the best-value edge: the reader put it there,
               // so it wins the border. A ring rather than a thicker border, so
               // nothing below it shifts by a pixel when selection moves.
               isSelected &&
@@ -201,6 +214,17 @@ export function GroupPriceCards(props: GroupPriceCardsProps) {
                     {t('Stability')}
                   </span>
                   <SuccessRateBars rate={health.successRate} />
+                  {/* The bars alone give a band, not a figure. Two groups both
+                      showing five full bars can still be 99.0% and 99.99%, and
+                      that gap is the whole question for anyone comparing. */}
+                  <span
+                    className={cn(
+                      'shrink-0 font-mono text-[11px] font-semibold tabular-nums',
+                      getSuccessRateTextClass(health.successRate)
+                    )}
+                  >
+                    {health.successRate.toFixed(2)}%
+                  </span>
                 </div>
                 <Tooltip>
                   <TooltipTrigger
@@ -211,23 +235,27 @@ export function GroupPriceCards(props: GroupPriceCardsProps) {
                         // ARIA forbids focusable descendants inside one. The
                         // aria-label still spells the number out for AT.
                         tabIndex={-1}
-                        aria-label={`${t('Average latency')} ${formatLatency(health.latencyMs)}`}
+                        aria-label={`${t('Average time to first token')} ${formatLatency(health.ttftMs)}`}
                         className='text-muted-foreground inline-flex shrink-0 cursor-default items-center gap-1 text-xs outline-none'
                       />
                     }
                   >
-                    <Timer className='size-3 shrink-0' aria-hidden />
+                    <Zap className='size-3 shrink-0' aria-hidden />
                     <span className='font-mono tabular-nums'>
-                      {formatLatency(health.latencyMs)}
+                      {t('First token short')} {formatLatency(health.ttftMs)}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent
                     side='top'
                     className='flex-col items-start gap-0.5'
                   >
-                    <span className='font-medium'>{t('Average latency')}</span>
+                    <span className='font-medium'>
+                      {t('Average time to first token')}
+                    </span>
                     <span className='text-background/70'>
-                      {t('Average end-to-end time of recent requests')}
+                      {t('End-to-end average: {{latency}}', {
+                        latency: formatLatency(health.latencyMs),
+                      })}
                     </span>
                   </TooltipContent>
                 </Tooltip>

@@ -46,18 +46,26 @@ type Channel struct {
 	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
 	OtherInfo         string  `json:"other_info"`
 	Tag               *string `json:"tag" gorm:"index"`
-	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride     *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	// LineCode 是这条渠道对客户公开的线路短码（"hs10"、"tx8"）。客户用
+	// `<模型名>/<线路码>` 点名一条线，目录页也用它标注渠道行。
+	//
+	// 独立成列而不是继续从 model_mapping 的目标名后缀里抠：映射目标是原样发给上游
+	// 的模型名（见 relay/helper/model_mapped.go 的 SetModelName），往里塞后缀等于
+	// 往上游发一个它不认识的模型名，只有上游本身也是同约定的聚合站时才不炸。线路码
+	// 是对客户的标签，不该出网。
+	LineCode       *string `json:"line_code" gorm:"type:varchar(32);index"`
+	Setting        *string `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride  *string `json:"param_override" gorm:"type:text"`
+	HeaderOverride *string `json:"header_override" gorm:"type:text"`
+	Remark         *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
 	// 成本毛利三列（近30天聚合，查询时按需填充，不落库）。
-	Cost30d      int64    `json:"cost_30d" gorm:"-"`
-	Margin30d    int64    `json:"margin_30d" gorm:"-"`
+	Cost30d       int64    `json:"cost_30d" gorm:"-"`
+	Margin30d     int64    `json:"margin_30d" gorm:"-"`
 	MarginRate30d *float64 `json:"margin_rate_30d" gorm:"-"`
 
 	// cache info
@@ -528,6 +536,17 @@ func (channel *Channel) GetModelMapping() string {
 		return ""
 	}
 	return *channel.ModelMapping
+}
+
+// GetLineCode 是渠道的线路短码，未设置时返回空串。
+//
+// 返回前 TrimSpace：运营在表单里手输，尾随空格会让 `<模型>/<码>` 的匹配悄悄失败，
+// 而调用方拿到的是个看起来没问题的非空字符串。
+func (channel *Channel) GetLineCode() string {
+	if channel.LineCode == nil {
+		return ""
+	}
+	return strings.TrimSpace(*channel.LineCode)
 }
 
 func (channel *Channel) GetStatusCodeMapping() string {

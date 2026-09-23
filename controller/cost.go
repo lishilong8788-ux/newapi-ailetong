@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -300,6 +301,30 @@ func CostChannelModels(c *gin.Context) {
 		out.UnknownRate = requestCountRateOrNull(row.RequestCount, row.UnknownCount)
 		result = append(result, out)
 	}
+
+	// 毛利排序在 Go 侧做，不写进 ORDER BY：毛利的口径是 pricedMargin，它要把
+	// 未定价流量的收入从分子里剔掉（cost_source=unknown 的请求没有成本，算进去
+	// 会虚增毛利）。SQL 里写 SUM(revenue)-SUM(cost) 排出来的名次和这一列显示的
+	// 数字不是一回事，那种榜单比没有榜单更糟。
+	//
+	// 默认仍是收入降序，保持既有调用方的行为不变。
+	switch strings.TrimSpace(c.Query("sort")) {
+	case "margin":
+		sort.SliceStable(result, func(i, j int) bool {
+			return result[i].MarginQuota > result[j].MarginQuota
+		})
+	case "margin_rate":
+		sort.SliceStable(result, func(i, j int) bool {
+			// 毛利率算不出来（分母为 0，即全是未定价流量）的行排在最后：它不是
+			// 毛利为 0，是这笔账还没法看，不该跟真实低毛利的行混在一起比。
+			li, lj := result[i].MarginRate, result[j].MarginRate
+			if li == nil || lj == nil {
+				return li != nil
+			}
+			return *li > *lj
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -474,19 +499,11 @@ func CostUpdateChannelPrice(c *gin.Context) {
 	})
 }
 
-// validateChannelCostSettings 校验成本配置：模式合法、单价有上界、比率在
-// 合理区间。拒绝 NaN/Inf（成本单价虚高 = 毛利虚低 = 误触发告警）。
+// validateChannelCostSettings 校验成本配置：单价有上界、利润率在合理区间。
+// 拒绝 NaN/Inf（成本单价虚高 = 毛利虚低 = 误触发告警）。
 func validateChannelCostSettings(cs *dto.ChannelCostSettings) error {
-	switch cs.Mode {
-	case "", "ratio", "per_call", "expr":
-	default:
-		return fmt.Errorf("invalid cost mode: %s", cs.Mode)
-	}
 	if cs.DefaultMarkup != nil && (*cs.DefaultMarkup < 0 || *cs.DefaultMarkup > 100) {
 		return fmt.Errorf("default_markup must be in [0, 100]")
-	}
-	if cs.Discount != nil && (*cs.Discount <= 0 || *cs.Discount > 1) {
-		return fmt.Errorf("discount must be in (0, 1]")
 	}
 	const maxUnitPrice = 10000.0
 	checkPtr := func(name string, v *float64) error {
@@ -501,6 +518,9 @@ func validateChannelCostSettings(cs *dto.ChannelCostSettings) error {
 	for model, price := range cs.Models {
 		if strings.TrimSpace(model) == "" {
 			return fmt.Errorf("empty model name in cost models")
+		}
+		if price.Markup != nil && (*price.Markup < 0 || *price.Markup > 100) {
+			return fmt.Errorf("model %s: markup must be in [0, 100]", model)
 		}
 		checks := map[string]*float64{
 			"input": price.Input, "output": price.Output,

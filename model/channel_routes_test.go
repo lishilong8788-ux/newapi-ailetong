@@ -75,50 +75,50 @@ func TestGetModelChannelRoutes_PerCallModelRowsArePricedAndOrderedManually(t *te
 	assert.Equal(t, []int{206, 205}, []int{routes[0].ChannelID, routes[1].ChannelID})
 }
 
-func TestLineCodeOf(t *testing.T) {
+func TestChannelLineCode(t *testing.T) {
+	lineCode := func(s string) *string { return &s }
+
 	cases := []struct {
-		name          string
-		clientModel   string
-		upstreamModel string
-		want          string
+		name    string
+		channel *Channel
+		want    string
 	}{
 		{
-			name:          "mapping suffix is the line code",
-			clientModel:   "deepseek-v4-pro-0813",
-			upstreamModel: "deepseek-v4-pro-0813/hs4",
-			want:          "hs4",
+			name:    "the channel's own code is the line code",
+			channel: &Channel{LineCode: lineCode("hs10")},
+			want:    "hs10",
 		},
 		{
-			name:          "unmapped model has no line",
-			clientModel:   "deepseek-v4-pro-0813",
-			upstreamModel: "deepseek-v4-pro-0813",
-			want:          "",
+			name:    "unset code means the channel names no line",
+			channel: &Channel{},
+			want:    "",
 		},
 		{
-			// A vendor-namespaced name is not a line: "qwen3" would be a
-			// nonsensical label for the channel.
-			name:          "vendor namespace is not a line code",
-			clientModel:   "qwen3",
-			upstreamModel: "qwen/qwen3",
-			want:          "",
+			// Hand-typed in the channel form, and a trailing space would make the
+			// `<model>/<code>` match fail while the value still reads as set.
+			name:    "surrounding whitespace is trimmed",
+			channel: &Channel{LineCode: lineCode("  tx8 ")},
+			want:    "tx8",
 		},
 		{
-			name:          "rename without the original prefix is not a line",
-			clientModel:   "gpt-4o",
-			upstreamModel: "azure/gpt-4o-2024",
-			want:          "",
+			// Settlement can land after the operator deleted the channel; a label
+			// lookup must not panic on the way to reporting nothing.
+			name:    "nil channel yields nothing",
+			channel: nil,
+			want:    "",
 		},
 		{
-			name:          "trailing slash yields nothing",
-			clientModel:   "gpt-4o",
-			upstreamModel: "gpt-4o/",
-			want:          "",
+			// The mapping target no longer feeds the label at all: this channel
+			// renames the model upstream and still has no line of its own.
+			name:    "model_mapping no longer mints a code",
+			channel: &Channel{ModelMapping: lineCode(`{"deepseek-v4":"deepseek-v4/hs4"}`)},
+			want:    "",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, lineCodeOf(tc.clientModel, tc.upstreamModel))
+			assert.Equal(t, tc.want, ChannelLineCode(tc.channel))
 		})
 	}
 }

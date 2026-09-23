@@ -294,6 +294,7 @@ func migrateDB() error {
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&ChannelPerfMetric{},
 		&ChannelCostDaily{},
 		&ChannelPurchase{},
 		&SystemInstance{},

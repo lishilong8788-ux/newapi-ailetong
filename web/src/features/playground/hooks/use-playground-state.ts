@@ -158,6 +158,27 @@ export function usePlaygroundState() {
   )
 
   /**
+   * Change several config fields as one operation.
+   *
+   * Exists for the cases where two fields are a single decision rather than two:
+   * switching model clears the pinned channel, because a channel serves specific
+   * models and the old pin would name a line that cannot answer the new one.
+   * Done as two `updateConfig` calls, the first one persists a config pairing the
+   * new model with the stale channel — a state that is never valid and would be
+   * restored verbatim by a reload landing in between.
+   */
+  const updateConfigFields = useCallback(
+    (fields: Partial<PlaygroundConfig>) => {
+      setConfig((prev) => {
+        const updated = { ...prev, ...fields }
+        saveConfig(updated)
+        return updated
+      })
+    },
+    []
+  )
+
+  /**
    * Write to one model's transcript, with automatic save.
    *
    * `targetModel` names the transcript that owns the write, and only the async
@@ -220,6 +241,7 @@ export function usePlaygroundState() {
 
     // Actions
     updateConfig,
+    updateConfigFields,
     updateMessages,
     clearMessages,
     resetConfig,

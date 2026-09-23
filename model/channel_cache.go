@@ -96,6 +96,19 @@ func InitChannelCache() {
 	// priority tier into one and turns failover into a single weighted pool.
 	newModel2channelPriceRank := buildChannelPriceRanks(channels, newChannel2priceSettings, newChannel2modelMapping)
 
+	// Only enabled channels publish a code: a disabled channel's line must not
+	// make `<model>/<code>` parse as a pin, or the request resolves to a line that
+	// cannot serve it and fails instead of falling back to the bare model.
+	newKnownLineCodes := make(map[string]bool)
+	for _, channel := range channels {
+		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		if code := channel.GetLineCode(); code != "" {
+			newKnownLineCodes[code] = true
+		}
+	}
+
 	channelSyncLock.Lock()
 	group2model2channels = newGroup2model2channels
 	//channelsIDM = newChannelId2channel
@@ -117,6 +130,7 @@ func InitChannelCache() {
 	channel2priceSettings = newChannel2priceSettings
 	channel2modelMapping = newChannel2modelMapping
 	model2channelPriceRank = newModel2channelPriceRank
+	knownLineCodes = newKnownLineCodes
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -135,6 +149,14 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	return GetRandomSatisfiedChannelOnLine(group, model, retry, requestPath, "")
+}
+
+// GetRandomSatisfiedChannelOnLine is GetRandomSatisfiedChannel with a line
+// preference: when lineCode is non-empty, candidates published under that line
+// are tried first, and the full candidate set is used only when the line has none
+// usable. Passing "" is the unpinned path and behaves identically to before.
+func GetRandomSatisfiedChannelOnLine(group string, model string, retry int, requestPath string, lineCode string) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
 		return GetChannel(group, model, retry, requestPath)
@@ -150,6 +172,14 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
 		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, model)
+	}
+
+	// Narrow to the pinned line, keeping the full set when the line has nothing
+	// usable. Applied after both model lookups so a pin works for normalized
+	// names too, and before the priority tiering below so the line's own channels
+	// tier among themselves rather than competing with the ones being excluded.
+	if pinned := filterChannelsByLineCode(channels, lineCode); pinned != nil {
+		channels = pinned
 	}
 
 	if len(channels) == 0 {

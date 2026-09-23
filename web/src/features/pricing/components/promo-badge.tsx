@@ -45,6 +45,20 @@ export interface PromoBadgeProps {
    */
   flow?: boolean
   title?: string
+  /**
+   * The pill is sitting on the saturated masthead band rather than on a light
+   * surface. `filled` tints the background at 12%, which over the band resolves to
+   * roughly the band's own colour — so the variant's mid-tone label ends up on
+   * blue at ~2:1. This swaps the tint for an opaque white fill, which puts the
+   * badge back on the light background its palette was drawn for and restores the
+   * same contrast it has on a card anywhere else in the app.
+   *
+   * Not a solid variant-coloured pill with a white label, which was the first
+   * attempt: `--warning` is L 0.681, so white on it is 2.93:1, and of the nine
+   * fills behind these variants only `--destructive` clears 4.5:1. The reference's
+   * badge being solid red is the one case where that works.
+   */
+  onBand?: boolean
   className?: string
 }
 
@@ -70,11 +84,15 @@ export const PromoBadge = memo(function PromoBadge(props: PromoBadgeProps) {
       style={{
         // A complete outline at rest. Without it the travelling highlight is the
         // only thing drawing the perimeter, so the pill looks unfinished for
-        // most of each cycle.
+        // most of each cycle. Unchanged on the band: the fill there is white, so
+        // the variant-tinted edge still reads as the pill's own outline.
         borderColor: `color-mix(in oklch, ${flowColor} 28%, transparent)`,
       }}
       className={cn(
         'h-[26px] border px-3 text-[13px] font-semibold',
+        // Opaque, so nothing of the band shows through; the variant keeps its own
+        // text colour on top.
+        props.onBand && 'bg-white',
         props.className
       )}
     />

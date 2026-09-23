@@ -93,14 +93,17 @@ type ChannelOtherSettings struct {
 // ChannelCostSettings is the per-channel upstream cost configuration stored
 // inside ChannelOtherSettings. All scalars are pointers so "not configured"
 // stays distinguishable from an explicit zero (free models are a legal $0).
+//
+// 这里只存两样东西：进价（Models）和利润率（DefaultMarkup）。卖价不存，由
+// 进价正推得出，所以上游调价时只要改进价，卖价跟着动、利润率保持不变。
 type ChannelCostSettings struct {
-	Mode          string                    `json:"mode,omitempty"`           // ratio|per_call|expr
-	DefaultMarkup *float64                  `json:"default_markup,omitempty"` // 加价率，如 0.3 = 成本上加 30%
-	Discount      *float64                  `json:"discount,omitempty"`       // 相对官方价的折扣，如 0.85
-	Models        map[string]ModelCostPrice `json:"models,omitempty"`         // upstream_model -> 单价
-	Expr          string                    `json:"expr,omitempty"`
-	Currency      string                    `json:"currency,omitempty"` // 预留，默认 USD
-	UpdatedAt     int64                     `json:"updated_at,omitempty"`
+	// DefaultMarkup 是渠道级利润率，正推：卖价 = 进价 × (1 + DefaultMarkup)。
+	// 0.3 表示加价 30%。nil 表示未配置，该渠道全部模型走兜底老倍率计费。
+	DefaultMarkup *float64 `json:"default_markup,omitempty"`
+	// Models 是按上游模型名的进价，USD / 1M tokens。
+	Models    map[string]ModelCostPrice `json:"models,omitempty"`
+	Currency  string                    `json:"currency,omitempty"` // 预留，默认 USD
+	UpdatedAt int64                     `json:"updated_at,omitempty"`
 }
 
 // ModelCostPrice holds per-token-kind unit prices. Unit: USD per 1M tokens,
@@ -116,7 +119,11 @@ type ModelCostPrice struct {
 	ImageIn      *float64 `json:"image_in,omitempty"`
 	ImageOut     *float64 `json:"image_out,omitempty"`
 	Reasoning    *float64 `json:"reasoning,omitempty"`
-	PerCall      *float64 `json:"per_call,omitempty"` // USD per request（per_call 模式）
+	PerCall      *float64 `json:"per_call,omitempty"` // USD per request（按次计价的进价）
+	// Markup 覆盖 ChannelCostSettings.DefaultMarkup，只对这一个模型生效。
+	// 语义同 DefaultMarkup：卖价 = 进价 × (1 + Markup)。nil 表示不覆盖，回落
+	// 渠道级利润率。给的是「这个模型我要多赚点」，不是另一套计价模式。
+	Markup *float64 `json:"markup,omitempty"`
 }
 
 // ChannelPriceSettings is the per-channel SELL price configuration, the mirror

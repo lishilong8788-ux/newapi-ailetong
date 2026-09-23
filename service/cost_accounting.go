@@ -20,11 +20,14 @@ import (
 // 成本 key 是 (channel_id, upstream_model_name)——同一个模型走官方直连和走
 // 中转商成本可能差一倍，用 origin_model 当成本 key 是错的。
 //
-// 四级解析链（命中即停）：
+// 两级解析链（命中即停）：
 //  1. exact    渠道模型精确价 channel_cost.models[upstream_model]
-//  2. markup   渠道默认加价率反推 revenue / (1 + markup)
-//  3. reported 上游报告真值 usage.Cost（OpenRouter 系响应）
-//  4. official 官方价 × 渠道折扣（或全局默认折扣）
+//  2. reported 上游报告真值 usage.Cost（OpenRouter 系响应）
+//
+// 两级都不命中就是 unknown，不猜。原先还有两级估算——按渠道利润率从收入反推
+// 成本，以及官方价 × 渠道折扣——都已删除：前者方向反了（现在利润率是从进价
+// 正推卖价用的，反过来用会把「我们卖多少」当成「我们付多少」），后者是估算，
+// 而进价现在直接填，没必要再猜一个数出来跟真值混在一张报表里。
 //
 // 成本绝不乘 groupRatio——分组倍率是售价折扣，不影响上游账单。
 
@@ -32,8 +35,6 @@ import (
 const (
 	CostSourceExact    = "exact"    // 渠道模型精确价
 	CostSourceReported = "reported" // 上游返回真值
-	CostSourceMarkup   = "markup"   // 默认加价率反推
-	CostSourceOfficial = "official" // 官方价 × 折扣（估算）
 	CostSourceUnknown  = "unknown"  // 无法确定——不参与毛利计算
 )
 
@@ -73,7 +74,7 @@ func validCostUnitPrice(v *float64) bool {
 	return *v >= 0 && *v <= maxCostUnitPriceUSD
 }
 
-// resolveModelCostExact 按四级链的第 1 级：渠道模型精确价（ratio 模式）。
+// resolveModelCostExact 第 1 级：渠道模型精确价。
 // 返回 USD 金额；ok=false 表示该级不可用（未配置/单价非法/该模型无条目）。
 func resolveModelCostExact(cost *dto.ChannelCostSettings, upstreamModel string, t CostTokenBreakdown) (float64, bool) {
 	if cost == nil || len(cost.Models) == 0 {
@@ -84,7 +85,7 @@ func resolveModelCostExact(cost *dto.ChannelCostSettings, upstreamModel string, 
 		return 0, false
 	}
 
-	// per_call 模式：精确价直接按次。
+	// 按次进价优先：配了 per_call 就是按次买的，不看 token。
 	if price.PerCall != nil {
 		if !validCostUnitPrice(price.PerCall) {
 			return 0, false
@@ -92,7 +93,7 @@ func resolveModelCostExact(cost *dto.ChannelCostSettings, upstreamModel string, 
 		return *price.PerCall, true
 	}
 
-	// ratio 模式：单价 USD/1M tokens × token 数。配置了任何一个单价字段即视为
+	// 按量进价：单价 USD/1M tokens × token 数。配置了任何一个单价字段即视为
 	// 命中该级；未配置的字段按 0 计（如只配了 input/output，缓存按 0）。
 	var total float64
 	anyField := false
@@ -120,23 +121,6 @@ func resolveModelCostExact(cost *dto.ChannelCostSettings, upstreamModel string, 
 		return 0, false
 	}
 	return total, true
-}
-
-// resolveModelCostMarkup 第 2 级：渠道默认加价率反推。
-// markup=0.3 表示"成本上加 30% 卖"，反推 cost = revenue / 1.3。
-func resolveModelCostMarkup(cost *dto.ChannelCostSettings, revenue int) (float64, bool) {
-	if cost == nil || cost.DefaultMarkup == nil {
-		return 0, false
-	}
-	markup := *cost.DefaultMarkup
-	if math.IsNaN(markup) || math.IsInf(markup, 0) || markup < 0 || markup > 100 {
-		return 0, false
-	}
-	if revenue <= 0 {
-		return 0, false
-	}
-	revenueUSD := float64(revenue) / common.QuotaPerUnit
-	return revenueUSD / (1 + markup), true
 }
 
 // upstreamReportedCostUSD 解析 usage.Cost。OpenRouter 系响应里它可能是
@@ -177,59 +161,12 @@ func upstreamReportedCostUSD(usage *dto.Usage) (float64, bool) {
 	}
 }
 
-// officialPriceEntry 是官方价表的内存形态（USD/1M tokens）。一期由
-// ratio_sync 的 models.dev 抓取灌入（P3），此处先留接口。
-var officialPrices = map[string]dto.ModelCostPrice{}
-
-// SetOfficialPrices 替换官方价表（同步任务调用）。
-func SetOfficialPrices(prices map[string]dto.ModelCostPrice) {
-	if prices == nil {
-		return
-	}
-	officialPrices = prices
-}
-
-// resolveModelCostOfficial 第 4 级：官方价 × 折扣。只覆盖 input/output/
-// cache_read 三个字段（models.dev 只提供这三个）。折扣取渠道折扣，缺省回落
-// 全局默认折扣。
-func resolveModelCostOfficial(cost *dto.ChannelCostSettings, upstreamModel string, t CostTokenBreakdown) (float64, bool) {
-	price, ok := officialPrices[upstreamModel]
-	if !ok {
-		return 0, false
-	}
-	if price.Input == nil || !validCostUnitPrice(price.Input) {
-		return 0, false
-	}
-	discount := costsetting.GetSetting().DefaultDiscount
-	if cost != nil && cost.Discount != nil && !math.IsNaN(*cost.Discount) && !math.IsInf(*cost.Discount, 0) && *cost.Discount > 0 && *cost.Discount <= 1 {
-		discount = *cost.Discount
-	}
-	var total float64
-	total += float64(t.PromptTokens+t.CacheWrite5m+t.CacheWrite1h) * *price.Input / 1e6
-	if price.Output != nil && validCostUnitPrice(price.Output) {
-		total += float64(t.CompletionTokens) * *price.Output / 1e6
-	}
-	if price.CacheRead != nil && validCostUnitPrice(price.CacheRead) && price.Input != nil {
-		// 缓存读已含在官方 input 价里的话这里会双算，所以只在 cache_read 单价
-		// 显著低于 input 价时替换计算（models.dev 语义：input 是全价，cache_read
-		// 是缓存价）。简单起见：input 部分只算非缓存输入，缓存读按 cache_read 价。
-		if *price.CacheRead < *price.Input {
-			total -= float64(t.CacheReadTokens) * *price.Input / 1e6
-			if total < 0 {
-				total = 0
-			}
-			total += float64(t.CacheReadTokens) * *price.CacheRead / 1e6
-		}
-	}
-	if total < 0 {
-		total = 0
-	}
-	return total * discount, true
-}
-
-// ComputeUpstreamCost 走完四级链，返回 (成本quota, source)。
+// ComputeUpstreamCost 走完两级链，返回 (成本quota, source)。
 // 求值失败一律 (0, unknown)——记 0 成本会让毛利虚高到 100%，是最危险的
 // 静默错误；unknown 单独统计"未定价流量占比"，不参与毛利计算。
+//
+// 没配进价就是 unknown：不再拿收入反推、也不再按官方价估。成本要么是填进去
+// 的真进价、要么是上游回报的真值，别的都不算成本。
 func ComputeUpstreamCost(cost *dto.ChannelCostSettings, upstreamModel string, inputs CostInputs) (int, string) {
 	if !costsetting.GetSetting().Enabled {
 		return 0, CostSourceUnknown
@@ -238,14 +175,8 @@ func ComputeUpstreamCost(cost *dto.ChannelCostSettings, upstreamModel string, in
 	if usd, ok := resolveModelCostExact(cost, upstreamModel, inputs.Tokens); ok {
 		return costUSDToQuota(usd), CostSourceExact
 	}
-	if usd, ok := resolveModelCostMarkup(cost, inputs.Revenue); ok {
-		return costUSDToQuota(usd), CostSourceMarkup
-	}
 	if usd, ok := upstreamReportedCostUSD(inputs.Usage); ok && usd > 0 {
 		return costUSDToQuota(usd), CostSourceReported
-	}
-	if usd, ok := resolveModelCostOfficial(cost, upstreamModel, inputs.Tokens); ok {
-		return costUSDToQuota(usd), CostSourceOfficial
 	}
 	return 0, CostSourceUnknown
 }

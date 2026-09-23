@@ -82,6 +82,12 @@ type ChannelPrice struct {
 // under must not disagree about how a model is billed.
 const quotaTypePerRequest = 1
 
+// Values for ChannelRoute.AvailabilitySource.
+const (
+	AvailabilitySourceChannel = "channel"
+	AvailabilitySourceGroup   = "group"
+)
+
 // ChannelRoute is one channel that can serve one model, with everything the
 // public catalog is allowed to know about it.
 //
@@ -93,9 +99,9 @@ const quotaTypePerRequest = 1
 type ChannelRoute struct {
 	ChannelID int    `json:"channel_id"`
 	Name      string `json:"name,omitempty"`
-	// Code is the short line label ("hs4"), taken from the model_mapping target
-	// suffix. Empty when the mapping carries no suffix; the frontend falls back
-	// to the channel id rather than printing the channel name.
+	// Code is the short line label ("hs10"), the channel's own line_code. Empty
+	// when the operator named no line; the frontend falls back to "#<id>" rather
+	// than printing the channel name.
 	Code string `json:"code,omitempty"`
 	// Category is a coarse slug (public_cloud / aggregator / vendor / self_hosted
 	// / other) the frontend localizes. The raw channel type stays server-side:
@@ -104,6 +110,27 @@ type ChannelRoute struct {
 	Category string `json:"category"`
 	// LatencyMs is the last channel test round-trip, 0 when never tested.
 	LatencyMs int `json:"latency_ms,omitempty"`
+	// AvailabilityPct is the share of real requests this channel served
+	// successfully over perfmetrics.ChannelHealthWindowHours, filled in by the
+	// service layer. A pointer because nil ("no traffic measured") and 0 ("every
+	// request failed") must not render the same way. Request counts stay
+	// server-side: availability is a performance fact a buyer may see, request
+	// volume is operating data.
+	AvailabilityPct *float64 `json:"availability_pct,omitempty"`
+	// TtftMs is the mean time to first token over the same window, 0 when no
+	// streaming request has been measured — non-stream traffic has no observable
+	// first token.
+	TtftMs int64 `json:"ttft_ms,omitempty"`
+	// AvailabilitySource says which measurement AvailabilityPct came from:
+	// "channel" for this channel's own traffic, "group" when the channel has no
+	// samples of its own and the figure is the model+group aggregate every channel
+	// in that group shares. The frontend labels the two differently — a number
+	// borrowed from the group must not pass for a per-channel measurement.
+	AvailabilitySource string `json:"availability_source,omitempty"`
+	// TtftSource is the same distinction for TtftMs, tracked separately because a
+	// channel serving only non-streaming traffic has a measured availability and
+	// no first-token time of its own.
+	TtftSource string `json:"ttft_source,omitempty"`
 	// Groups are the viewer-reachable groups this channel serves the model in.
 	Groups []string     `json:"groups,omitempty"`
 	Price  ChannelPrice `json:"price"`
@@ -221,26 +248,22 @@ func resolveUpstreamModel(mapping map[string]string, clientModel string) string 
 	}
 }
 
-// lineCodeOf extracts the short line label from an upstream model name.
+// ChannelLineCode is the short line label a channel is published under, or ""
+// when the operator named no line for it.
 //
-// Operators distinguish lines by suffixing the mapping target
-// ("deepseek-v4-pro-0813/hs4"), so the suffix is the label the catalog should
-// print. Only a mapped name yields one: an unmapped model's own name carrying a
-// slash is a vendor-namespaced model ("qwen/qwen3"), and "qwen3" is not a line.
-func lineCodeOf(clientModel string, upstreamModel string) string {
-	if upstreamModel == "" || upstreamModel == clientModel {
+// Reads the channel's own `line_code` column. It used to be derived from the
+// model_mapping target's suffix ("deepseek-v4-pro-0813/hs4"), which quietly
+// coupled a customer-facing label to the model name sent upstream: the mapping
+// target IS the upstream request's model (relay/helper/model_mapped.go calls
+// SetModelName with it), so minting a label meant sending a name no direct
+// vendor recognizes. That only worked when the upstream was itself an aggregator
+// sharing the convention, which left every direct-vendor channel unlabelable.
+// The label is now independent of routing, so both can be correct at once.
+func ChannelLineCode(channel *Channel) string {
+	if channel == nil {
 		return ""
 	}
-	idx := strings.LastIndex(upstreamModel, "/")
-	if idx < 0 || idx == len(upstreamModel)-1 {
-		return ""
-	}
-	// Only when the part before the slash is the model we started from; anything
-	// else is a rename rather than a line suffix.
-	if strings.TrimSuffix(upstreamModel[:idx], "/") != clientModel {
-		return ""
-	}
-	return upstreamModel[idx+1:]
+	return channel.GetLineCode()
 }
 
 // resolveChannelPrice prices one model on one channel for display and ranking.
@@ -529,15 +552,13 @@ func GetModelChannelRoutes(modelName string, groups []string) []*ChannelRoute {
 		routes = append(routes, &ChannelRoute{
 			ChannelID: row.channel.Id,
 			Name:      row.channel.Name,
+			Code:      row.channel.GetLineCode(),
 			Category:  channelCategoryOf(row.channel.Type),
 			LatencyMs: row.channel.ResponseTime,
 			Groups:    row.groups,
 			Price:     resolveChannelPrice(row.price, modelName, row.mapping),
 			priority:  row.channel.GetPriority(),
 		})
-	}
-	for _, route := range routes {
-		route.Code = lineCodeOf(modelName, route.Price.UpstreamModel)
 	}
 
 	sort.SliceStable(routes, func(i, j int) bool {

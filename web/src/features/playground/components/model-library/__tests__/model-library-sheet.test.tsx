@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
@@ -50,17 +51,41 @@ const MODELS: ModelOption[] = [
   },
 ]
 
+/**
+ * The library now carries the channel block, which reads `/api/pricing/channels`
+ * and `/api/status`. Both are seeded into the cache rather than mocked: the point
+ * of this suite is the drawer, and a pre-seeded query client keeps it from
+ * depending on how those two endpoints are fetched.
+ */
+function buildQueryClient() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+
+  queryClient.setQueryData(['status'], { price: 1, usd_exchange_rate: 1 })
+  queryClient.setQueryData(['pricing-channels', 'claude-opus-5'], {
+    success: true,
+    data: [],
+    auto_route: { enabled: true, mode: 'lowest_price', ranked: false },
+  })
+
+  return queryClient
+}
+
 function renderSheet(onSelectModel = vi.fn(), groups = GROUPS) {
   render(
-    <ModelLibrarySheet
-      models={MODELS}
-      selectedModel='claude-opus-5'
-      isLoading={false}
-      onSelectModel={onSelectModel}
-      groups={groups}
-      groupValue='default'
-      onGroupChange={vi.fn()}
-    />
+    <QueryClientProvider client={buildQueryClient()}>
+      <ModelLibrarySheet
+        models={MODELS}
+        selectedModel='claude-opus-5'
+        isLoading={false}
+        onSelectModel={onSelectModel}
+        groups={groups}
+        groupValue='default'
+        onGroupChange={vi.fn()}
+        onChannelChange={vi.fn()}
+      />
+    </QueryClientProvider>
   )
   return onSelectModel
 }
