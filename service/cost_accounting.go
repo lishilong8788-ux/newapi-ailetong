@@ -263,7 +263,17 @@ func attachUpstreamCost(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, inpu
 	costQuota, source := ComputeUpstreamCost(cost, upstreamModel, inputs)
 
 	// 同步进内存桶（定时 flush 到 channel_cost_daily）。
-	if relayInfo.ChannelId > 0 {
+	//
+	// 运营流量不采样：渠道测试、playground、运营副驾花的是真上游成本、收的是自己的
+	// 钱，进毛利统计就是报一笔不存在的账。重算路径（parseLogForCostRecalc）早就按
+	// model.OpsTrafficSources 排除了，实时路径必须同口径——否则每次重算后这部分消失、
+	// 实时运行又攒回来，两个口径永远对不上。
+	//
+	// 副驾尤其要挡：它问自己的模型时烧的 token 会落进它自己要报的那份毛利的分母，
+	// 而且多数是未定价的，直接顶高"未定价流量占比"这个健康度指标。
+	//
+	// 只挡采样，成本快照照写：账本要按行显示每一笔的成本，运营流量那几行也要能看。
+	if relayInfo.ChannelId > 0 && !model.IsOpsTrafficSource(trafficSourceOf(ctx)) {
 		reported := int64(0)
 		if reportedUSD, ok := upstreamReportedCostUSD(inputs.Usage); ok && reportedUSD > 0 {
 			reported = int64(costUSDToQuota(reportedUSD))
@@ -360,6 +370,8 @@ func CostInputsFromRealtimeUsage(usage *dto.RealtimeUsage, revenue int) CostInpu
 }
 
 // trafficSourceOf 统一读取请求来源标记，供毛利统计过滤。
+// 唯一调用方是 attachUpstreamCost 的采样闸门；写日志那一份在
+// service/log_info_generate.go 里直接读 context key。
 func trafficSourceOf(ctx *gin.Context) string {
 	if ctx == nil {
 		return ""
