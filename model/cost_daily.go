@@ -1,6 +1,8 @@
 package model
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -43,22 +45,29 @@ func UpsertChannelCostDaily(row *ChannelCostDaily) error {
 			{Name: "model_name"},
 		},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"request_count":   gorm.Expr("channel_cost_daily.request_count + ?", row.RequestCount),
-			"token_used":      gorm.Expr("channel_cost_daily.token_used + ?", row.TokenUsed),
-			"revenue_quota":   gorm.Expr("channel_cost_daily.revenue_quota + ?", row.RevenueQuota),
-			"cost_quota":      gorm.Expr("channel_cost_daily.cost_quota + ?", row.CostQuota),
-			"unknown_count":   gorm.Expr("channel_cost_daily.unknown_count + ?", row.UnknownCount),
-			"unknown_quota":   gorm.Expr("channel_cost_daily.unknown_quota + ?", row.UnknownQuota),
-			"reported_quota":  gorm.Expr("channel_cost_daily.reported_quota + ?", row.ReportedQuota),
+			"request_count":  gorm.Expr("channel_cost_daily.request_count + ?", row.RequestCount),
+			"token_used":     gorm.Expr("channel_cost_daily.token_used + ?", row.TokenUsed),
+			"revenue_quota":  gorm.Expr("channel_cost_daily.revenue_quota + ?", row.RevenueQuota),
+			"cost_quota":     gorm.Expr("channel_cost_daily.cost_quota + ?", row.CostQuota),
+			"unknown_count":  gorm.Expr("channel_cost_daily.unknown_count + ?", row.UnknownCount),
+			"unknown_quota":  gorm.Expr("channel_cost_daily.unknown_quota + ?", row.UnknownQuota),
+			"reported_quota": gorm.Expr("channel_cost_daily.reported_quota + ?", row.ReportedQuota),
 		}),
 	}).Create(row).Error
 }
 
 // CostDailyAgg 是聚合查询的投影。
 type CostDailyAgg struct {
-	ChannelId     int    `json:"channel_id"`
-	ModelName     string `json:"model_name"`
-	DayTs         int64  `json:"day_ts"`
+	ChannelId int    `json:"channel_id"`
+	ModelName string `json:"model_name"`
+	DayTs     int64  `json:"day_ts"`
+	// Day 是 DayTs 所属的服务器本地日期（YYYY-MM-DD），不是数据库列，由
+	// fillLocalDayLabels 在查询后填。
+	//
+	// 存在的理由：day_ts 是本地零点的 unix 时间戳，前端拿裸时间戳渲染只能用【浏览器】
+	// 时区，两边时区不一致时日期标签会整体错一天（UTC+8 的 09-23 零点在 UTC 浏览器
+	// 上是 09-22 16:00）。日桶属于哪一天是服务器的事实，不该让客户端反推。
+	Day           string `json:"day"`
 	RequestCount  int64  `json:"request_count"`
 	TokenUsed     int64  `json:"token_used"`
 	RevenueQuota  int64  `json:"revenue_quota"`
@@ -66,6 +75,19 @@ type CostDailyAgg struct {
 	UnknownCount  int64  `json:"unknown_count"`
 	UnknownQuota  int64  `json:"unknown_quota"`
 	ReportedQuota int64  `json:"reported_quota"`
+}
+
+// fillLocalDayLabels 给带真 day_ts 的投影补上服务器本地日期标签。
+//
+// 只处理 DayTs > 0：跨天聚合的查询把 day_ts 投影成常量 0（那一行不属于任何一天），
+// 给它格式化会得出 1970-01-01，比留空更容易被当成真数据。
+func fillLocalDayLabels(rows []CostDailyAgg) []CostDailyAgg {
+	for i := range rows {
+		if rows[i].DayTs > 0 {
+			rows[i].Day = time.Unix(rows[i].DayTs, 0).In(time.Local).Format("2006-01-02")
+		}
+	}
+	return rows
 }
 
 // GetCostDailyRange 按时间范围取全部明细行（按渠道/模型分组由调用方做）。
@@ -78,7 +100,7 @@ func GetCostDailyRange(startTs, endTs int64) ([]CostDailyAgg, error) {
 		Where("day_ts >= ? AND day_ts <= ?", startTs, endTs).
 		Group("channel_id, model_name, day_ts").
 		Find(&rows).Error
-	return rows, err
+	return fillLocalDayLabels(rows), err
 }
 
 // GetCostDailyByChannel 按渠道聚合时间范围内的行。
@@ -129,7 +151,7 @@ func GetCostDailyTrend(startTs, endTs int64) ([]CostDailyAgg, error) {
 		Group("day_ts").
 		Order("day_ts ASC").
 		Find(&rows).Error
-	return rows, err
+	return fillLocalDayLabels(rows), err
 }
 
 // DeleteCostDailyRange 删除时间范围内的汇总行（recalculate 回溯重算用）。

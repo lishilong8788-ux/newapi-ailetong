@@ -305,12 +305,15 @@ func handleQueryCostOverview(_ context.Context, args json.RawMessage) (any, erro
 	}
 
 	type trendPoint struct {
-		DayTs        int64 `json:"day_ts"`
-		RequestCount int64 `json:"request_count"`
-		RevenueQuota int64 `json:"revenue_quota"`
-		CostQuota    int64 `json:"cost_quota"`
-		MarginQuota  int64 `json:"margin_quota"`
-		UnknownQuota int64 `json:"unknown_quota"`
+		DayTs int64 `json:"day_ts"`
+		// Day 是服务器本地日期。模型读到裸时间戳只会自己换算，而它不知道服务器时区，
+		// 于是把日桶说成相邻那天——它转述给站长的日期必须和页面上的一致。
+		Day          string `json:"day"`
+		RequestCount int64  `json:"request_count"`
+		RevenueQuota int64  `json:"revenue_quota"`
+		CostQuota    int64  `json:"cost_quota"`
+		MarginQuota  int64  `json:"margin_quota"`
+		UnknownQuota int64  `json:"unknown_quota"`
 	}
 
 	total := marginRow{}
@@ -320,6 +323,7 @@ func handleQueryCostOverview(_ context.Context, args json.RawMessage) (any, erro
 		dayMargin, _ := pricedMargin(agg.RevenueQuota, agg.CostQuota, agg.UnknownQuota)
 		trend = append(trend, trendPoint{
 			DayTs:        agg.DayTs,
+			Day:          agg.Day,
 			RequestCount: agg.RequestCount,
 			RevenueQuota: agg.RevenueQuota,
 			CostQuota:    agg.CostQuota,

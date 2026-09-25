@@ -39,6 +39,16 @@ export interface CostOverview {
 /** One day bucket from GET /api/cost/trend. */
 export interface CostTrendPoint {
   day_ts: number
+  /**
+   * Server-local calendar day of this bucket, `YYYY-MM-DD`.
+   *
+   * Rendering `day_ts` here instead would label the bucket in the *browser's*
+   * timezone, which is only the same day when the viewer happens to share the
+   * server's offset — `day_ts` is local midnight on the server, so a UTC+8
+   * server's 09-23 bucket reads as 09-22 16:00 to a UTC viewer. Which day a
+   * bucket belongs to is a server fact, so the server states it.
+   */
+  day?: string
   request_count: number
   token_used: number
   revenue_quota: number

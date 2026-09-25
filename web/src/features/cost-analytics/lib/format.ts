@@ -55,6 +55,14 @@ export function formatTokenCount(tokens: number | null | undefined): string {
   return formatTokens(tokens)
 }
 
+/**
+ * Renders an arbitrary instant as a calendar date in the *viewer's* timezone.
+ *
+ * Use this for the window bounds the viewer picked themselves — they chose those
+ * dates in this browser, so echoing them back in another timezone would be
+ * wrong. Do NOT use it for a `day_ts` bucket: those are server-local midnights
+ * and the server already ships its own label (see `CostTrendPoint.day`).
+ */
 export function formatDayLabel(dayTs: number): string {
   if (!Number.isFinite(dayTs) || dayTs <= 0) return '-'
   const date = new Date(dayTs * 1000)
@@ -132,7 +140,10 @@ export function buildTrendChartData(
   trend: CostTrendPoint[]
 ): TrendChartDatum[] {
   return trend.map((point) => ({
-    day: formatDayLabel(point.day_ts),
+    // Prefer the server's own label; see CostTrendPoint.day. The fallback keeps
+    // the axis readable against a backend that predates the field rather than
+    // rendering a blank category.
+    day: point.day ?? formatDayLabel(point.day_ts),
     revenue: point.revenue_quota,
     cost: point.cost_quota,
     rate:
