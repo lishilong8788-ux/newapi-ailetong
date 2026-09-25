@@ -110,7 +110,10 @@ export function getChannelDiscount(route: ChannelRoute): number | null {
   return discount > 0 && discount < 1 ? discount : null
 }
 
-/** True when this row's price came from a per-channel discount rather than the platform default. */
+/**
+ * True when this row's price is the channel's own — a buy price marked up, or a
+ * discount against list — rather than the platform default every channel shares.
+ */
 export function isChannelPriced(route: ChannelRoute): boolean {
   return (
     route.price.price_source !== 'fallback' &&

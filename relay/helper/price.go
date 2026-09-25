@@ -79,10 +79,14 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 // 这就是渐进上线的开关本体：填一个渠道-模型的进价+利润率，它就走卖价；没填的
 // 一律不受影响，不额外加 feature flag。
 //
-// 只改 model/completion/cache 三个维度，因为卖价也只在这三个维度上有答案
-// （service.ResolveSellPrice 只用官方倍率表推导，覆盖面同 ComputeListPriceQuota）。
-// cache write、音频、图片的倍率留着平台原值：它们在结算侧本就是"相对 input 的
-// 倍数"，是上游的定价结构而不是我们的售价口径，换了 input 基准照样成立。
+// 改写运营填过进价的每一个维度。没填的留平台原值 —— 不是因为平台值一定对，而是
+// 因为它至少是上游定价结构的一个估计（缓存写入 1.25、音频按模型表），而倍率 1 是
+// 断言该维度与 input 同价，对音频能差十几倍。
+//
+// 这里必须覆盖全维度，不能只改 model/completion/cache：下面那句 success = true
+// 让平台倍率表里完全没有的模型也能计费，此时 GetCreateCacheRatio / GetImageRatio /
+// GetAudioRatio 全部返回未命中默认值（1.25 / 1 / 1）。只改三项就等于拿 input 的价
+// 卖音频。
 func applyChannelSellPrice(c *gin.Context, priceData *hosttypes.PriceData, clientModel string) bool {
 	otherSettings, ok := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)
 	if !ok || otherSettings.Cost == nil {
@@ -107,11 +111,22 @@ func applyChannelSellPrice(c *gin.Context, priceData *hosttypes.PriceData, clien
 	}
 
 	priceData.ModelRatio = ratios.ModelRatio
-	if ratios.CompletionRatio != nil {
-		priceData.CompletionRatio = *ratios.CompletionRatio
-	}
-	if ratios.CacheRatio != nil {
-		priceData.CacheRatio = *ratios.CacheRatio
+	for _, field := range []struct {
+		ratio  *float64
+		target *float64
+	}{
+		{ratios.CompletionRatio, &priceData.CompletionRatio},
+		{ratios.CacheRatio, &priceData.CacheRatio},
+		{ratios.CacheCreationRatio, &priceData.CacheCreationRatio},
+		{ratios.CacheCreation5mRatio, &priceData.CacheCreation5mRatio},
+		{ratios.CacheCreation1hRatio, &priceData.CacheCreation1hRatio},
+		{ratios.ImageRatio, &priceData.ImageRatio},
+		{ratios.AudioRatio, &priceData.AudioRatio},
+		{ratios.AudioCompletionRatio, &priceData.AudioCompletionRatio},
+	} {
+		if field.ratio != nil {
+			*field.target = *field.ratio
+		}
 	}
 	// 卖价是绝对价（USD），分组倍率不再参与——否则同一条卖价对不同分组收不同的
 	// 钱，"渠道-模型-卖价"就不成立了。唯一例外是 0：那是把整个分组关成免费的
@@ -131,10 +146,12 @@ func applyChannelSellPrice(c *gin.Context, priceData *hosttypes.PriceData, clien
 // 点名线路（`<模型>/<线路码>`）的请求不重算：客户点的是这条线，价格在入口就已经
 // 许诺出去了，failover 不该改价。没点名的按实际服务渠道计价。
 //
-// 必须先把倍率还原成平台值再套新渠道的卖价：上一条渠道的卖价可能已经改写过
-// model/completion/cache，applyChannelSellPrice 返回 false 时不碰任何字段，
-// 残留的就是 A 的价。平台倍率只按模型名索引、与渠道无关，所以重读一次就是精确
-// 还原。音频/图片/cache write 几项卖价从不改写，不需要还原。
+// 必须先把倍率还原成平台值再套新渠道的卖价：applyChannelSellPrice 返回 false 时
+// 不碰任何字段，残留的就是 A 的价。平台倍率只按模型名索引、与渠道无关，所以重读
+// 一次就是精确还原。
+//
+// 还原的维度必须与 applyChannelSellPrice 改写的维度一字不差 —— 卖价现在会改写
+// 音频/图片/缓存写入，漏还原哪一项，A 渠道的那一项就留在 B 渠道的账单上。
 func RepriceForChannel(c *gin.Context, info *relaycommon.RelayInfo) {
 	if info == nil || info.PriceData.UsePrice {
 		return
@@ -146,6 +163,13 @@ func RepriceForChannel(c *gin.Context, info *relaycommon.RelayInfo) {
 	info.PriceData.ModelRatio, _, _ = ratio_setting.GetModelRatio(info.OriginModelName)
 	info.PriceData.CompletionRatio = ratio_setting.GetCompletionRatio(info.OriginModelName)
 	info.PriceData.CacheRatio, _ = ratio_setting.GetCacheRatio(info.OriginModelName)
+	cacheCreationRatio, _ := ratio_setting.GetCreateCacheRatio(info.OriginModelName)
+	info.PriceData.CacheCreationRatio = cacheCreationRatio
+	info.PriceData.CacheCreation5mRatio = cacheCreationRatio
+	info.PriceData.CacheCreation1hRatio = cacheCreationRatio * claudeCacheCreation1hMultiplier
+	info.PriceData.ImageRatio, _ = ratio_setting.GetImageRatio(info.OriginModelName)
+	info.PriceData.AudioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
+	info.PriceData.AudioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 
 	applyChannelSellPrice(c, &info.PriceData, info.OriginModelName)
 }
@@ -189,18 +213,30 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 
-		// 卖价优先于平台倍率。放在读完平台倍率之后：卖价只覆盖 model/completion/
-		// cache 三项，其余维度要保留上面读到的平台值。
+		// 卖价优先于平台倍率。放在读完平台倍率之后：运营没填的维度要保留上面读到的
+		// 平台值，所以平台值先进 staged 当底，卖价只盖它填过的那几项。
 		staged := hosttypes.PriceData{
-			ModelRatio:      modelRatio,
-			CompletionRatio: completionRatio,
-			CacheRatio:      cacheRatio,
-			GroupRatioInfo:  groupRatioInfo,
+			ModelRatio:           modelRatio,
+			CompletionRatio:      completionRatio,
+			CacheRatio:           cacheRatio,
+			CacheCreationRatio:   cacheCreationRatio,
+			CacheCreation5mRatio: cacheCreationRatio5m,
+			CacheCreation1hRatio: cacheCreationRatio1h,
+			ImageRatio:           imageRatio,
+			AudioRatio:           audioRatio,
+			AudioCompletionRatio: audioCompletionRatio,
+			GroupRatioInfo:       groupRatioInfo,
 		}
 		if applyChannelSellPrice(c, &staged, info.OriginModelName) {
 			modelRatio = staged.ModelRatio
 			completionRatio = staged.CompletionRatio
 			cacheRatio = staged.CacheRatio
+			cacheCreationRatio = staged.CacheCreationRatio
+			cacheCreationRatio5m = staged.CacheCreation5mRatio
+			cacheCreationRatio1h = staged.CacheCreation1hRatio
+			imageRatio = staged.ImageRatio
+			audioRatio = staged.AudioRatio
+			audioCompletionRatio = staged.AudioCompletionRatio
 			groupRatioInfo = staged.GroupRatioInfo
 			// 卖价是完整价格，不依赖平台倍率表存不存在这个模型。运营给这个
 			// 渠道-模型填了进价+利润率，就是已经定过价了。

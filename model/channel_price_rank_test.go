@@ -55,18 +55,11 @@ func priceChannel(id int, models string, discount *float64, mapping string) *Cha
 
 func buildRanksFor(t *testing.T, channels ...*Channel) map[string]map[int]int64 {
 	t.Helper()
-	priceSettings := make(map[int]*dto.ChannelPriceSettings)
-	mappings := make(map[int]map[string]string)
+	metadata := make(map[int]channelPriceMetadata)
 	for _, channel := range channels {
-		price, mapping := parseChannelPriceMetadata(channel)
-		if price != nil {
-			priceSettings[channel.Id] = price
-		}
-		if mapping != nil {
-			mappings[channel.Id] = mapping
-		}
+		metadata[channel.Id] = parseChannelPriceMetadata(channel)
 	}
-	return buildChannelPriceRanks(channels, priceSettings, mappings)
+	return buildChannelPriceRanks(channels, metadata)
 }
 
 func TestBuildChannelPriceRanks_CheapestRanksHighest(t *testing.T) {
@@ -170,7 +163,7 @@ func TestResolveChannelPrice_PerCallModelIsPricedNotUnset(t *testing.T) {
 			const modelName = "test-per-call-model"
 			withPerCallPrice(t, modelName, tc.price)
 
-			resolved := resolveChannelPrice(nil, modelName, nil)
+			resolved := resolveChannelPrice(channelPriceMetadata{}, modelName)
 
 			assert.False(t, resolved.PriceUnset,
 				"the model has a configured per-call price, so the card must not print `价格未设置`")
@@ -193,7 +186,10 @@ func TestResolveChannelPrice_PerCallPriceBeatsDiscountedListPrice(t *testing.T) 
 	withOfficialPrice(t, modelName, testOfficialRatio)
 	discount := 0.44
 
-	resolved := resolveChannelPrice(&dto.ChannelPriceSettings{Discount: &discount}, modelName, nil)
+	resolved := resolveChannelPrice(
+		channelPriceMetadata{price: &dto.ChannelPriceSettings{Discount: &discount}},
+		modelName,
+	)
 
 	assert.Equal(t, quotaTypePerRequest, resolved.QuotaType)
 	assert.Equal(t, 0.04, resolved.ModelPrice)

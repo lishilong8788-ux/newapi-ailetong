@@ -32,7 +32,6 @@ const CHAIN_MESSAGE =
  */
 export const costSettingsSchema = z
   .object({
-    'cost_setting.enabled': z.boolean(),
     'cost_setting.guard_enabled': z.boolean(),
     'cost_setting.warn_rate': z.coerce
       .number()

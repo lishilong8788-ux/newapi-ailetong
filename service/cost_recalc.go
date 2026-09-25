@@ -34,7 +34,7 @@ func RecalculateCostDaily(startTs, endTs int64) (int, error) {
 			if other == nil {
 				continue
 			}
-			dayTs := log.CreatedAt / 86400 * 86400
+			dayTs := costDayTs(log.CreatedAt)
 			key := model.CostDailyAgg{ChannelId: log.ChannelId, ModelName: upstreamModel, DayTs: dayTs}
 			agg, ok := aggregates[key]
 			if !ok {
@@ -88,8 +88,9 @@ func parseLogForCostRecalc(log *model.Log) (map[string]interface{}, map[string]i
 	if err := common.UnmarshalJsonStr(log.Other, &other); err != nil {
 		return nil, nil, ""
 	}
-	// 渠道测试与 playground 不进毛利统计。
-	if source, ok := other["traffic_source"].(string); ok && (source == "channel_test" || source == "playground") {
+	// 我们自己打的流量（渠道测试、playground、运营副驾）不进毛利统计。名单与账本
+	// 的 SQL 过滤同一份，见 model.OpsTrafficSources。
+	if source, ok := other["traffic_source"].(string); ok && model.IsOpsTrafficSource(source) {
 		return nil, nil, ""
 	}
 	upstreamModel := log.ModelName

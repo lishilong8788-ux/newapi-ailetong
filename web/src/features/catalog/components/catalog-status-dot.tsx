@@ -51,7 +51,7 @@ export function CatalogStatusDot(props: {
           <span
             aria-label={label}
             className={cn(
-              'size-2 shrink-0 rounded-full',
+              'size-2.5 shrink-0 rounded-full',
               meta.dotClass,
               props.className
             )}
@@ -60,7 +60,7 @@ export function CatalogStatusDot(props: {
       />
       <TooltipContent>
         <p className='font-medium'>{label}</p>
-        <p className='text-muted-foreground max-w-56 text-xs'>
+        <p className='text-muted-foreground max-w-56 text-[13px]'>
           {t(meta.descriptionKey)}
         </p>
       </TooltipContent>

@@ -16,39 +16,78 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
-import { Pencil } from 'lucide-react'
+import { CircleDollarSign, Pencil, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { DEFAULT_TOKEN_UNIT } from '@/features/pricing/constants'
 import { getPriceComparison } from '@/features/pricing/lib/price-comparison'
-import type { PricingModel } from '@/features/pricing/types'
 import { formatDiscount } from '@/lib/format'
 
+import type { CatalogItem } from '../types'
+import { useCatalogEditor } from './catalog-provider'
+
 export interface CatalogPriceSummaryProps {
-  model: PricingModel
+  item: CatalogItem
   priceRate: number
   usdExchangeRate: number
 }
 
 /**
- * What the platform charges for one model, next to the vendor's list price.
+ * The platform price for one model, next to the vendor's list price.
  *
- * This is the **billing** price — `model_ratio` and friends scaled by the group
- * ratio — and it is the only price on this page that moves money. The per-channel
- * discounts in the supply table below are recorded for reporting and do not
- * change a customer's bill, so the two are kept visually and textually apart;
- * an operator who edits the wrong one has changed nothing.
+ * This is the fallback rate: it is what a customer is billed on any channel that
+ * carries no buy price of its own, which on a partially configured install is
+ * most of them. Channels that *do* have one bill cost × (1 + markup) instead, and
+ * those figures are in the supply table below — so the two sections are kept
+ * visually and textually apart rather than merged into one price column that
+ * would be right for some rows and wrong for others.
  *
- * Rows come from the catalog's own `getPriceComparison`, so the figures here and
- * the ones a customer sees on the pricing page are produced by the same code
- * rather than by a second formatter that drifts.
+ * Editing goes through the same drawer as the product's metadata, because the
+ * price lives in the global ratio maps keyed by model name and that drawer is
+ * what knows how to merge one model's entry without rewriting the others.
  */
 export function CatalogPriceSummary(props: CatalogPriceSummaryProps) {
   const { t } = useTranslation()
+  const { openEditor } = useCatalogEditor()
+  const { item } = props
 
-  const comparison = getPriceComparison(props.model, {
+  const openPriceEditor = () => {
+    if (item.model) {
+      openEditor({ kind: 'edit-model', model: item.model })
+      return
+    }
+    openEditor({ kind: 'create-model', modelName: item.modelName })
+  }
+
+  const editButton = (
+    <Button variant='outline' size='xs' onClick={openPriceEditor}>
+      <Pencil />
+      {t('Edit price')}
+    </Button>
+  )
+
+  if (!item.pricing) {
+    return (
+      <section className='bg-card rounded-xl border'>
+        <header className='flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5'>
+          <h3 className='text-sm font-semibold'>{t('Platform price')}</h3>
+          {editButton}
+        </header>
+        <div className='px-4 py-6 text-center'>
+          <CircleDollarSign
+            className='text-muted-foreground/50 mx-auto size-7'
+            aria-hidden='true'
+          />
+          <p className='text-muted-foreground mt-2 text-[13px]'>
+            {t('This model is not in the sell-side catalog, so it has no price.')}
+          </p>
+        </div>
+      </section>
+    )
+  }
+
+  const comparison = getPriceComparison(item.pricing, {
     tokenUnit: DEFAULT_TOKEN_UNIT,
     priceRate: props.priceRate,
     usdExchangeRate: props.usdExchangeRate,
@@ -63,31 +102,33 @@ export function CatalogPriceSummary(props: CatalogPriceSummaryProps) {
   return (
     <section className='bg-card rounded-xl border'>
       <header className='flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5'>
-        <div className='flex min-w-0 items-center gap-2'>
+        <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5'>
           <h3 className='text-sm font-semibold'>{t('Platform price')}</h3>
-          <span className='text-muted-foreground text-xs'>
-            {t('This is what customers are billed.')}
+          <span className='text-muted-foreground text-[13px]'>
+            {t('Charged on channels with no buy price of their own.')}
           </span>
         </div>
-        <Button
-          variant='outline'
-          size='xs'
-          render={
-            <Link
-              to='/system-settings/billing/$section'
-              params={{ section: 'model-pricing' }}
-            />
-          }
-        >
-          <Pencil />
-          {t('Edit price')}
-        </Button>
+        {editButton}
       </header>
 
+      {/* An unpriced model bills off a fallback constant, so the figures below are
+          arithmetic on a sentinel rather than a price. Saying so beside them is
+          the difference between "cheap" and "misconfigured". */}
+      {item.pricing.price_unset && (
+        <div className='border-warning/40 bg-warning/10 text-warning flex items-start gap-2 border-b px-4 py-2.5 text-[13px] leading-relaxed'>
+          <TriangleAlert className='mt-0.5 size-4 shrink-0' aria-hidden='true' />
+          <span>
+            {t(
+              'No price was ever configured for this model, so requests bill off a fallback rate. Set one before selling it.'
+            )}
+          </span>
+        </div>
+      )}
+
       <div className='overflow-x-auto'>
-        <table className='w-full text-sm'>
+        <table className='w-full text-[13px]'>
           <thead>
-            <tr className='text-muted-foreground text-xs'>
+            <tr className='text-muted-foreground text-[13px]'>
               <th scope='col' className='px-4 py-2 text-left font-medium'>
                 {t('Type')}
               </th>
@@ -136,7 +177,7 @@ export function CatalogPriceSummary(props: CatalogPriceSummaryProps) {
       </div>
 
       {headlineDiscount && (
-        <p className='text-muted-foreground border-t px-4 py-2 text-xs'>
+        <p className='text-muted-foreground border-t px-4 py-2 text-[13px]'>
           {t('Input tokens sell at {{discount}} of the vendor list price.', {
             discount: headlineDiscount,
           })}

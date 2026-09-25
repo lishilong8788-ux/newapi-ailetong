@@ -152,14 +152,28 @@ export interface LogOtherData {
       cost_reported?: number
       margin_quota?: number
     }
-    // Which sell discount governed this request. Written after settlement, so
-    // charged_quota is what the customer actually paid; a 'fallback' source
-    // means no channel discount applied and the legacy ratio path priced it.
+    // Which sell price governed this request. Written after settlement, so
+    // charged_quota is what the customer actually paid. 'cost' means the
+    // channel's buy price marked up priced it (sell_markup/sell_input_price
+    // carry the breakdown); 'fallback' means neither that nor a channel discount
+    // applied and the legacy ratio path priced it.
     price?: {
-      price_source?: 'exact' | 'channel' | 'fallback'
+      price_source?: 'exact' | 'channel' | 'cost' | 'fallback'
       price_model?: string
       charged_quota?: number
       discount?: number
+      // Serving channel identity, snapshotted at settlement. Kept here rather
+      // than read off the log's channel column because a channel can be deleted
+      // and its id reused, while line_code is the stable public-facing name of
+      // the route that earned this margin.
+      channel_id?: number
+      line_code?: string
+      // Margin breakdown when the buy price priced the request: markup is the
+      // configured profit rate, sell_input_price / sell_per_call_price the
+      // resulting unit sell price. Present only for price_source 'cost'.
+      sell_markup?: number
+      sell_input_price?: number
+      sell_per_call_price?: number
       // What the vendor's own list rates would charge for this request.
       // list_complete false means some token kind (image/audio/cache-write) has
       // no official rate, so list_quota is a LOWER BOUND — margin against it is

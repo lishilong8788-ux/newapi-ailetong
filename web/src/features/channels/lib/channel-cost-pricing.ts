@@ -16,19 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 /**
  * One channel pricing row's arithmetic: cost in, sell price / discount / margin
  * out.
  *
- * The operator types two numbers per model (input and output cost) plus one
- * markup for the channel. Everything else on the row is derived here rather
- * than in the JSX, so every column of a row comes from the same markup — a row
- * that showed a sell price off the per-model markup and a margin off the
- * channel default would be internally inconsistent and unverifiable.
+ * The operator types one buy price per token kind plus one markup for the
+ * channel. Everything else on the row is derived here rather than in the JSX, so
+ * every column of a row comes from the same markup — a row that showed a sell
+ * price off the per-model markup and a margin off the channel default would be
+ * internally inconsistent and unverifiable.
  *
- * Unit throughout: USD per 1M tokens, matching what vendors publish so costs
- * can be copied verbatim.
+ * Unit throughout: USD per 1M tokens, matching what vendors publish so costs can
+ * be copied verbatim. `per_call` is the exception and is USD per request.
  */
 
 /** Markup is stored as a fraction (0.3) but typed as a percent (30). */
@@ -93,6 +92,97 @@ export function resolveMarkupPercent(
   return 0
 }
 
+/**
+ * What a buy price on this kind actually does, which is not the same for all
+ * eleven and the UI must not imply it is.
+ *
+ * - `billing` — the sell price derived from it reaches the bill.
+ *   `SellPriceToRatios` emits a PriceData ratio for it and
+ *   `applyChannelSellPrice` writes that ratio.
+ * - `cost_only` — image output and reasoning tokens are subsets of the
+ *   completion count with no ratio of their own, so they are charged at the
+ *   output rate no matter what is typed here. The buy price still moves the
+ *   margin report, which is the whole point of recording it.
+ * - `per_call` — mutually exclusive with every per-token kind:
+ *   `resolveModelCostExact` and `ResolveSellPrice` both take the per_call branch
+ *   first and never read a token price.
+ */
+export type CostPricingReach = 'billing' | 'cost_only' | 'per_call'
+
+export type CostPricingKind =
+  | 'input'
+  | 'output'
+  | 'cache_read'
+  | 'cache_write_5m'
+  | 'cache_write_1h'
+  | 'image_in'
+  | 'image_out'
+  | 'audio_in'
+  | 'audio_out'
+  | 'reasoning'
+  | 'per_call'
+
+/** Every kind, in the order the UI shows them. */
+export const COST_PRICING_KINDS: ReadonlyArray<{
+  key: CostPricingKind
+  reach: CostPricingReach
+}> = [
+  { key: 'input', reach: 'billing' },
+  { key: 'output', reach: 'billing' },
+  { key: 'cache_read', reach: 'billing' },
+  { key: 'cache_write_5m', reach: 'billing' },
+  { key: 'cache_write_1h', reach: 'billing' },
+  { key: 'image_in', reach: 'billing' },
+  { key: 'image_out', reach: 'cost_only' },
+  { key: 'audio_in', reach: 'billing' },
+  { key: 'audio_out', reach: 'billing' },
+  { key: 'reasoning', reach: 'cost_only' },
+  { key: 'per_call', reach: 'per_call' },
+]
+
+/** The three the model list summarises: what nearly every model is priced on. */
+export const PRIMARY_COST_PRICING_KINDS = COST_PRICING_KINDS.filter((kind) =>
+  ['input', 'output', 'cache_read'].includes(kind.key)
+)
+
+/**
+ * The price sheet's sections.
+ *
+ * Every per-token kind sits in one continuous sheet, so input / output / cache
+ * are the first rows of the same table as the other seven rather than a
+ * separate control above it. The split was what made the three read as
+ * unrelated to everything under them.
+ *
+ * Reasoning sits with the text kinds instead of in a bucket of its own: it is a
+ * subset of the completion count, which is exactly why it cannot carry a price
+ * of its own and bills at the output rate.
+ *
+ * `per_call` is deliberately absent. It excludes every per-token kind, so the
+ * panel offers it as a billing mode rather than as a twelfth row that silently
+ * kills the eleven above it.
+ */
+export const COST_PRICING_GROUPS: ReadonlyArray<{
+  id: string
+  label: string
+  keys: ReadonlyArray<CostPricingKind>
+}> = [
+  {
+    id: 'text',
+    label: 'Text tokens',
+    keys: ['input', 'output', 'cache_read', 'reasoning'],
+  },
+  {
+    id: 'cache_write',
+    label: 'Cache writes',
+    keys: ['cache_write_5m', 'cache_write_1h'],
+  },
+  {
+    id: 'multimodal',
+    label: 'Image & audio',
+    keys: ['image_in', 'image_out', 'audio_in', 'audio_out'],
+  },
+]
+
 /** Cost and the sell price it implies for one token kind. */
 export type CostPricingDimension = {
   /** Buy price, straight from the input box. Null when not filled in. */
@@ -116,11 +206,11 @@ export type CostPricingRow = {
   markupPercent: number
   /** True when the official-price sync has a list price for this model. */
   hasOfficialPrice: boolean
-  input: CostPricingDimension
-  output: CostPricingDimension
+  /** One entry per kind, keyed so callers can iterate COST_PRICING_KINDS. */
+  kinds: Record<CostPricingKind, CostPricingDimension>
   /**
    * (sell − cost) ÷ sell, which reduces to markup ÷ (1 + markup) and is
-   * therefore the same for every token kind — one number per row, not two.
+   * therefore the same for every token kind — one number per row, not eleven.
    * Null until at least one cost is filled in, because a margin on no cost is a
    * claim about a price the channel cannot charge yet.
    */
@@ -148,16 +238,27 @@ function toDimension(
 
 export type CostPricingRowInput = {
   model?: string
+  markupPercent?: number
+  costs?: Partial<Record<CostPricingKind, number | undefined>>
+}
+
+/**
+ * The official-price baseline, which exists for three kinds only:
+ * `ratio_setting` publishes model / completion / cache official ratios and
+ * nothing else, so cache write, image, audio and reasoning have no list price to
+ * discount against and their `discountFraction` stays null.
+ */
+export type CostPricingOfficialPrice = {
   input?: number
   output?: number
-  markupPercent?: number
+  cacheRead?: number
 }
 
 /** One table row, with the channel markup as the fallback for its own. */
 export function buildCostPricingRow(
   row: CostPricingRowInput,
   channelMarkupPercent: number | null | undefined,
-  officialPrice: { input?: number; output?: number } | undefined
+  officialPrice: CostPricingOfficialPrice | undefined
 ): CostPricingRow {
   const inheritsChannelMarkup = !(
     row.markupPercent != null &&
@@ -169,19 +270,43 @@ export function buildCostPricingRow(
     channelMarkupPercent
   )
   const markupFraction = markupPercentToFraction(markupPercent)
-  const input = toDimension(row.input, officialPrice?.input, markupFraction)
-  const output = toDimension(row.output, officialPrice?.output, markupFraction)
-  const hasAnyCost = input.cost != null || output.cost != null
+
+  const officialByKind: Partial<Record<CostPricingKind, number | undefined>> = {
+    input: officialPrice?.input,
+    output: officialPrice?.output,
+    cache_read: officialPrice?.cacheRead,
+  }
+
+  const kinds = {} as Record<CostPricingKind, CostPricingDimension>
+  let hasAnyCost = false
+  for (const kind of COST_PRICING_KINDS) {
+    kinds[kind.key] = toDimension(
+      row.costs?.[kind.key],
+      officialByKind[kind.key],
+      markupFraction
+    )
+    if (kinds[kind.key].cost != null) hasAnyCost = true
+  }
 
   return {
     model: row.model?.trim() ?? '',
     inheritsChannelMarkup,
     markupPercent,
     hasOfficialPrice: Boolean(officialPrice),
-    input,
-    output,
+    kinds,
     marginRate: hasAnyCost ? markupFraction / (1 + markupFraction) : null,
   }
+}
+
+/**
+ * How many of the eleven kinds this row has priced. Drives the count on the
+ * model list, where the row is one line and the sheet that holds those prices
+ * is off screen: without it, eight configured prices are as invisible as they
+ * were when the panel had no field for them at all.
+ */
+export function countConfiguredKinds(row: CostPricingRow): number {
+  return COST_PRICING_KINDS.filter((kind) => row.kinds[kind.key].cost != null)
+    .length
 }
 
 export type CostPricingSummary = {
@@ -196,10 +321,8 @@ export type CostPricingSummary = {
    *
    * Median, not mean: one model priced far off list (a free tier, a model the
    * vendor has since repriced) drags a mean far enough to misreport where the
-   * channel actually sits. Input and output land in the same pool because
-   * they are discounted against two different list prices and there is no
-   * request mix here to weight them by — pooling says "half the prices this
-   * channel quotes are under this", which is true whatever the mix.
+   * channel actually sits. Only the three kinds with an official baseline can
+   * contribute, since the others have no list price to divide by.
    */
   medianDiscountFraction: number | null
   /** Named models the official-price sync has no list price for. */
@@ -220,12 +343,16 @@ export function summarizeCostPricingRows(
     if (!row.model) continue
     namedCount += 1
     if (!row.inheritsChannelMarkup) overriddenCount += 1
-    if (row.input.cost != null || row.output.cost != null) pricedCount += 1
+    // Any kind counts as priced, not just the three with columns: a model
+    // priced only on audio or per-request does bill, and reporting it as
+    // unpriced would send the operator looking for a price they already set.
+    if (COST_PRICING_KINDS.some((kind) => row.kinds[kind.key].cost != null)) {
+      pricedCount += 1
+    }
     if (!row.hasOfficialPrice) modelsMissingOfficialPrice.push(row.model)
-    for (const dimension of [row.input, row.output]) {
-      if (dimension.discountFraction != null) {
-        discounts.push(dimension.discountFraction)
-      }
+    for (const kind of COST_PRICING_KINDS) {
+      const fraction = row.kinds[kind.key].discountFraction
+      if (fraction != null) discounts.push(fraction)
     }
   }
 
@@ -257,16 +384,4 @@ export function formatUsdPerMillion(value: number | null | undefined): string {
 export function formatMarginRate(rate: number | null | undefined): string {
   if (rate == null || !Number.isFinite(rate)) return '-'
   return `${Number((rate * 100).toFixed(1))}%`
-}
-
-/**
- * Collapses the input/output pair into what one cell prints: a single value
- * when both sides agree, `a / b` when they do not.
- *
- * Input and output are marked up identically but are discounted against two
- * different list prices, so their discounts genuinely can differ. Printing one
- * of them alone would be a guess about which one the operator meant.
- */
-export function formatPricePair(input: string, output: string): string {
-  return input === output ? input : `${input} / ${output}`
 }

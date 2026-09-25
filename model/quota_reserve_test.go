@@ -102,6 +102,32 @@ func TestTryReserveQuotaWithoutRedis(t *testing.T) {
 	assert.Equal(t, 55, getTokenFromDB(t, token.Id).RemainQuota)
 }
 
+// Synthetic tokens — the copilot builds one in memory, with no database row — must
+// reserve successfully when flagged unlimited, and must fail when not. The copilot
+// shipped without the flag and every request 403'd with "token quota is not
+// enough, token remain quota: ¥0.000000", which reads like an unpaid balance but
+// is really a reserve against a row that does not exist.
+func TestTryReserveTokenQuota_SyntheticTokenNeedsUnlimited(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+
+	const noSuchTokenID = 0
+
+	// Without the flag: an atomic UPDATE on a missing row touches nothing, which
+	// is indistinguishable from insufficient quota.
+	reserved, err := TryReserveTokenQuota(noSuchTokenID, "", 3489, false)
+	require.NoError(t, err)
+	assert.False(t, reserved,
+		"a token with no database row cannot reserve against its own quota")
+
+	// With the flag: the token-level check is skipped. The user-level funding
+	// pre-consume in BillingSession still runs, so the spend is still accounted.
+	reserved, err = TryReserveTokenQuota(noSuchTokenID, "", 3489, true)
+	require.NoError(t, err)
+	assert.True(t, reserved,
+		"an unlimited token must bypass the reserve instead of failing on a missing row")
+}
+
 func TestRedisBatchReserveNeverFallsBackToStaleDatabaseBalance(t *testing.T) {
 	truncateTables(t)
 	resetBatchUpdateTestState(t)

@@ -3,13 +3,15 @@ package cost_setting
 import "github.com/QuantumNous/new-api/setting/config"
 
 // CostSetting governs upstream cost accounting and margin reporting.
-// Both switches default off: an upgrade must never start changing channel
-// routing or reporting until the operator explicitly opts in. Cost
-// accounting (Enabled) and automatic margin actions (GuardEnabled) are
-// separate so the books can run for a while before any automation is
-// trusted with channel state.
+//
+// Accounting itself has no switch: it only writes numbers (a cost snapshot on
+// the log row, a row in channel_cost_daily) and never touches channel state,
+// so there is nothing to opt into — while a switch that defaults off makes an
+// empty report indistinguishable from an idle gateway, and the aggregation it
+// skipped can never be recovered because the snapshot it would have priced is
+// already written. GuardEnabled stays opt-in: that one changes channel
+// priority and can disable a channel.
 type CostSetting struct {
-	Enabled     bool `json:"enabled"`
 	GuardEnabled bool `json:"guard_enabled"`
 
 	// OfficialPriceSource picks where fallback official prices come from:
@@ -48,7 +50,6 @@ type CostSetting struct {
 }
 
 var costSetting = CostSetting{
-	Enabled:     false,
 	GuardEnabled: false,
 
 	OfficialPriceSource: "models_dev",
@@ -89,11 +90,4 @@ func GetFlushIntervalSeconds() int {
 		return 5
 	}
 	return costSetting.FlushIntervalSeconds
-}
-
-// SetEnabledForTest flips the accounting switch in tests. The setting var is
-// package-private on purpose (config registration owns it); tests need to
-// exercise both the on and off paths of the accounting chain.
-func SetEnabledForTest(enabled bool) {
-	costSetting.Enabled = enabled
 }

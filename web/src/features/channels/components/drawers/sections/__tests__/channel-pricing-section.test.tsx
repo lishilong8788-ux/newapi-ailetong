@@ -54,6 +54,12 @@ await i18n.use(initReactI18next).init({
       translation: {
         '{{percent}}% off': '{{percent}}% off',
         '{{count}} not priced': '{{count}} not priced',
+        'margin {{rate}}': 'margin {{rate}}',
+        'Buy price ({{kind}})': 'Buy price ({{kind}})',
+        'Margin on this model: {{margin}}. Blank dimensions are not charged.':
+          'Margin on this model: {{margin}}.',
+        '{{count}} per-token price(s) are kept but ignored while a per-request price is set.':
+          '{{count}} per-token price(s) are kept but ignored.',
       },
     },
   },
@@ -65,6 +71,10 @@ function Harness(props: {
     model: string
     input?: number
     output?: number
+    cache_read?: number
+    image_out?: number
+    audio_in?: number
+    per_call?: number
     markup_percent?: number
   }>
   upstreamModels?: string[]
@@ -97,36 +107,78 @@ function Harness(props: {
   )
 }
 
-describe('channel pricing table', () => {
-  test('derives sell price and margin from the typed buy price', async () => {
+/** Clicks a rail entry by the model name it prints. */
+function selectModel(name: string) {
+  const entry = screen.getByText(name).closest('button')
+  expect(entry).not.toBeNull()
+  fireEvent.click(entry as HTMLElement)
+}
+
+describe('model price sheet', () => {
+  test('shows every per-token dimension on one sheet, with no expander', () => {
     render(
       <Harness
-        markupPercent={30}
         models={[{ model: 'deepseek-v4.1', input: 0.49, output: 1.96 }]}
       />
     )
 
-    // 0.49 × 1.3 = 0.637, 1.96 × 1.3 = 2.548
-    expect(await screen.findByText('$0.637')).toBeInTheDocument()
-    expect(screen.getByText('$2.548')).toBeInTheDocument()
-    // The markup the operator typed, restated as the margin the cost report
-    // grades them on: 0.3 / 1.3.
-    expect(screen.getByText('23.1%')).toBeInTheDocument()
+    // The three that used to be the only visible ones sit in the same sheet as
+    // the seven that used to be hidden behind a per-row expander.
+    for (const kind of [
+      'Input',
+      'Output',
+      'Cache read',
+      'Reasoning',
+      'Cache write (5m)',
+      'Cache write (1h)',
+      'Image input',
+      'Image output',
+      'Audio input',
+      'Audio output',
+    ]) {
+      expect(screen.getByLabelText(`Buy price (${kind})`)).toBeInTheDocument()
+    }
+
+    // 10 per-token kinds + the row markup + the channel markup. Per-request is
+    // a mode, so its box is not on the sheet until the mode is picked.
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(12)
+    expect(screen.queryByLabelText('Buy price (Per request)')).toBeNull()
   })
 
-  test('the buy price and markup cells are the only inputs on a row', () => {
+  test('derives the sell price of each dimension from its own buy price', async () => {
     render(
-      <Harness models={[{ model: 'deepseek-v4.1', input: 1, output: 2 }]} />
+      <Harness
+        markupPercent={20}
+        models={[
+          { model: 'deepseek-v4.1', input: 1, output: 4, cache_read: 0.02 },
+        ]}
+      />
     )
 
-    // Sell price, official price and discount are text, not fields.
-    expect(screen.getByLabelText('Buy price (input)')).toBeInTheDocument()
-    expect(screen.getByLabelText('Buy price (output)')).toBeInTheDocument()
-    // Two buy prices + the row markup + the channel markup.
-    expect(screen.getAllByRole('spinbutton')).toHaveLength(4)
+    // Every kind is marked up by the same 20%: 1 → 1.2, 4 → 4.8, 0.02 → 0.024.
+    expect(await screen.findByText('$1.2')).toBeInTheDocument()
+    expect(screen.getByText('$4.8')).toBeInTheDocument()
+    expect(screen.getByText('$0.024')).toBeInTheDocument()
+    // The markup restated as the margin the cost report grades them on.
+    expect(screen.getByText('Margin on this model: 16.7%.')).toBeInTheDocument()
   })
 
-  test('a blank row markup inherits the channel one; typing overrides it', () => {
+  test('a cost-only dimension shows no sell price, since it bills at the output rate', () => {
+    render(
+      <Harness
+        markupPercent={30}
+        models={[{ model: 'deepseek-v4.1', input: 1, image_out: 10 }]}
+      />
+    )
+
+    // Two kinds have no ratio of their own: image output and reasoning.
+    expect(screen.getAllByText('Cost only')).toHaveLength(2)
+    // 10 × 1.3 = 13 would be a charge the backend cannot make.
+    expect(screen.queryByText('$13')).toBeNull()
+    expect(screen.getByText('$1.3')).toBeInTheDocument()
+  })
+
+  test('a blank row markup follows the channel one; typing overrides it', () => {
     render(
       <Harness
         markupPercent={30}
@@ -139,8 +191,8 @@ describe('channel pricing table', () => {
     // will inherit, and typing over it is the whole override gesture.
     expect(override).toHaveValue(null)
     expect(override).toHaveAttribute('placeholder', '30')
+    expect(screen.getByText('follows channel')).toBeInTheDocument()
     expect(screen.getByText('$1.3')).toBeInTheDocument()
-    expect(screen.getByText('$2.6')).toBeInTheDocument()
 
     fireEvent.change(override, { target: { value: '50' } })
     expect(screen.getByText('$1.5')).toBeInTheDocument()
@@ -150,13 +202,103 @@ describe('channel pricing table', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use channel markup' }))
     expect(screen.getByLabelText('Override markup')).toHaveValue(null)
     expect(screen.getByText('$1.3')).toBeInTheDocument()
-    expect(screen.getByText('$2.6')).toBeInTheDocument()
   })
 
-  test('a row with no buy price shows no sell price or discount', () => {
+  test('a row with no buy price shows no sell price or discount', async () => {
     render(<Harness models={[{ model: 'deepseek-v4.1' }]} />)
 
+    expect(await screen.findByText('Not priced')).toBeInTheDocument()
     expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('billing mode', () => {
+  test('a saved per-request price opens the sheet in per-request mode', () => {
+    render(
+      <Harness
+        models={[{ model: 'deepseek-v4.1', input: 1, per_call: 0.004 }]}
+      />
+    )
+
+    // resolveModelCostExact and ResolveSellPrice both take the per_call branch
+    // first, so no per-token box is offered while it is set.
+    expect(
+      screen.getByRole('button', { name: 'Per request', pressed: true })
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Buy price (Per request)')).toBeEnabled()
+    expect(screen.queryByLabelText('Buy price (Input)')).toBeNull()
+    // The parked token price is reported rather than silently dropped.
+    expect(
+      screen.getByText('1 per-token price(s) are kept but ignored.')
+    ).toBeInTheDocument()
+  })
+
+  test('switching back to per-token clears the per-request price', () => {
+    render(
+      <Harness
+        models={[{ model: 'deepseek-v4.1', input: 1, per_call: 0.004 }]}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Per token' }))
+
+    // Left in place, the backend would keep taking the per_call branch while
+    // the sheet shows token prices.
+    expect(screen.getByLabelText('Buy price (Input)')).toHaveValue(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Per request' }))
+    expect(screen.getByLabelText('Buy price (Per request)')).toHaveValue(null)
+  })
+
+  test('picking per-request mode holds before a price is typed', () => {
+    render(<Harness models={[{ model: 'deepseek-v4.1', input: 1 }]} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Per request' }))
+
+    // An empty per_call field reads as per-token mode, so the toggle would snap
+    // back the instant it was clicked if the choice were derived from data only.
+    expect(screen.getByLabelText('Buy price (Per request)')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Per request', pressed: true })
+    ).toBeInTheDocument()
+  })
+})
+
+describe('model rail', () => {
+  test('the rail selects which model the sheet edits', () => {
+    render(
+      <Harness
+        models={[
+          { model: 'model-a', input: 1 },
+          { model: 'model-b', input: 7 },
+        ]}
+      />
+    )
+
+    // The first row is selected on open, so the pane is never blank while the
+    // rail lists models beside it.
+    expect(screen.getByLabelText('Buy price (Input)')).toHaveValue(1)
+
+    selectModel('model-b')
+    expect(screen.getByLabelText('Buy price (Input)')).toHaveValue(7)
+  })
+
+  test('removing the selected model lands on its neighbour', () => {
+    render(
+      <Harness
+        models={[
+          { model: 'model-a', input: 1 },
+          { model: 'model-b', input: 2 },
+          { model: 'model-c', input: 3 },
+        ]}
+      />
+    )
+
+    selectModel('model-b')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove model price' }))
+
+    expect(screen.queryByText('model-b')).toBeNull()
+    // The row that slid into the gap, not nothing and not the top of the list.
+    expect(screen.getByLabelText('Buy price (Input)')).toHaveValue(3)
   })
 
   test('unpriced upstream models are offered for one-click import', () => {
@@ -175,47 +317,46 @@ describe('channel pricing table', () => {
       screen.getByRole('button', { name: /Import channel models/ })
     )
 
-    // The missing model is appended as a row rather than silently priced.
-    expect(screen.getAllByLabelText('Buy price (input)')).toHaveLength(2)
+    // Appended as rows rather than silently priced, and the first new one is
+    // selected so the operator is already where the typing happens.
+    expect(screen.getByText('deepseek-v4.1-flash')).toBeInTheDocument()
+    expect(screen.getByLabelText('Buy price (Input)')).toHaveValue(null)
     expect(
       screen.queryByRole('button', { name: /Import channel models/ })
     ).not.toBeInTheDocument()
   })
 
-  test('the empty table states why a buy price is needed', () => {
-    render(<Harness models={[]} />)
-
-    expect(screen.getByText('No model priced yet')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Buy price (input)')).not.toBeInTheDocument()
-  })
-
-  test('the row under the last one appends, and hides while searching', () => {
-    // Six rows: the search box only appears once the list is long enough to
-    // need one, and this test needs to type into it.
+  test('a search that hides the selected model moves the sheet to a visible one', () => {
+    // Six rows: the search box only appears once the rail is long enough to
+    // need one.
     render(
       <Harness
-        models={Array.from({ length: 6 }, (_, i) => ({
-          model: `deepseek-v4.${i}`,
-          input: 1,
-        }))}
+        models={[
+          { model: 'alpha-1', input: 1 },
+          ...Array.from({ length: 5 }, (_, i) => ({
+            model: `beta-${i}`,
+            input: 9,
+          })),
+        ]}
       />
     )
 
-    // Two ways in by design: the header button and the dashed row that fills
-    // the space under the list. Both append the same blank row.
-    const rowAppend = screen.getAllByRole('button', { name: 'Add model' })
-    expect(rowAppend.length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByLabelText('Buy price (Input)')).toHaveValue(1)
 
-    const dashedRow = rowAppend.at(-1)
-    expect(dashedRow).toBeDefined()
-    fireEvent.click(dashedRow as HTMLElement)
-    expect(screen.getAllByLabelText('Buy price (input)')).toHaveLength(7)
-
-    // A filtered list has no meaningful end to append to, so the row goes away
-    // and only the header button remains.
     fireEvent.change(screen.getByLabelText('Search models...'), {
-      target: { value: 'deepseek' },
+      target: { value: 'beta' },
     })
-    expect(screen.getAllByRole('button', { name: 'Add model' })).toHaveLength(1)
+
+    // Rows are hidden, never re-indexed, so the sheet has to follow the rail
+    // rather than keep editing a row that is no longer listed.
+    expect(screen.queryByText('alpha-1')).toBeNull()
+    expect(screen.getByLabelText('Buy price (Input)')).toHaveValue(9)
+  })
+
+  test('the empty state states why a buy price is needed', () => {
+    render(<Harness models={[]} />)
+
+    expect(screen.getByText('No model priced yet')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Buy price (Input)')).not.toBeInTheDocument()
   })
 })

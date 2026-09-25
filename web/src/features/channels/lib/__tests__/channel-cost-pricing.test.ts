@@ -20,8 +20,10 @@ import { describe, expect, test } from 'vitest'
 
 import {
   buildCostPricingRow,
+  COST_PRICING_GROUPS,
+  COST_PRICING_KINDS,
+  countConfiguredKinds,
   formatMarginRate,
-  formatPricePair,
   formatUsdPerMillion,
   marginRateFromMarkupPercent,
   markupFractionToPercent,
@@ -33,7 +35,7 @@ import {
 describe('channel pricing arithmetic', () => {
   test('derives sell price, discount and margin from buy price and markup', () => {
     const row = buildCostPricingRow(
-      { model: 'deepseek-v4.1', input: 0.49, output: 1.96 },
+      { model: 'deepseek-v4.1', costs: { input: 0.49, output: 1.96 } },
       30,
       { input: 1.99, output: 7.99 }
     )
@@ -42,53 +44,53 @@ describe('channel pricing arithmetic', () => {
     expect(row.inheritsChannelMarkup).toBe(true)
     expect(row.hasOfficialPrice).toBe(true)
     // 0.49 × 1.3 and 1.96 × 1.3
-    expect(row.input.sellPrice).toBeCloseTo(0.637, 6)
-    expect(row.output.sellPrice).toBeCloseTo(2.548, 6)
+    expect(row.kinds.input.sellPrice).toBeCloseTo(0.637, 6)
+    expect(row.kinds.output.sellPrice).toBeCloseTo(2.548, 6)
     // sell ÷ official
-    expect(row.input.discountFraction).toBeCloseTo(0.637 / 1.99, 6)
-    expect(row.output.discountFraction).toBeCloseTo(2.548 / 7.99, 6)
+    expect(row.kinds.input.discountFraction).toBeCloseTo(0.637 / 1.99, 6)
+    expect(row.kinds.output.discountFraction).toBeCloseTo(2.548 / 7.99, 6)
     // margin over revenue reduces to markup / (1 + markup)
     expect(row.marginRate).toBeCloseTo(0.3 / 1.3, 6)
   })
 
   test('per-model markup overrides the channel markup for every column', () => {
     const row = buildCostPricingRow(
-      { model: 'gpt-5', input: 1, output: 2, markupPercent: 50 },
+      { model: 'gpt-5', markupPercent: 50, costs: { input: 1, output: 2 } },
       30,
       { input: 4, output: 8 }
     )
 
     expect(row.inheritsChannelMarkup).toBe(false)
     expect(row.markupPercent).toBe(50)
-    expect(row.input.sellPrice).toBeCloseTo(1.5, 6)
-    expect(row.output.sellPrice).toBeCloseTo(3, 6)
+    expect(row.kinds.input.sellPrice).toBeCloseTo(1.5, 6)
+    expect(row.kinds.output.sellPrice).toBeCloseTo(3, 6)
     expect(row.marginRate).toBeCloseTo(0.5 / 1.5, 6)
   })
 
   test('a 0 per-model markup sells at cost instead of falling back to the channel', () => {
     const row = buildCostPricingRow(
-      { model: 'free-model', input: 2, markupPercent: 0 },
+      { model: 'free-model', markupPercent: 0, costs: { input: 2 } },
       30,
       undefined
     )
 
     expect(row.inheritsChannelMarkup).toBe(false)
     expect(row.markupPercent).toBe(0)
-    expect(row.input.sellPrice).toBe(2)
+    expect(row.kinds.input.sellPrice).toBe(2)
     expect(row.marginRate).toBe(0)
   })
 
   test('a missing official price drops only the discount, not the sell price', () => {
     const row = buildCostPricingRow(
-      { model: 'new-model', input: 1 },
+      { model: 'new-model', costs: { input: 1 } },
       30,
       undefined
     )
 
     expect(row.hasOfficialPrice).toBe(false)
-    expect(row.input.officialPrice).toBeNull()
-    expect(row.input.sellPrice).toBeCloseTo(1.3, 6)
-    expect(row.input.discountFraction).toBeNull()
+    expect(row.kinds.input.officialPrice).toBeNull()
+    expect(row.kinds.input.sellPrice).toBeCloseTo(1.3, 6)
+    expect(row.kinds.input.discountFraction).toBeNull()
     expect(row.marginRate).toBeCloseTo(0.3 / 1.3, 6)
   })
 
@@ -98,9 +100,9 @@ describe('channel pricing arithmetic', () => {
       output: 7.99,
     })
 
-    expect(row.input.sellPrice).toBeNull()
-    expect(row.input.discountFraction).toBeNull()
-    expect(row.output.sellPrice).toBeNull()
+    expect(row.kinds.input.sellPrice).toBeNull()
+    expect(row.kinds.input.discountFraction).toBeNull()
+    expect(row.kinds.output.sellPrice).toBeNull()
     // No cost means no margin claim: 30% here would be a price the channel
     // cannot charge.
     expect(row.marginRate).toBeNull()
@@ -150,10 +152,33 @@ describe('pricing cell formatting', () => {
     expect(formatMarginRate(0)).toBe('0%')
   })
 
-  test('collapses the input/output pair only when both sides agree', () => {
-    expect(formatPricePair('$1', '$1')).toBe('$1')
-    expect(formatPricePair('$1', '$2')).toBe('$1 / $2')
-    expect(formatPricePair('-', '-')).toBe('-')
+})
+
+describe('price sheet sections', () => {
+  test('the groups cover every per-token kind exactly once', () => {
+    const grouped = COST_PRICING_GROUPS.flatMap((group) => group.keys)
+    const perToken = COST_PRICING_KINDS.filter(
+      (kind) => kind.reach !== 'per_call'
+    ).map((kind) => kind.key)
+
+    // A kind missing from every group has no row on the sheet and can never be
+    // priced; a kind in two groups gets two boxes bound to one field.
+    expect([...grouped].sort()).toEqual([...perToken].sort())
+    // per_call is a billing mode, not a sheet row.
+    expect(grouped).not.toContain('per_call')
+  })
+
+  test('counts the priced kinds the model list has to summarise', () => {
+    const row = buildCostPricingRow(
+      { model: 'gpt-5', costs: { input: 1, output: 2, audio_in: 40 } },
+      30,
+      undefined
+    )
+
+    expect(countConfiguredKinds(row)).toBe(3)
+    expect(
+      countConfiguredKinds(buildCostPricingRow({ model: 'x' }, 30, undefined))
+    ).toBe(0)
   })
 })
 
@@ -179,12 +204,12 @@ describe('pricing table summary', () => {
   test('counts named, priced and overridden rows separately', () => {
     const summary = summarizeCostPricingRows([
       // Named and priced.
-      buildCostPricingRow({ model: 'a', input: 1 }, 30, official),
+      buildCostPricingRow({ model: 'a', costs: { input: 1 } }, 30, official),
       // Named, no buy price: it is on the table but will not bill.
       buildCostPricingRow({ model: 'b' }, 30, official),
       // Named, priced, and pricing off its own markup.
       buildCostPricingRow(
-        { model: 'c', output: 4, markupPercent: 50 },
+        { model: 'c', markupPercent: 50, costs: { output: 4 } },
         30,
         official
       ),
@@ -199,8 +224,8 @@ describe('pricing table summary', () => {
 
   test('names models the official-price sync has never seen', () => {
     const summary = summarizeCostPricingRows([
-      buildCostPricingRow({ model: 'a', input: 1 }, 30, official),
-      buildCostPricingRow({ model: 'unsynced', input: 1 }, 30, undefined),
+      buildCostPricingRow({ model: 'a', costs: { input: 1 } }, 30, official),
+      buildCostPricingRow({ model: 'unsynced', costs: { input: 1 } }, 30, undefined),
     ])
 
     expect(summary.modelsMissingOfficialPrice).toEqual(['unsynced'])
@@ -210,19 +235,19 @@ describe('pricing table summary', () => {
     const summary = summarizeCostPricingRows([
       // 1 × 1.0 / 2 = 0.5 input.
       buildCostPricingRow(
-        { model: 'a', input: 1, markupPercent: 0 },
+        { model: 'a', markupPercent: 0, costs: { input: 1 } },
         0,
         official
       ),
       // 2 / 8 = 0.25 output.
       buildCostPricingRow(
-        { model: 'b', output: 2, markupPercent: 0 },
+        { model: 'b', markupPercent: 0, costs: { output: 2 } },
         0,
         official
       ),
       // An outlier at 5× list, which a mean would let drag the whole figure.
       buildCostPricingRow(
-        { model: 'c', input: 10, markupPercent: 0 },
+        { model: 'c', markupPercent: 0, costs: { input: 10 } },
         0,
         official
       ),
@@ -234,7 +259,7 @@ describe('pricing table summary', () => {
 
   test('reports no median when nothing can be measured against a list price', () => {
     const summary = summarizeCostPricingRows([
-      buildCostPricingRow({ model: 'a', input: 1 }, 30, undefined),
+      buildCostPricingRow({ model: 'a', costs: { input: 1 } }, 30, undefined),
       buildCostPricingRow({ model: 'b' }, 30, official),
     ])
 

@@ -168,8 +168,12 @@ const (
 // traffic repriced off the vendor list price are not the same number, and
 // averaging them hides exactly the misconfiguration an operator needs to see.
 const (
-	PriceSourceExact    = "exact"    // 渠道 + 模型精确折扣
-	PriceSourceChannel  = "channel"  // 渠道级统一折扣
+	PriceSourceExact   = "exact"   // 渠道 + 模型精确折扣
+	PriceSourceChannel = "channel" // 渠道级统一折扣
+	// PriceSourceCost 是进价正推出来的卖价（ChannelCostSettings：进价 × (1 + 利润率)）。
+	// 与折扣两级并列而不是替换它们：灰度期两套配置同时存在，报表必须能分层——
+	// 按折扣卖的和按进价卖的混成一个数，就看不出哪条线的利润率配错了。
+	PriceSourceCost     = "cost"
 	PriceSourceFallback = "fallback" // 未配折扣或官网价缺失 —— 走 modelRatio × group_ratio
 )
 

@@ -261,6 +261,35 @@ func SetApiRouter(router *gin.Engine) {
 			agentAdminRoute.POST("/commissions/adjust", middleware.CriticalRateLimit(), controller.AdminAdjustCommission)
 		}
 
+		// 运营副驾（Copilot）：整组 AdminAuth，工具能读渠道进价与成本毛利，
+		// 密级与 /cost 同级。命名避开 /agent —— 那个前缀已经是代理分销。
+		copilotRoute := apiRouter.Group("/copilot")
+		copilotRoute.Use(middleware.AdminAuth())
+		{
+			// status 与 sessions 是静态段，注册在 :id 之前，让 gin 先匹配静态路由
+			copilotRoute.GET("/status", controller.GetCopilotStatus)
+			// models 是「模型 + 渠道」选择器的数据源，只读，与 status 同级
+			copilotRoute.GET("/models", controller.GetCopilotModels)
+			// 图片按 ?path= 取，归属校验在 handler 里（路径首段是会话号）。
+			copilotRoute.GET("/images", controller.GetCopilotImage)
+			copilotRoute.GET("/sessions", controller.GetCopilotSessions)
+			copilotRoute.POST("/sessions", controller.CreateCopilotSession)
+			copilotRoute.GET("/sessions/:id", controller.GetCopilotSession)
+			copilotRoute.DELETE("/sessions/:id", controller.DeleteCopilotSession)
+			// chat 挂关键限流：一次调用会扇出成最多 MaxRounds 次上游请求，
+			// 是这一组里唯一会烧 token 的接口。
+			copilotRoute.POST("/sessions/:id/chat", middleware.CriticalRateLimit(), controller.CopilotChat)
+		}
+
+		// 副驾自己的配置（开关 / 模型 / 钉渠道）写在单独一组，挂 RootAuth：这几个
+		// 键是全局选项，和 /api/option 同一份东西，写权限必须同级。管理员照常用
+		// 副驾，但换整站的副驾模型是站长的事。
+		copilotConfigRoute := apiRouter.Group("/copilot")
+		copilotConfigRoute.Use(middleware.RootAuth())
+		{
+			copilotConfigRoute.PUT("/config", controller.UpdateCopilotConfig)
+		}
+
 		// Subscription payment callbacks (no auth)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
@@ -396,6 +425,11 @@ func SetApiRouter(router *gin.Engine) {
 			costRoute.POST("/channel/batch-price", middleware.RootAuth(), controller.CostBatchPrice)
 			costRoute.POST("/purchase", middleware.RootAuth(), controller.CostCreatePurchase)
 			costRoute.POST("/recalculate", middleware.RootAuth(), controller.CostRecalculate)
+			// 交易账本挂在 /cost 下而不是 /log 下：它和 /log 的区别不是过滤条件，
+			// 而是可见性——每行都带上游进价，和这个组里其他接口同一个密级。
+			costRoute.GET("/ledger", middleware.AdminAuth(), controller.LedgerList)
+			costRoute.GET("/ledger/summary", middleware.AdminAuth(), controller.LedgerSummary)
+			costRoute.POST("/ledger/backfill", middleware.RootAuth(), controller.LedgerBackfill)
 		}
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())

@@ -10,7 +10,6 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
-	costsetting "github.com/QuantumNous/new-api/setting/cost_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,24 +37,10 @@ const (
 	CostSourceUnknown  = "unknown"  // 无法确定——不参与毛利计算
 )
 
-// maxCostUnitPriceUSD 单价上界（USD per 1M tokens 或 USD/次）。成本单价来自
-// JSON 配置，指针可携带任意大的数；超界按配置错误处理，拒绝而不是钳制。
-const maxCostUnitPriceUSD = 10000.0
-
-// CostTokenBreakdown 是一笔请求的全部计费 token 明细，service 层独有——
-// model 层的 RecordConsumeLogParams 拿不到这些。
-type CostTokenBreakdown struct {
-	PromptTokens     int // 文本输入（不含已单列的 cache/image/audio）
-	CompletionTokens int
-	CacheReadTokens  int
-	CacheWrite5m     int
-	CacheWrite1h     int
-	ImageInput       int
-	ImageOutput      int
-	AudioInput       int
-	AudioOutput      int
-	ReasoningTokens  int
-}
+// CostTokenBreakdown 是一笔请求的全部计费 token 明细。定义在 model 一侧，因为
+// 卖价的维度覆盖判断（ModelSellPrice.CoversTokens）要用它，而那段算术为了同时
+// 服务展示侧和结算侧必须住在 model。
+type CostTokenBreakdown = model.CostTokenBreakdown
 
 // CostInputs 是 attachUpstreamCost 的输入快照。
 type CostInputs struct {
@@ -64,14 +49,10 @@ type CostInputs struct {
 	Revenue int        // 本笔收入（quota）
 }
 
+// validCostUnitPrice 与卖价那边共用同一把尺子（model.ValidCostUnitPrice）：
+// 同一个进价字段在成本核算里合法、在卖价推导里不合法，是对不上账的。
 func validCostUnitPrice(v *float64) bool {
-	if v == nil {
-		return false
-	}
-	if math.IsNaN(*v) || math.IsInf(*v, 0) {
-		return false
-	}
-	return *v >= 0 && *v <= maxCostUnitPriceUSD
+	return model.ValidCostUnitPrice(v)
 }
 
 // resolveModelCostExact 第 1 级：渠道模型精确价。
@@ -107,8 +88,33 @@ func resolveModelCostExact(cost *dto.ChannelCostSettings, upstreamModel string, 
 		anyField = true
 		total += float64(tokens) * *unit / 1e6
 	}
+
+	// 输出子类（音频/图片/推理）是 CompletionTokens 的【子集】，不是它的兄弟：
+	// Gemini 那边 CompletionTokens = CandidatesTokenCount + ThoughtsTokenCount 而
+	// ReasoningTokens = ThoughtsTokenCount（service/billing_usage.go），OpenAI 语义
+	// 下 completion_tokens_details 同样是 completion_tokens 的拆分。
+	//
+	// 所以配了子类单价就必须把它从 CompletionTokens 里扣掉，否则同一批 token 先按
+	// output 价算一次、再按子类价算一次。没配单价的子类【留在】CompletionTokens 里
+	// 按 output 价计 —— 裸扣会让它按 0 计成本，虚高毛利，正是本文件开头警告的方向。
+	billedCompletion := t.CompletionTokens
+	subtractIfPriced := func(tokens int, unit *float64) {
+		if tokens <= 0 || unit == nil || !validCostUnitPrice(unit) {
+			return
+		}
+		billedCompletion -= tokens
+	}
+	subtractIfPriced(t.ImageOutput, price.ImageOut)
+	subtractIfPriced(t.AudioOutput, price.AudioOut)
+	subtractIfPriced(t.ReasoningTokens, price.Reasoning)
+	// 上游报的子类之和可以超过 completion 总数（各家统计口径不一），负数会变成
+	// 一笔负成本 —— 毛利凭空变高。
+	if billedCompletion < 0 {
+		billedCompletion = 0
+	}
+
 	add(t.PromptTokens, price.Input)
-	add(t.CompletionTokens, price.Output)
+	add(billedCompletion, price.Output)
 	add(t.CacheReadTokens, price.CacheRead)
 	add(t.CacheWrite5m, price.CacheWrite5m)
 	add(t.CacheWrite1h, price.CacheWrite1h)
@@ -168,10 +174,6 @@ func upstreamReportedCostUSD(usage *dto.Usage) (float64, bool) {
 // 没配进价就是 unknown：不再拿收入反推、也不再按官方价估。成本要么是填进去
 // 的真进价、要么是上游回报的真值，别的都不算成本。
 func ComputeUpstreamCost(cost *dto.ChannelCostSettings, upstreamModel string, inputs CostInputs) (int, string) {
-	if !costsetting.GetSetting().Enabled {
-		return 0, CostSourceUnknown
-	}
-
 	if usd, ok := resolveModelCostExact(cost, upstreamModel, inputs.Tokens); ok {
 		return costUSDToQuota(usd), CostSourceExact
 	}
@@ -226,6 +228,15 @@ func attachUpstreamCostForChannel(channelId int, upstreamModel string, revenue i
 		"cost_source":  source,
 		"cost_model":   upstreamModel,
 		"margin_quota": revenue - costQuota,
+		// 这份成本的口径不是本行的流水：revenue 是任务的最终总额，而这条日志的
+		// quota 字段只是差额（或退款额）。所以 cost 与 quota 不同尺度，不能相减、
+		// 也不能跨行相加——提交时已经按完整成本记过一行了，这里再算一份完整成本，
+		// 两行加起来是双倍。
+		//
+		// 明确标出来而不是让下游猜：交易账本要把成本落成可排序的真列，而"能不能
+		// 落列"取决于这份成本是否与本行收入同尺度。没有这个标记，账本会把任务的
+		// 成本算两遍，毛利率直接翻负。
+		"row_scoped": false,
 	}
 }
 
@@ -281,7 +292,7 @@ func attachUpstreamCost(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, inpu
 	costInfo["margin_quota"] = margin
 	adminInfo["cost"] = costInfo
 
-	if source == CostSourceUnknown && costsetting.GetSetting().Enabled {
+	if source == CostSourceUnknown {
 		logger.LogDebug(ctx, fmt.Sprintf("upstream cost unknown: channel=%d model=%s upstream_model=%s",
 			relayInfo.ChannelId, relayInfo.OriginModelName, upstreamModel))
 	}

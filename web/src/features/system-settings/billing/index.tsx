@@ -117,7 +117,6 @@ const defaultBillingSettings: BillingSettings = {
   AgentAutoApprove: false,
   AgentBalanceNeedAudit: false,
   AgentSubscriptionCommission: false,
-  'cost_setting.enabled': false,
   'cost_setting.guard_enabled': false,
   'cost_setting.warn_rate': 0.2,
   'cost_setting.alert_rate': 0.1,

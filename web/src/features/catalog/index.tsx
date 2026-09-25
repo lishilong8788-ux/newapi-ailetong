@@ -17,14 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi } from '@tanstack/react-router'
+import { Plus, Server } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 import { CatalogDetail } from './components/catalog-detail'
+import { CatalogDialogs } from './components/catalog-dialogs'
+import { CatalogProvider, useCatalogEditor } from './components/catalog-provider'
 import { CatalogSidebar } from './components/catalog-sidebar'
 import { useCatalogData } from './hooks'
 import {
@@ -35,6 +39,17 @@ import {
 import type { CatalogStatus, CatalogStatusCounts } from './types'
 
 const route = getRouteApi('/_authenticated/catalog/')
+
+/**
+ * The rail takes its width from itself, not from a track on this grid.
+ *
+ * Model names are the one thing on this page that must never be abbreviated — an
+ * operator matching a name against an upstream console needs the whole string, and
+ * `text-moderation-stable` cut to `text-moderation-st…` is worse than useless when
+ * the same install also carries `text-moderation-latest`. The old fixed 280px track
+ * cut exactly those names, so the track is `auto` and the rail sets its own bounds.
+ */
+const CATALOG_GRID = 'grid h-full min-h-0 gap-4 lg:grid-cols-[auto_1fr]'
 
 /**
  * The status counters, doubling as the status filter.
@@ -63,7 +78,7 @@ function CatalogStatusChips(props: {
             aria-pressed={isActive}
             onClick={() => props.onChange(isActive ? null : status)}
             className={cn(
-              'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors',
+              'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[13px] font-medium transition-colors',
               'outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
               isActive
                 ? 'border-primary/45 bg-accent text-accent-foreground'
@@ -81,20 +96,23 @@ function CatalogStatusChips(props: {
 }
 
 /**
- * The product catalog: models on the left, the channels that supply the selected
- * one on the right.
+ * The product workbench: models on the left, and on the right everything that
+ * makes one sellable — its profile, its platform price, and every channel that
+ * supplies it with what that channel costs.
  *
- * Deliberately a second lens on the same data rather than a replacement for the
- * channels page. Everything an operator does to a *supplier* — test it, read its
- * balance, rotate its keys, batch-disable it — is channel-shaped and stays there.
- * This page answers the questions that are model-shaped: what am I selling, at
- * what price, from whom, and what is broken.
+ * Model-shaped on purpose, and now editable end to end from that shape. Adding a
+ * product, giving it a price, putting it on a channel, and recording what that
+ * channel charges used to be four pages; they are the same question asked four
+ * ways, so they are one screen. The channels page remains the supplier-shaped
+ * view — key rotation, balance, testing, batch operations — and nothing here
+ * duplicates it: the row actions open that page's own editor.
  */
-export function Catalog() {
+function CatalogWorkbench() {
   const { t } = useTranslation()
   const search = route.useSearch()
   const navigate = route.useNavigate()
   const catalog = useCatalogData()
+  const { openEditor } = useCatalogEditor()
 
   const searchTerm = search.q ?? ''
   // An empty string is how the URL spells "no filter" once a chip is toggled off,
@@ -105,7 +123,9 @@ export function Catalog() {
     ? (search.status as CatalogStatus)
     : null
 
-  const setSearch = (next: Partial<{ q: string; status: string; model: string }>) => {
+  const setSearch = (
+    next: Partial<{ q: string; status: string; model: string }>
+  ) => {
     void navigate({
       search: (previous) => ({ ...previous, ...next }),
       replace: true,
@@ -137,59 +157,102 @@ export function Catalog() {
   const selectedItem = filtered.find((item) => item.modelName === selectedModel)
 
   return (
-    <SectionPageLayout fixedContent>
-      <SectionPageLayout.Title>{t('Product catalog')}</SectionPageLayout.Title>
-      <SectionPageLayout.Actions>
-        <CatalogStatusChips
-          counts={catalog.statusCounts}
-          active={statusFilter}
-          onChange={(status) => setSearch({ status: status ?? '' })}
-        />
-      </SectionPageLayout.Actions>
-      <SectionPageLayout.Content>
-        {catalog.channelsTruncated && (
-          <p className='text-muted-foreground mb-2 text-xs'>
-            {t(
-              'This install has more channels than this view pages through, so channel counts may be incomplete.'
-            )}
-          </p>
-        )}
-
-        {catalog.isLoading ? (
-          <div className='grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(220px,280px)_1fr]'>
-            <Skeleton className='h-full min-h-64 rounded-xl' />
-            <Skeleton className='h-full min-h-64 rounded-xl' />
-          </div>
-        ) : (
-          <div className='grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(220px,280px)_1fr]'>
-            <CatalogSidebar
-              vendorGroups={vendorGroups}
-              totalCount={catalog.items.length}
-              matchedCount={filtered.length}
-              selectedModel={selectedModel}
-              onSelectModel={(modelName) => setSearch({ model: modelName })}
-              search={searchTerm}
-              onSearchChange={(value) => setSearch({ q: value })}
-              className='min-h-0'
+    <>
+      <SectionPageLayout fixedContent>
+        <SectionPageLayout.Title>{t('Product catalog')}</SectionPageLayout.Title>
+        <SectionPageLayout.Actions>
+          <div className='flex flex-wrap items-center gap-2'>
+            <CatalogStatusChips
+              counts={catalog.statusCounts}
+              active={statusFilter}
+              onChange={(status) => setSearch({ status: status ?? '' })}
             />
+            <div className='flex items-center gap-1.5'>
+              <Button
+                size='xs'
+                variant='outline'
+                onClick={() => openEditor({ kind: 'create-channel' })}
+              >
+                <Server />
+                {t('New channel')}
+              </Button>
+              <Button
+                size='xs'
+                onClick={() => openEditor({ kind: 'create-model' })}
+              >
+                <Plus />
+                {t('New product')}
+              </Button>
+            </div>
+          </div>
+        </SectionPageLayout.Actions>
+        <SectionPageLayout.Content>
+          {catalog.channelsTruncated && (
+            <p className='text-muted-foreground mb-2 text-[13px]'>
+              {t(
+                'This install has more channels than this view pages through, so channel counts may be incomplete.'
+              )}
+            </p>
+          )}
 
-            {selectedItem ? (
-              <CatalogDetail
-                key={selectedItem.modelName}
-                item={selectedItem}
-                groupRatio={catalog.groupRatio}
-                priceRate={catalog.priceRate}
-                usdExchangeRate={catalog.usdExchangeRate}
+          {catalog.isLoading ? (
+            <div className={CATALOG_GRID}>
+              <Skeleton className='h-full min-h-64 rounded-xl' />
+              <Skeleton className='h-full min-h-64 rounded-xl' />
+            </div>
+          ) : (
+            <div className={CATALOG_GRID}>
+              <CatalogSidebar
+                vendorGroups={vendorGroups}
+                totalCount={catalog.items.length}
+                matchedCount={filtered.length}
+                selectedModel={selectedModel}
+                onSelectModel={(modelName) => setSearch({ model: modelName })}
+                search={searchTerm}
+                onSearchChange={(value) => setSearch({ q: value })}
+                onCreateModel={() => openEditor({ kind: 'create-model' })}
                 className='min-h-0'
               />
-            ) : (
-              <div className='bg-card text-muted-foreground flex min-h-0 items-center justify-center rounded-xl border p-6 text-sm'>
-                {t('No models match your search.')}
-              </div>
-            )}
-          </div>
-        )}
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+
+              {selectedItem ? (
+                <CatalogDetail
+                  key={selectedItem.modelName}
+                  item={selectedItem}
+                  channels={catalog.channels}
+                  groupRatio={catalog.groupRatio}
+                  priceRate={catalog.priceRate}
+                  usdExchangeRate={catalog.usdExchangeRate}
+                  className='min-h-0'
+                />
+              ) : (
+                <div className='bg-card flex min-h-0 flex-col items-center justify-center gap-3 rounded-xl border p-6 text-center'>
+                  <p className='text-muted-foreground text-[13px]'>
+                    {t('No models match your search.')}
+                  </p>
+                  <Button
+                    size='sm'
+                    variant='outline'
+                    onClick={() => openEditor({ kind: 'create-model' })}
+                  >
+                    <Plus />
+                    {t('New product')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
+
+      <CatalogDialogs channels={catalog.channels} />
+    </>
+  )
+}
+
+export function Catalog() {
+  return (
+    <CatalogProvider>
+      <CatalogWorkbench />
+    </CatalogProvider>
   )
 }

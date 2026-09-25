@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Activity,
+  ArrowLeftRight,
+  Bot,
   Box,
   ChartNoAxesCombined,
   CircleDollarSign,
@@ -184,9 +186,23 @@ export function useSidebarData(): SidebarData {
             icon: ChartNoAxesCombined,
           },
           {
+            // Directly above Cost Analytics: it answers the same questions that
+            // page does, in prose, and an operator who cannot find the figure on
+            // the ledger should land on the copilot next.
+            title: t('Ops Copilot'),
+            url: '/copilot',
+            icon: Bot,
+            requiredRole: ROLE.ADMIN,
+          },
+          {
             title: t('Cost Analytics'),
             url: '/cost-analytics',
             icon: CircleDollarSign,
+          },
+          {
+            title: t('Transaction Ledger'),
+            url: '/transaction-ledger',
+            icon: ArrowLeftRight,
           },
           {
             title: t('System Info'),

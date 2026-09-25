@@ -138,8 +138,15 @@ export type ChannelCategory =
   | 'self_hosted'
   | 'other'
 
-/** Which rung of the discount chain produced a channel's price. */
-export type ChannelPriceSource = 'exact' | 'channel' | 'fallback'
+/**
+ * Which rung of the price chain produced a channel's price.
+ *
+ * `cost` is the channel's own buy price marked up (进价 × (1 + 利润率)), which is
+ * what the relay actually bills — so unlike `exact`/`channel`, a `cost` row
+ * carries no `discount`: the price is absolute, and its ratio against the vendor
+ * list price is derived for display rather than configured.
+ */
+export type ChannelPriceSource = 'exact' | 'channel' | 'cost' | 'fallback'
 
 /**
  * What one channel charges for one model. `quota_type` picks the unit: a

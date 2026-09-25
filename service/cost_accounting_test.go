@@ -6,32 +6,13 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
-	costsetting "github.com/QuantumNous/new-api/setting/cost_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func floatPtr(v float64) *float64 { return &v }
 
-// enableCostSetting flips cost accounting on for the duration of a test.
-// costSetting is a package-level var in cost_setting; the getter returns a
-// copy, so tests mutate through a helper that swaps the var directly.
-func withCostEnabled(t *testing.T, enabled bool) {
-	t.Helper()
-	original := costsetting.GetSetting().Enabled
-	setCostEnabledForTest(enabled)
-	t.Cleanup(func() { setCostEnabledForTest(original) })
-}
-
-func setCostEnabledForTest(enabled bool) {
-	// The config struct is package-private; Enabled is exposed via GetSetting
-	// returning a copy. Mutate through the exported test hook instead of
-	// reaching into the package.
-	costsetting.SetEnabledForTest(enabled)
-}
-
 func TestComputeUpstreamCost_ExactRatioMode(t *testing.T) {
-	withCostEnabled(t, true)
 
 	cost := &dto.ChannelCostSettings{
 		Models: map[string]dto.ModelCostPrice{
@@ -56,7 +37,6 @@ func TestComputeUpstreamCost_ExactRatioMode(t *testing.T) {
 }
 
 func TestComputeUpstreamCost_ExactDistinguishesZeroFromUnset(t *testing.T) {
-	withCostEnabled(t, true)
 
 	// Free model: explicit zero input price is a legal $0 cost (exact), not
 	// "unknown".
@@ -80,7 +60,6 @@ func TestComputeUpstreamCost_ExactDistinguishesZeroFromUnset(t *testing.T) {
 }
 
 func TestComputeUpstreamCost_PerCallMode(t *testing.T) {
-	withCostEnabled(t, true)
 
 	cost := &dto.ChannelCostSettings{
 		Models: map[string]dto.ModelCostPrice{
@@ -97,7 +76,6 @@ func TestComputeUpstreamCost_PerCallMode(t *testing.T) {
 // 不参与毛利——报一个反推值出来会让毛利报表看起来正好等于配置的利润率，
 // 那是自证预言，不是观测。
 func TestComputeUpstreamCost_MarkupAloneIsUnknown(t *testing.T) {
-	withCostEnabled(t, true)
 
 	cost := &dto.ChannelCostSettings{DefaultMarkup: floatPtr(0.3)}
 	quota, source := ComputeUpstreamCost(cost, "any-model", CostInputs{Revenue: 1300000})
@@ -108,7 +86,6 @@ func TestComputeUpstreamCost_MarkupAloneIsUnknown(t *testing.T) {
 // 进价配了、利润率也配了，成本仍然只看进价：利润率与成本核算无关，它只影响
 // 卖价（ResolveSellPrice）。
 func TestComputeUpstreamCost_MarkupDoesNotAlterExactCost(t *testing.T) {
-	withCostEnabled(t, true)
 
 	cost := &dto.ChannelCostSettings{
 		DefaultMarkup: floatPtr(0.3),
@@ -125,7 +102,6 @@ func TestComputeUpstreamCost_MarkupDoesNotAlterExactCost(t *testing.T) {
 }
 
 func TestComputeUpstreamCost_ReportedFallback(t *testing.T) {
-	withCostEnabled(t, true)
 
 	// No channel cost config; usage.Cost (OpenRouter truth) is the last rung.
 	inputs := CostInputs{
@@ -138,7 +114,6 @@ func TestComputeUpstreamCost_ReportedFallback(t *testing.T) {
 }
 
 func TestComputeUpstreamCost_RejectsAbsurdUnitPrices(t *testing.T) {
-	withCostEnabled(t, true)
 
 	// A unit price above the ceiling is treated as misconfiguration: falls
 	// through to the next tier rather than producing a garbage cost.
@@ -160,7 +135,6 @@ func TestComputeUpstreamCost_RejectsAbsurdUnitPrices(t *testing.T) {
 }
 
 func TestCostUSDToQuota_NeverNegative(t *testing.T) {
-	withCostEnabled(t, true)
 
 	// costUSDToQuota clamps at 0; a negative USD input is rejected outright.
 	assert.Equal(t, 0, costUSDToQuota(0))
@@ -255,23 +229,7 @@ func TestMarginRateConversionIdentities(t *testing.T) {
 	assert.InDelta(t, 0.230769, margin, 1e-5)
 }
 
-func TestComputeUpstreamCost_DisabledAlwaysUnknown(t *testing.T) {
-	withCostEnabled(t, false)
-
-	cost := &dto.ChannelCostSettings{
-		Models: map[string]dto.ModelCostPrice{
-			"claude-sonnet-4": {Input: floatPtr(3.0)},
-		},
-	}
-	quota, source := ComputeUpstreamCost(cost, "claude-sonnet-4", CostInputs{
-		Tokens: CostTokenBreakdown{PromptTokens: 1000000},
-	})
-	assert.Equal(t, CostSourceUnknown, source)
-	assert.Equal(t, 0, quota)
-}
-
 func TestCostQuotaConversionBoundaries(t *testing.T) {
-	withCostEnabled(t, true)
 
 	// QuotaPerUnit is a var (runtime-changeable); pin the arithmetic against
 	// the current value rather than hardcoding 500000.

@@ -44,223 +44,23 @@ func ResolveSellDiscount(price *dto.ChannelPriceSettings, upstreamModel string) 
 	return price.ResolveDiscount(upstreamModel)
 }
 
-// ModelSellPrice 是一个渠道-模型的卖价，各维度单价 USD / 1M tokens，与
-// dto.ModelCostPrice 同单位同维度，方便一眼对上"进价多少、卖多少"。
-//
-// 指针沿用进价那边的理由，但这里多一层含义：nil 表示这个维度【推不出卖价】，
-// 调用方遇到该维度有 token 就必须整笔退回老倍率计费——记 0 等于把这部分
-// token 免费送。0 本身仍是合法卖价（免费模型进价 0，加价后还是 0）。
-type ModelSellPrice struct {
-	Input        *float64
-	Output       *float64
-	CacheRead    *float64
-	CacheWrite5m *float64
-	CacheWrite1h *float64
-	AudioIn      *float64
-	AudioOut     *float64
-	ImageIn      *float64
-	ImageOut     *float64
-	Reasoning    *float64
-	PerCall      *float64 // USD / 次，进价按次时才有
-	// Markup 是这笔卖价用的利润率，报表要能回答"这个价是按多少利润率算的"。
-	Markup float64
-}
+// 卖价的算术住在 model（model/sell_price.go）。展示侧和路由侧都在 model 包里，
+// 而 service 已经 import model，反向不成立——两份实现会让广场上的价和账单上的
+// 钱各算一遍。这里只留别名和转发，让既有调用点一行都不用改。
+type (
+	ModelSellPrice  = model.ModelSellPrice
+	SellPriceRatios = model.SellPriceRatios
+)
 
-// CoversTokens 报告这份卖价能否完整覆盖一次请求用到的 token 维度。
-// false 意味着有维度推不出价（nil），调用方必须整笔退回老倍率计费而不是
-// 把缺的维度当 0 —— 那等于白送。按次计价（PerCall）不看 token 维度。
-func (p ModelSellPrice) CoversTokens(t CostTokenBreakdown) bool {
-	if p.PerCall != nil {
-		return true
-	}
-	covered := func(tokens int, unit *float64) bool {
-		return tokens == 0 || unit != nil
-	}
-	return covered(t.PromptTokens, p.Input) &&
-		covered(t.CompletionTokens, p.Output) &&
-		covered(t.CacheReadTokens, p.CacheRead) &&
-		covered(t.CacheWrite5m, p.CacheWrite5m) &&
-		covered(t.CacheWrite1h, p.CacheWrite1h) &&
-		covered(t.AudioInput, p.AudioIn) &&
-		covered(t.AudioOutput, p.AudioOut) &&
-		covered(t.ImageInput, p.ImageIn) &&
-		covered(t.ImageOutput, p.ImageOut) &&
-		covered(t.ReasoningTokens, p.Reasoning)
-}
-
-// sellPriceMarkup 取这个模型该用的利润率：ModelCostPrice.Markup 优先，其次
-// 渠道级 DefaultMarkup，都没有就 ok=false。
-//
-// 非法值（NaN/Inf/负数/超界）按"没配"处理并继续往下走，与
-// ChannelPriceSettings.ResolveDiscount 同一套态度：一个模型上的笔误不该
-// 连带废掉整个渠道的利润率配置。上界跟进价单价的校验对齐，10000 倍加价
-// 只能是填错了。
-func sellPriceMarkup(cost *dto.ChannelCostSettings, price dto.ModelCostPrice) (float64, bool) {
-	valid := func(v *float64) bool {
-		if v == nil {
-			return false
-		}
-		return !math.IsNaN(*v) && !math.IsInf(*v, 0) && *v >= 0 && *v <= maxSellMarkup
-	}
-	if valid(price.Markup) {
-		return *price.Markup, true
-	}
-	if cost != nil && valid(cost.DefaultMarkup) {
-		return *cost.DefaultMarkup, true
-	}
-	return 0, false
-}
-
-// maxSellMarkup 利润率上界。100 = 加价 10000%，正常运营到不了，超了就是
-// 把百分数当小数填了。
-const maxSellMarkup = 100.0
-
-// ResolveSellPrice 是渠道-模型的卖价，正推自进价：进价 × (1 + 利润率)。
-// 返回 ok=false 表示该渠道-模型没配进价或没配利润率，调用方必须退回老倍率计费
-// ——这是渐进上线的开关，填一个生效一个，不额外加 feature flag。
-//
-// 进价缺某个维度时按官方倍率从 input 进价推导，这是"一个数管全维度"的关键：
-// 运营只填 input（有时连 output 都不填），剩下的维度用 ratio_setting 里的官方
-// 倍率折出来——官方 completionRatio 给 output，官方 cacheRatio 给 cache read。
-// 官方倍率表本身就是"相对 input 的倍数"（service/text_quota.go 的计价口径），
-// 所以 input 进价 × 官方倍率就是该维度的进价。
-//
-// 只认官方倍率表，不拿平台自己的倍率兜底：平台倍率是我们的售价口径，用它推进价
-// 等于用卖价猜成本，绕回刚删掉的那条反推链。官方表只覆盖 model/completion/cache
-// 三项（同 ComputeListPriceQuota），所以 cache write、音频、图片、reasoning 这几个
-// 维度没填就是 nil —— 让调用方整笔退回老计费，而不是当 0 白送。
+// ResolveSellPrice 是渠道-模型的卖价：进价 × (1 + 利润率)。见
+// model.ResolveSellPrice。
 func ResolveSellPrice(cost *dto.ChannelCostSettings, upstreamModel string) (ModelSellPrice, bool) {
-	if cost == nil || len(cost.Models) == 0 {
-		return ModelSellPrice{}, false
-	}
-	costPrice, ok := cost.Models[upstreamModel]
-	if !ok {
-		return ModelSellPrice{}, false
-	}
-	markup, ok := sellPriceMarkup(cost, costPrice)
-	if !ok {
-		return ModelSellPrice{}, false
-	}
-
-	multiplier := 1 + markup
-	// sell 把一个进价维度转成卖价维度。进价非法（NaN/Inf/负/超界）按未配置
-	// 处理，返回 nil 让调用方退回老计费——不是钳到边界值继续算。
-	sell := func(unit *float64) *float64 {
-		if !validCostUnitPrice(unit) {
-			return nil
-		}
-		v := *unit * multiplier
-		return &v
-	}
-
-	out := ModelSellPrice{Markup: markup, PerCall: sell(costPrice.PerCall)}
-	// 按次进价与按量进价互斥（resolveModelCostExact 也是 per_call 优先），
-	// 按次时 token 维度一律不填，免得两套口径同时命中。
-	if out.PerCall != nil {
-		return out, true
-	}
-
-	out.Input = sell(costPrice.Input)
-	out.Output = sell(costPrice.Output)
-	out.CacheRead = sell(costPrice.CacheRead)
-	out.CacheWrite5m = sell(costPrice.CacheWrite5m)
-	out.CacheWrite1h = sell(costPrice.CacheWrite1h)
-	out.AudioIn = sell(costPrice.AudioIn)
-	out.AudioOut = sell(costPrice.AudioOut)
-	out.ImageIn = sell(costPrice.ImageIn)
-	out.ImageOut = sell(costPrice.ImageOut)
-	out.Reasoning = sell(costPrice.Reasoning)
-
-	if out.Input == nil {
-		// 没有 input 进价就没有推导基准，只有显式填过的维度算数；一个维度都
-		// 没有的话这条配置等于空的。
-		if out.Output == nil && out.CacheRead == nil && out.CacheWrite5m == nil &&
-			out.CacheWrite1h == nil && out.AudioIn == nil && out.AudioOut == nil &&
-			out.ImageIn == nil && out.ImageOut == nil && out.Reasoning == nil {
-			return ModelSellPrice{}, false
-		}
-		return out, true
-	}
-
-	if out.Output == nil {
-		if completionRatio, has := ratio_setting.GetOfficialCompletionRatio(upstreamModel); has &&
-			completionRatio >= 0 && !math.IsNaN(completionRatio) && !math.IsInf(completionRatio, 0) {
-			derived := *out.Input * completionRatio
-			out.Output = &derived
-		}
-	}
-	if out.CacheRead == nil {
-		if cacheRatio, has := ratio_setting.GetOfficialCacheRatio(upstreamModel); has &&
-			cacheRatio >= 0 && !math.IsNaN(cacheRatio) && !math.IsInf(cacheRatio, 0) {
-			derived := *out.Input * cacheRatio
-			out.CacheRead = &derived
-		}
-	}
-	return out, true
+	return model.ResolveSellPrice(cost, upstreamModel)
 }
 
-// SellPriceRatios 是卖价翻译成本代码库既有计价口径后的倍率三元组。
-//
-// CompletionRatio/CacheRatio 是指针，nil 表示【这个维度推不出倍率，保留平台
-// 现有倍率】。不写 1 兜底：1 意味着 output 与 input 同价，而绝大多数模型 output
-// 更贵，静默按 1 计价是在少收钱。
-type SellPriceRatios struct {
-	ModelRatio      float64
-	CompletionRatio *float64
-	CacheRatio      *float64
-}
-
-// SellPriceToRatios 把卖价换算成计费内核吃的倍率。ok=false 表示这份卖价没法
-// 用倍率表达，调用方必须整笔退回老倍率计费。
-//
-// 换算依据是本代码库唯一的计价恒等式（service/text_quota.go）：
-//
-//	quota = tokens × modelRatio × groupRatio      而 USD = quota ÷ QuotaPerUnit
-//
-// 所以 input 卖价 P（USD / 1M tokens）对应 modelRatio = P × QuotaPerUnit ÷ 1e6，
-// 按当前 QuotaPerUnit=500000 就是 P ÷ 2（倍率 10 ≡ $20/1M）。写成表达式而不是
-// 除以 2：QuotaPerUnit 是 var，改了这里要跟着变。
-//
-// 其余维度在结算侧都是"相对 input 的倍数"，所以直接取比值。
+// SellPriceToRatios 把卖价换算成计费内核吃的倍率。见 model.SellPriceToRatios。
 func SellPriceToRatios(price ModelSellPrice) (SellPriceRatios, bool) {
-	// 按次卖价没有 per-token 基准，倍率体系表达不了，交给调用方走原路。
-	if price.PerCall != nil {
-		return SellPriceRatios{}, false
-	}
-	// 没有 input 卖价就没有换算起点：modelRatio 是所有维度的公共因子。
-	if price.Input == nil {
-		return SellPriceRatios{}, false
-	}
-	unit := *price.Input
-	if math.IsNaN(unit) || math.IsInf(unit, 0) || unit < 0 {
-		return SellPriceRatios{}, false
-	}
-
-	out := SellPriceRatios{ModelRatio: unit * common.QuotaPerUnit / 1e6}
-
-	if unit == 0 {
-		// 免费进价：modelRatio=0 会把整笔请求算成免费，包括 output。只有
-		// output 也免费时这才是对的；否则倍率体系压根表达不了"输入免费、
-		// 输出收费"，宁可退回老计费也不能白送 output。
-		if price.Output != nil && *price.Output != 0 {
-			return SellPriceRatios{}, false
-		}
-		return out, true
-	}
-
-	ratioOf := func(dim *float64) *float64 {
-		if dim == nil {
-			return nil
-		}
-		v := *dim / unit
-		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
-			return nil
-		}
-		return &v
-	}
-	out.CompletionRatio = ratioOf(price.Output)
-	out.CacheRatio = ratioOf(price.CacheRead)
-	return out, true
+	return model.SellPriceToRatios(price)
 }
 
 // ComputeListPriceQuota prices a request at the vendor's list rates, in quota
@@ -423,6 +223,12 @@ func writeSellPriceSnapshot(settings dto.ChannelOtherSettings, upstreamModel str
 		}
 		if sell.PerCall != nil {
 			priceInfo["sell_per_call_price"] = *sell.PerCall
+		}
+		// 卖价能换算成倍率就说明它真的定了这笔的价（applyChannelSellPrice 的条件
+		// 与此完全一致），source 必须跟着说实话。否则报表把按卖价收的钱归进
+		// "fallback = 还在走老倍率"那一档，正好把要观察的灰度进度盖掉。
+		if _, ratioOK := SellPriceToRatios(sell); ratioOK {
+			priceInfo["price_source"] = dto.PriceSourceCost
 		}
 	}
 

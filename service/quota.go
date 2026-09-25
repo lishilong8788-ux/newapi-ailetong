@@ -29,6 +29,10 @@ type TokenDetails struct {
 	AudioTokens int
 }
 
+// QuotaInfo 是音频路计价的全部输入。倍率由调用方从 relayInfo.PriceData 填，不在
+// calculateAudioQuota 里回查 ratio_setting —— PriceData 里的值可能是渠道卖价改写过
+// 的（relay/helper.applyChannelSellPrice），回查平台表会把卖价丢掉：gpt-4o-audio 这
+// 类模型平台表未命中时音频倍率默认 1，等于按文本价卖 16 倍价的音频 token。
 type QuotaInfo struct {
 	InputDetails  TokenDetails
 	OutputDetails TokenDetails
@@ -37,6 +41,11 @@ type QuotaInfo struct {
 	ModelPrice    float64
 	ModelRatio    float64
 	GroupRatio    float64
+	// CompletionRatio 之前也是现查的，与同一个函数里用 PriceData 的 ModelRatio 配
+	// 不上口径：卖价生效时一个是卖价、一个是平台值。
+	CompletionRatio      float64
+	AudioRatio           float64
+	AudioCompletionRatio float64
 }
 
 func hasCustomModelRatio(modelName string, currentRatio float64) bool {
@@ -45,6 +54,26 @@ func hasCustomModelRatio(modelName string, currentRatio float64) bool {
 		return true
 	}
 	return currentRatio != defaultRatio
+}
+
+// audioQuotaInfo 把一次音频/realtime 请求的倍率从 relayInfo.PriceData 搬进
+// QuotaInfo。三条音频计费入口（预扣费、wss 结算、音频结算）共用它，因为"音频按
+// PriceData 计价"必须是一个口径：任一处退回现查 ratio_setting，该处就丢掉渠道卖价，
+// 而预扣费与结算用不同口径会让差额结算凭空多退或少退。
+func audioQuotaInfo(relayInfo *relaycommon.RelayInfo, modelName string, input TokenDetails, output TokenDetails) QuotaInfo {
+	priceData := relayInfo.PriceData
+	return QuotaInfo{
+		InputDetails:         input,
+		OutputDetails:        output,
+		ModelName:            modelName,
+		UsePrice:             priceData.UsePrice,
+		ModelPrice:           priceData.ModelPrice,
+		ModelRatio:           priceData.ModelRatio,
+		GroupRatio:           priceData.GroupRatioInfo.GroupRatio,
+		CompletionRatio:      priceData.CompletionRatio,
+		AudioRatio:           priceData.AudioRatio,
+		AudioCompletionRatio: priceData.AudioCompletionRatio,
+	}
 }
 
 func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
@@ -57,9 +86,9 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 		return common.QuotaFromDecimalChecked(quota)
 	}
 
-	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(info.ModelName))
-	audioRatio := decimal.NewFromFloat(ratio_setting.GetAudioRatio(info.ModelName))
-	audioCompletionRatio := decimal.NewFromFloat(ratio_setting.GetAudioCompletionRatio(info.ModelName))
+	completionRatio := decimal.NewFromFloat(info.CompletionRatio)
+	audioRatio := decimal.NewFromFloat(info.AudioRatio)
+	audioCompletionRatio := decimal.NewFromFloat(info.AudioCompletionRatio)
 
 	groupRatio := decimal.NewFromFloat(info.GroupRatio)
 	modelRatio := decimal.NewFromFloat(info.ModelRatio)
@@ -105,36 +134,23 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	textOutTokens := usage.OutputTokenDetails.TextTokens
 	audioInputTokens := usage.InputTokenDetails.AudioTokens
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
-	groupRatio := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
-	modelRatio, _, _ := ratio_setting.GetModelRatio(modelName)
 
-	autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup)
-	if exists {
-		groupRatio = ratio_setting.GetGroupRatio(autoGroup.(string))
-		logger.LogDebug(ctx, "final group ratio: %f", groupRatio)
+	// 自动分组：ModelPriceHelper 的 HandleGroupRatio 在分发中间件之后跑，PriceData
+	// 里的分组倍率已经是自动分组的了。这里只同步 UsingGroup 供后续日志/结算用，
+	// 不再自己算一遍倍率 —— 重算出来的是平台口径，与下面用的 PriceData 模型倍率
+	// 对不上，卖价生效时更是把 applyChannelSellPrice 归 1 的分组倍率又拿回来。
+	if autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup); exists {
 		relayInfo.UsingGroup = autoGroup.(string)
+		logger.LogDebug(ctx, "final group: %s", relayInfo.UsingGroup)
 	}
 
-	actualGroupRatio := groupRatio
-	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
-	if ok {
-		actualGroupRatio = userGroupRatio
-	}
-
-	quotaInfo := QuotaInfo{
-		InputDetails: TokenDetails{
-			TextTokens:  textInputTokens,
-			AudioTokens: audioInputTokens,
-		},
-		OutputDetails: TokenDetails{
-			TextTokens:  textOutTokens,
-			AudioTokens: audioOutTokens,
-		},
-		ModelName:  modelName,
-		UsePrice:   relayInfo.UsePrice,
-		ModelRatio: modelRatio,
-		GroupRatio: actualGroupRatio,
-	}
+	quotaInfo := audioQuotaInfo(relayInfo, modelName, TokenDetails{
+		TextTokens:  textInputTokens,
+		AudioTokens: audioInputTokens,
+	}, TokenDetails{
+		TextTokens:  textOutTokens,
+		AudioTokens: audioOutTokens,
+	})
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
 	noteQuotaClamp(relayInfo, clamp)
@@ -176,29 +192,22 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
 
 	tokenName := ctx.GetString("token_name")
-	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(modelName))
-	audioRatio := decimal.NewFromFloat(ratio_setting.GetAudioRatio(relayInfo.OriginModelName))
-	audioCompletionRatio := decimal.NewFromFloat(ratio_setting.GetAudioCompletionRatio(modelName))
 
-	modelRatio := relayInfo.PriceData.ModelRatio
-	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
-	modelPrice := relayInfo.PriceData.ModelPrice
-	usePrice := relayInfo.PriceData.UsePrice
+	quotaInfo := audioQuotaInfo(relayInfo, modelName, TokenDetails{
+		TextTokens:  textInputTokens,
+		AudioTokens: audioInputTokens,
+	}, TokenDetails{
+		TextTokens:  textOutTokens,
+		AudioTokens: audioOutTokens,
+	})
+	completionRatio := decimal.NewFromFloat(quotaInfo.CompletionRatio)
+	audioRatio := decimal.NewFromFloat(quotaInfo.AudioRatio)
+	audioCompletionRatio := decimal.NewFromFloat(quotaInfo.AudioCompletionRatio)
 
-	quotaInfo := QuotaInfo{
-		InputDetails: TokenDetails{
-			TextTokens:  textInputTokens,
-			AudioTokens: audioInputTokens,
-		},
-		OutputDetails: TokenDetails{
-			TextTokens:  textOutTokens,
-			AudioTokens: audioOutTokens,
-		},
-		ModelName:  modelName,
-		UsePrice:   usePrice,
-		ModelRatio: modelRatio,
-		GroupRatio: groupRatio,
-	}
+	modelRatio := quotaInfo.ModelRatio
+	groupRatio := quotaInfo.GroupRatio
+	modelPrice := quotaInfo.ModelPrice
+	usePrice := quotaInfo.UsePrice
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
 	noteQuotaClamp(relayInfo, clamp)
@@ -302,29 +311,22 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	audioOutTokens := usage.CompletionTokenDetails.AudioTokens
 
 	tokenName := ctx.GetString("token_name")
-	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(relayInfo.OriginModelName))
-	audioRatio := decimal.NewFromFloat(ratio_setting.GetAudioRatio(relayInfo.OriginModelName))
-	audioCompletionRatio := decimal.NewFromFloat(ratio_setting.GetAudioCompletionRatio(relayInfo.OriginModelName))
 
-	modelRatio := relayInfo.PriceData.ModelRatio
-	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
-	modelPrice := relayInfo.PriceData.ModelPrice
-	usePrice := relayInfo.PriceData.UsePrice
+	quotaInfo := audioQuotaInfo(relayInfo, relayInfo.OriginModelName, TokenDetails{
+		TextTokens:  textInputTokens,
+		AudioTokens: audioInputTokens,
+	}, TokenDetails{
+		TextTokens:  textOutTokens,
+		AudioTokens: audioOutTokens,
+	})
+	completionRatio := decimal.NewFromFloat(quotaInfo.CompletionRatio)
+	audioRatio := decimal.NewFromFloat(quotaInfo.AudioRatio)
+	audioCompletionRatio := decimal.NewFromFloat(quotaInfo.AudioCompletionRatio)
 
-	quotaInfo := QuotaInfo{
-		InputDetails: TokenDetails{
-			TextTokens:  textInputTokens,
-			AudioTokens: audioInputTokens,
-		},
-		OutputDetails: TokenDetails{
-			TextTokens:  textOutTokens,
-			AudioTokens: audioOutTokens,
-		},
-		ModelName:  relayInfo.OriginModelName,
-		UsePrice:   usePrice,
-		ModelRatio: modelRatio,
-		GroupRatio: groupRatio,
-	}
+	modelRatio := quotaInfo.ModelRatio
+	groupRatio := quotaInfo.GroupRatio
+	modelPrice := quotaInfo.ModelPrice
+	usePrice := quotaInfo.UsePrice
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
 	noteQuotaClamp(relayInfo, clamp)

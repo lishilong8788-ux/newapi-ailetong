@@ -19,7 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { CHANNEL_STATUS } from '@/features/channels/constants'
 import { getModelCategory, parseModelsList } from '@/features/channels/lib'
 import type { Channel } from '@/features/channels/types'
-import type { PricingModel } from '@/features/pricing/types'
+import type { Model } from '@/features/models/types'
+import type { PricingModel, PricingVendor } from '@/features/pricing/types'
 
 import type {
   CatalogItem,
@@ -102,25 +103,46 @@ const STATUS_WEIGHT: Record<CatalogStatus, number> = {
  */
 export function buildCatalog(
   pricingModels: readonly PricingModel[],
-  channels: readonly Channel[]
+  channels: readonly Channel[],
+  modelRows: readonly Model[] = [],
+  vendors: readonly PricingVendor[] = []
 ): CatalogItem[] {
+  const vendorById = new Map(vendors.map((vendor) => [vendor.id, vendor]))
   const tallies = tallyChannelsByModel(channels)
   const pricingByName = new Map(pricingModels.map((m) => [m.model_name, m]))
-  const names = new Set([...pricingByName.keys(), ...tallies.keys()])
+  const modelByName = new Map(modelRows.map((row) => [row.model_name, row]))
+  // Metadata rows join in as a third source of names, not just as decoration on
+  // the other two: a model whose row exists but is switched off appears in
+  // neither the pricing catalog nor any channel list, and leaving it out would
+  // hide the row an operator has to re-enable.
+  const names = new Set([
+    ...pricingByName.keys(),
+    ...tallies.keys(),
+    ...modelByName.keys(),
+  ])
 
   const items = [...names].map((modelName) => {
     const pricing = pricingByName.get(modelName)
     const tally = tallies.get(modelName)
+    const modelRow = modelByName.get(modelName)
+    // A disabled metadata row is absent from `/api/pricing`, so its vendor has to
+    // come off the row itself or the model would be filed under a keyword guess
+    // while the operator can plainly see which vendor they assigned it to.
+    const rowVendor = modelRow?.vendor_id
+      ? vendorById.get(modelRow.vendor_id)
+      : undefined
 
     return {
       modelName,
       status: resolveCatalogStatus(pricing, tally),
       pricing,
+      model: modelRow,
       // Vendor first, keyword category second. A model with no metadata row has
       // no vendor at all, and dropping it into one bucket labelled "Other" would
       // collapse most of a fresh install into a single unusable group.
-      vendorName: pricing?.vendor_name || getModelCategory(modelName),
-      vendorIcon: pricing?.vendor_icon,
+      vendorName:
+        pricing?.vendor_name || rowVendor?.name || getModelCategory(modelName),
+      vendorIcon: pricing?.vendor_icon || rowVendor?.icon,
       channelCount: tally?.total ?? 0,
       enabledChannelCount: tally?.enabled ?? 0,
     } satisfies CatalogItem

@@ -63,7 +63,6 @@ import {
 
 type CostSettingsDefaults = Pick<
   CostSettingsFormValues,
-  | 'cost_setting.enabled'
   | 'cost_setting.guard_enabled'
   | 'cost_setting.warn_rate'
   | 'cost_setting.alert_rate'
@@ -138,33 +137,9 @@ export function CostSettingsSection(props: CostSettingsSectionProps) {
           <SettingsPageFormActions onSave={handleSubmit} isSaving={isBusy} />
           <FormDirtyIndicator isDirty={isDirty} />
 
-          {/* The everyday surface is exactly one switch. Everything else
-            (guard thresholds, windows, cooldowns) belongs to the L3/L4
-            automation phase and lives behind the advanced fold until then. */}
-          <FormField
-            control={form.control}
-            name='cost_setting.enabled'
-            render={({ field }) => (
-              <SettingsSwitchItem>
-                <SettingsSwitchContent>
-                  <FormLabel>{t('Enable cost accounting')}</FormLabel>
-                  <FormDescription>
-                    {t(
-                      'Records the upstream cost of every request and feeds the cost analytics page. Does not change any pricing or routing on its own.'
-                    )}
-                  </FormDescription>
-                </SettingsSwitchContent>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    disabled={isBusy}
-                  />
-                </FormControl>
-              </SettingsSwitchItem>
-            )}
-          />
-
+          {/* Accounting itself has no switch — it only writes numbers. The one
+            switch here is the guard, which changes channel priority and can
+            disable a channel, so it stays opt-in. */}
           <FormField
             control={form.control}
             name='cost_setting.guard_enabled'

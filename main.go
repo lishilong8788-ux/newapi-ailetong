@@ -100,6 +100,14 @@ func main() {
 		}()
 
 		go model.SyncChannelCache(common.SyncFrequency)
+	} else {
+		// InitChannelCache, which also refreshes the published line codes, only runs
+		// above when the cache is on. Line pinning must still work without it, so
+		// load the codes here; channel writes refresh them from their own handlers.
+		model.RefreshKnownLineCodes()
+		// Same reasoning for the price rank table: the database selection path ranks
+		// from it, so routing by price cannot depend on the cache being on.
+		model.RefreshChannelPriceRanks()
 	}
 
 	// Warm pricing after channel cache initialization so Advanced Custom

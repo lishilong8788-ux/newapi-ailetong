@@ -4,6 +4,9 @@
 .history
 upload
 *.exe
+# 编辑器/构建留下的备份产物，例如 new-api.route.exe~ —— 末尾的 ~ 让它匹配不上 *.exe，
+# 曾经差一步被 git add -A 当成 144MB 的源码提进仓库。
+*.exe~
 *.db
 *.db.bak-*
 build

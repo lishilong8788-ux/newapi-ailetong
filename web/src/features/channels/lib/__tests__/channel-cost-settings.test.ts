@@ -91,6 +91,33 @@ describe('channel cost settings form boundary', () => {
     ).not.toHaveProperty('cost')
   })
 
+  test('a 0 channel markup is stored once a model is priced', () => {
+    // Selling at cost. Without `default_markup` the backend finds no markup,
+    // ResolveSellPrice reports not-configured, and the channel silently falls
+    // back to legacy modelRatio × group_ratio billing — so the operator asks to
+    // break even and gets the old price instead.
+    expect(
+      savedSettings({
+        cost_markup_percent: 0,
+        cost_models: [{ model: 'gpt-5', input: 1, output: 2 }],
+      }).cost
+    ).toEqual({
+      default_markup: 0,
+      models: { 'gpt-5': { input: 1, output: 2 } },
+    })
+  })
+
+  test('a 0 channel markup round-trips back into the form', () => {
+    const defaults = transformChannelToFormDefaults(
+      channelWithSettings({
+        cost: { default_markup: 0, models: { 'gpt-5': { input: 1 } } },
+      })
+    )
+
+    expect(defaults.cost_markup_percent).toBe(0)
+    expect(defaults.cost_json).toBe('')
+  })
+
   test('raw JSON is submitted verbatim in place of the table', () => {
     expect(
       savedSettings({
@@ -147,16 +174,89 @@ describe('channel cost settings form boundary', () => {
     expect(defaults.cost_models).toHaveLength(1)
   })
 
-  test('a model priced per cache kind stays in the raw JSON box', () => {
+  test('a cached-read buy price round-trips through the table', () => {
     const defaults = transformChannelToFormDefaults(
       channelWithSettings({
         cost: { models: { 'gpt-5': { input: 1, cache_read: 0.1 } } },
       })
     )
 
+    expect(defaults.cost_json).toBe('')
+    expect(defaults.cost_models).toEqual([
+      {
+        model: 'gpt-5',
+        input: 1,
+        output: undefined,
+        cache_read: 0.1,
+        markup_percent: undefined,
+      },
+    ])
+    expect(
+      savedSettings({
+        cost_markup_percent: 20,
+        cost_models: defaults.cost_models,
+      }).cost
+    ).toEqual({
+      default_markup: 0.2,
+      models: { 'gpt-5': { input: 1, cache_read: 0.1 } },
+    })
+  })
+
+  test('every kind ModelCostPrice defines round-trips through the table', () => {
+    // Was the opposite assertion: cache write used to stay in the JSON box
+    // because SellPriceToRatios emitted model/completion/cache only, so a price
+    // typed here would never be charged. It emits all nine ratios now, so the
+    // table owns the kind and the JSON box must stay empty — a model landing in
+    // the JSON box reads to the operator as "not editable here".
+    const defaults = transformChannelToFormDefaults(
+      channelWithSettings({
+        cost: {
+          models: {
+            'gpt-5': {
+              input: 1,
+              cache_write_5m: 0.5,
+              cache_write_1h: 0.8,
+              audio_in: 40,
+              audio_out: 80,
+              image_in: 2.5,
+              image_out: 10,
+              reasoning: 12,
+              per_call: 0.04,
+            },
+          },
+        },
+      })
+    )
+
+    expect(defaults.cost_json).toBe('')
+    const row = defaults.cost_models?.[0]
+    expect(row).toMatchObject({
+      model: 'gpt-5',
+      input: 1,
+      cache_write_5m: 0.5,
+      cache_write_1h: 0.8,
+      audio_in: 40,
+      audio_out: 80,
+      image_in: 2.5,
+      image_out: 10,
+      reasoning: 12,
+      per_call: 0.04,
+    })
+  })
+
+  test('a key this build does not know keeps the raw JSON box', () => {
+    // The escape hatch still has a job: a cost object written by a newer build
+    // (per_second is on the pricing side but not yet on the cost side) must not
+    // be flattened into fields that would drop it on the next save.
+    const defaults = transformChannelToFormDefaults(
+      channelWithSettings({
+        cost: { models: { 'gpt-5': { input: 1, per_second: 0.02 } } },
+      })
+    )
+
     expect(defaults.cost_json).not.toBe('')
     expect(JSON.parse(defaults.cost_json as string)).toEqual({
-      models: { 'gpt-5': { input: 1, cache_read: 0.1 } },
+      models: { 'gpt-5': { input: 1, per_second: 0.02 } },
     })
   })
 })

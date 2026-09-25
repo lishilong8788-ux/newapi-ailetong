@@ -32,6 +32,13 @@ import { DEFAULT_WINDOW_DAYS } from './constants'
  */
 export const costAnalyticsSearchSchema = z.object({
   days: z.number().optional().catch(DEFAULT_WINDOW_DAYS),
+  /**
+   * Explicit window in unix seconds. Set together by the calendar; when both
+   * are present they win over `days`, so a hand-picked range survives a reload
+   * and can be shared as a URL. Same `.catch()` rule as every other field.
+   */
+  start: z.number().optional().catch(undefined),
+  end: z.number().optional().catch(undefined),
   tab: z.string().optional().catch('overview'),
 })
 

@@ -21,7 +21,13 @@ import (
 // rebuild is the wrong place to start writing to the channels table.
 var (
 	channel2priceSettings map[int]*dto.ChannelPriceSettings
-	channel2modelMapping  map[int]map[string]string
+	// channel2costSettings holds the buy prices and markups the sell price is
+	// derived from. Cached next to the discounts for the same reason: the price
+	// a channel publishes and the price it bills must come out of one snapshot,
+	// and neither the catalog endpoint nor the router may parse settings JSON on
+	// a request.
+	channel2costSettings map[int]*dto.ChannelCostSettings
+	channel2modelMapping map[int]map[string]string
 	// model2channelPriceRank maps a client-facing model name to a synthetic
 	// priority per channel, cheapest channel highest. Absent entry means "this
 	// model has no usable price spread", and selection falls back to the
@@ -81,6 +87,26 @@ type ChannelPrice struct {
 // model/pricing.go on purpose: the channel card and the catalog row it sits
 // under must not disagree about how a model is billed.
 const quotaTypePerRequest = 1
+
+// Comparable reports whether this price carries ordering information, i.e.
+// whether it can put one channel ahead of another.
+//
+// A fallback price cannot: it is the platform's own ratio, the same figure for
+// every channel serving the model, so ranking on it would order channels by a
+// constant. A per-call price cannot either — a USD-per-request figure and a
+// per-token ratio are different units, and sorting them into one ascending
+// sequence answers "is $0.02 per call cheaper than ratio 3", which has no
+// meaning.
+//
+// Both the router's tier builder and the catalog's "is this model ranked" card
+// ask this question, and they must answer it identically: the catalog presents
+// its row order as the order the router will use.
+func (p ChannelPrice) Comparable() bool {
+	if p.QuotaType == quotaTypePerRequest || p.PriceUnset || p.ModelRatio <= 0 {
+		return false
+	}
+	return p.Discount != nil || p.Source == dto.PriceSourceCost
+}
 
 // Values for ChannelRoute.AvailabilitySource.
 const (
@@ -268,19 +294,26 @@ func ChannelLineCode(channel *Channel) string {
 
 // resolveChannelPrice prices one model on one channel for display and ranking.
 //
-// Three outcomes, and conflating any two of them is the bug this function exists
+// Four outcomes, and conflating any two of them is the bug this function exists
 // to prevent:
 //
+//   - A sell price derived from the channel's own buy price: 进价 × (1 + 利润率).
+//     This one comes FIRST because it is what billing charges —
+//     relay/helper.applyChannelSellPrice overwrites the ratio triple with it and
+//     drops the group multiplier. Ranking it below the discount would publish one
+//     number and bill another, which is the split this whole function guards.
+//     Each channel resolves its own: four channels with four buy prices publish
+//     four sell prices, and the router prefers the cheapest, so the customer gets
+//     the lowest of them while every line keeps its own markup.
 //   - A resolved discount: the price is the VENDOR LIST price scaled by the
 //     discount, so the advertised 4.4折 is arithmetic the reader can check. All
 //     three official coefficients move together for the reason spelled out in
 //     service.ComputeListPriceQuota — keeping the platform's completion_ratio
 //     while swapping model_ratio would make the realized output discount
 //     discount × (platformCompletion / officialCompletion).
-//   - No resolved discount: the price is the PLATFORM's own ratio, flagged
-//     fallback. That is what billing actually charges today, so it is the honest
-//     number; inventing a discount for it would advertise a cut nobody
-//     configured.
+//   - Neither: the price is the PLATFORM's own ratio, flagged fallback. That is
+//     what billing actually charges then, so it is the honest number; inventing a
+//     discount for it would advertise a cut nobody configured.
 //
 // A per-call model short-circuits both: ModelPriceHelper consults
 // ratio_setting.GetModelPrice first and never looks at a ratio when it hits, so
@@ -291,8 +324,8 @@ func ChannelLineCode(channel *Channel) string {
 // group_ratio is absent from every branch. The channel tier is a property of
 // the line, not of who is asking, and the group multiplier is already shown by
 // the per-group cards next to these.
-func resolveChannelPrice(price *dto.ChannelPriceSettings, clientModel string, mapping map[string]string) ChannelPrice {
-	upstreamModel := resolveUpstreamModel(mapping, clientModel)
+func resolveChannelPrice(meta channelPriceMetadata, clientModel string) ChannelPrice {
+	upstreamModel := resolveUpstreamModel(meta.mapping, clientModel)
 	result := ChannelPrice{UpstreamModel: upstreamModel}
 
 	// Keyed on the CLIENT name, matching billing: ModelPriceHelper prices
@@ -303,13 +336,35 @@ func resolveChannelPrice(price *dto.ChannelPriceSettings, clientModel string, ma
 		// Source stays fallback and Discount stays nil even when the channel has a
 		// discount configured: nothing scaled this figure, and a discount badge over
 		// an untouched price is the exact claim this function exists to avoid.
+		//
+		// This branch also shadows the sell price, matching billing exactly:
+		// ModelPriceHelper takes the per-call path on a hit here and never calls
+		// applyChannelSellPrice, so a buy price on this model does not bill.
 		result.Source = dto.PriceSourceFallback
 		result.QuotaType = quotaTypePerRequest
 		result.ModelPrice = modelPrice
 		return result
 	}
 
-	discount, source, ok := price.ResolveDiscount(upstreamModel)
+	// Keyed on the upstream name: the operator configures what WE pay the vendor,
+	// and relay/helper.applyChannelSellPrice walks the same mapping chain before
+	// looking the buy price up.
+	if sell, sellOK := ResolveSellPrice(meta.cost, upstreamModel); sellOK {
+		if ratios, ratioOK := SellPriceToRatios(sell); ratioOK {
+			// Discount stays nil deliberately. A sell price is an absolute number;
+			// its ratio against the vendor list price is a derived figure the
+			// catalog computes for itself, and filling Discount here would badge it
+			// as a configured discount — including the ones above list price, which
+			// is a pricing fault to surface, not a deal to advertise.
+			result.Source = dto.PriceSourceCost
+			result.ModelRatio = ratios.ModelRatio
+			result.CompletionRatio = ratios.CompletionRatio
+			result.CacheRatio = ratios.CacheRatio
+			return result
+		}
+	}
+
+	discount, source, ok := meta.price.ResolveDiscount(upstreamModel)
 	result.Source = source
 
 	if ok {
@@ -346,31 +401,43 @@ func validRatio(v float64) bool {
 	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0
 }
 
-// parseChannelPriceMetadata pulls the price settings and the model mapping off
-// one channel row.
+// channelPriceMetadata is everything pricing needs off one channel row, so the
+// cache and the no-cache path agree on what "parsed" means.
+type channelPriceMetadata struct {
+	price   *dto.ChannelPriceSettings
+	cost    *dto.ChannelCostSettings
+	mapping map[string]string
+}
+
+func (m channelPriceMetadata) empty() bool {
+	return m.price == nil && m.cost == nil && m.mapping == nil
+}
+
+// parseChannelPriceMetadata pulls the price settings, the buy prices and the
+// model mapping off one channel row.
 //
 // It unmarshals `settings` directly rather than calling GetOtherSettings(),
 // which saves the row back when the JSON is malformed. A cache rebuild must stay
 // read-only against the channels table; a channel with broken JSON simply has no
 // discount, which is the same state as a channel that never configured one.
-func parseChannelPriceMetadata(channel *Channel) (*dto.ChannelPriceSettings, map[string]string) {
-	var price *dto.ChannelPriceSettings
+func parseChannelPriceMetadata(channel *Channel) channelPriceMetadata {
+	out := channelPriceMetadata{}
 	if strings.TrimSpace(channel.OtherSettings) != "" {
 		settings := dto.ChannelOtherSettings{}
 		if err := common.UnmarshalJsonStr(channel.OtherSettings, &settings); err == nil {
-			price = settings.Price
+			out.price = settings.Price
+			out.cost = settings.Cost
 		}
 	}
 
-	var mapping map[string]string
 	if raw := strings.TrimSpace(channel.GetModelMapping()); raw != "" && raw != "{}" {
 		parsed := make(map[string]string)
 		if err := common.UnmarshalJsonStr(raw, &parsed); err == nil && len(parsed) > 0 {
-			mapping = parsed
+			out.mapping = parsed
 		}
 	}
 
-	return price, mapping
+	return out
 }
 
 // buildChannelPriceRanks turns resolved sell prices into synthetic priorities,
@@ -392,16 +459,13 @@ func parseChannelPriceMetadata(channel *Channel) (*dto.ChannelPriceSettings, map
 // below every priced channel: the feature promises cheapest-first, and an unknown
 // price is not a cheap price.
 //
-// Per-call models are excluded from the comparison for a different reason: a
-// USD-per-request figure and a per-token ratio are different units, and sorting
-// them into one ascending sequence would answer "is $0.02 per call cheaper than
-// ratio 3" — a question with no meaning. Since the per-call price is keyed on the
-// model name, every channel serving that model resolves the same figure anyway,
-// so the model ends up with one tier and keeps the manual priority.
+// What counts as a comparable price is ChannelPrice.Comparable — buy-price-derived
+// sell prices included, which is the point of ranking here at all: with each
+// channel priced off its own buy price, the cheapest supplier is the cheapest row
+// and routing to it is what makes the low price reachable.
 func buildChannelPriceRanks(
 	channels []*Channel,
-	priceSettings map[int]*dto.ChannelPriceSettings,
-	modelMappings map[int]map[string]string,
+	metadata map[int]channelPriceMetadata,
 ) map[string]map[int]int64 {
 	// model -> channel -> resolved price, plus the channels left out of the
 	// comparison per model.
@@ -415,8 +479,7 @@ func buildChannelPriceRanks(
 		if channel.Status != common.ChannelStatusEnabled {
 			continue
 		}
-		price := priceSettings[channel.Id]
-		mapping := modelMappings[channel.Id]
+		meta := metadata[channel.Id]
 		for _, modelName := range strings.Split(channel.Models, ",") {
 			modelName = strings.TrimSpace(modelName)
 			if modelName == "" {
@@ -427,19 +490,8 @@ func buildChannelPriceRanks(
 				entry = &modelPrices{byChannel: make(map[int]float64)}
 				perModel[modelName] = entry
 			}
-			resolved := resolveChannelPrice(price, modelName, mapping)
-			// A per-call price is a known price in the wrong unit for this
-			// sequence, so it is held out explicitly rather than by relying on
-			// the discount test below happening to reject it today.
-			if resolved.QuotaType == quotaTypePerRequest {
-				entry.unranked = append(entry.unranked, channel.Id)
-				continue
-			}
-			// Only a real discount produces a comparable number. A fallback row
-			// is the platform price, which is the same figure for every channel
-			// serving the model and therefore carries no ordering information —
-			// treating it as a price would rank channels by a constant.
-			if resolved.Discount == nil || resolved.ModelRatio <= 0 {
+			resolved := resolveChannelPrice(meta, modelName)
+			if !resolved.Comparable() {
 				entry.unranked = append(entry.unranked, channel.Id)
 				continue
 			}
@@ -503,6 +555,41 @@ func distinctSortedPrices(byChannel map[int]float64) []float64 {
 	return distinct
 }
 
+// RefreshChannelPriceRanks rebuilds the price rank table straight from the
+// database, independent of the channel cache.
+//
+// Deliberately not gated on MemoryCacheEnabled. The ranks used to be built only
+// inside InitChannelCache, below its early return for the cache-off case, so with
+// the cache off the table stayed empty and price-first routing silently ranked
+// nothing — the switch read as enabled, requests returned 200, and traffic went
+// to whatever the manual priority said. Routing correctness must not depend on a
+// performance switch, the same reason RefreshKnownLineCodes is independent.
+//
+// Callers: startup, and InitChannelCache's cache-off path — which covers channel
+// CRUD too, since every write handler already calls InitChannelCache. When the
+// cache is on, InitChannelCache builds the ranks inline from the channels it has
+// already loaded rather than paying for a second query here.
+func RefreshChannelPriceRanks() {
+	var channels []*Channel
+	if err := DB.Find(&channels).Error; err != nil {
+		common.SysError("failed to refresh channel price ranks: " + err.Error())
+		return
+	}
+
+	metadata := make(map[int]channelPriceMetadata, len(channels))
+	for _, channel := range channels {
+		if meta := parseChannelPriceMetadata(channel); !meta.empty() {
+			metadata[channel.Id] = meta
+		}
+	}
+
+	newRanks := buildChannelPriceRanks(channels, metadata)
+
+	channelSyncLock.Lock()
+	model2channelPriceRank = newRanks
+	channelSyncLock.Unlock()
+}
+
 // channelPriceRankFor answers the synthetic priority of one channel for one
 // model, and whether this model is price-ranked at all. Caller must hold
 // channelSyncLock (read lock).
@@ -528,8 +615,7 @@ func channelPriceRankFor(modelName string, channelID int) (int64, bool) {
 type channelRouteRow struct {
 	channel *Channel
 	groups  []string
-	price   *dto.ChannelPriceSettings
-	mapping map[string]string
+	meta    channelPriceMetadata
 }
 
 // GetModelChannelRoutes lists every enabled channel that can serve modelName in
@@ -556,7 +642,7 @@ func GetModelChannelRoutes(modelName string, groups []string) []*ChannelRoute {
 			Category:  channelCategoryOf(row.channel.Type),
 			LatencyMs: row.channel.ResponseTime,
 			Groups:    row.groups,
-			Price:     resolveChannelPrice(row.price, modelName, row.mapping),
+			Price:     resolveChannelPrice(row.meta, modelName),
 			priority:  row.channel.GetPriority(),
 		})
 	}
@@ -565,12 +651,12 @@ func GetModelChannelRoutes(modelName string, groups []string) []*ChannelRoute {
 		left, right := routes[i], routes[j]
 		// Rows with no comparable ratio sink: the list doubles as the router's
 		// candidate order, and an unknown price must never be presented as the
-		// cheapest option. Per-call rows have a ratio of 0 and land here too,
-		// which costs nothing — one call resolves one model name, so every row in
-		// this list is per-call or none is, and they fall through to the manual
-		// priority the router itself uses for them.
-		leftPriced := left.Price.ModelRatio > 0 && !left.Price.PriceUnset
-		rightPriced := right.Price.ModelRatio > 0 && !right.Price.PriceUnset
+		// cheapest option. Same predicate buildChannelPriceRanks tiers on, so the
+		// order shown is the order the router walks — a fallback row whose platform
+		// ratio happens to undercut a configured sell price must not be presented
+		// as the preferred candidate when the router would reach it last.
+		leftPriced := left.Price.Comparable()
+		rightPriced := right.Price.Comparable()
 		if leftPriced != rightPriced {
 			return leftPriced
 		}
@@ -619,8 +705,11 @@ func collectChannelRouteRows(modelName string, groups []string) []*channelRouteR
 			row := &channelRouteRow{
 				channel: channel,
 				groups:  []string{group},
-				price:   channel2priceSettings[channelID],
-				mapping: channel2modelMapping[channelID],
+				meta: channelPriceMetadata{
+					price:   channel2priceSettings[channelID],
+					cost:    channel2costSettings[channelID],
+					mapping: channel2modelMapping[channelID],
+				},
 			}
 			byChannel[channelID] = row
 			ordered = append(ordered, row)
@@ -672,12 +761,10 @@ func collectChannelRouteRowsFromDB(modelName string, groups []string) []*channel
 		if !ok {
 			continue
 		}
-		price, mapping := parseChannelPriceMetadata(channel)
 		rows = append(rows, &channelRouteRow{
 			channel: channel,
 			groups:  groupsByChannel[channelID],
-			price:   price,
-			mapping: mapping,
+			meta:    parseChannelPriceMetadata(channel),
 		})
 	}
 	return rows

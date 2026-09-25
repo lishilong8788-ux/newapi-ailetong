@@ -267,13 +267,23 @@ function costSourceBadge(
 }
 
 // Same grading for the sell side. 'fallback' is not a discount of 1.0 — it
-// means no channel discount matched and the legacy modelRatio x group_ratio
-// path priced the request, so no discount figure exists to show.
+// means neither a buy-price-derived sell price nor a channel discount matched and
+// the legacy modelRatio x group_ratio path priced the request, so no discount
+// figure exists to show.
 function priceSourceBadge(
   source: string | undefined,
   t: (key: string) => string
 ): { label: string; variant: StatusVariant; incomplete: boolean } {
   switch (source) {
+    case 'cost':
+      // Priced off what we pay the vendor, not off a discount against list.
+      // Falling through to the default would label a fully-configured channel
+      // "legacy pricing" and flag it as incomplete.
+      return {
+        label: t('Buy price + markup'),
+        variant: 'success',
+        incomplete: false,
+      }
     case 'exact':
       return {
         label: t('Per-model channel discount'),

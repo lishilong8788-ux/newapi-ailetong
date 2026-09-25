@@ -33,3 +33,21 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 	// Non-admin billing fields remain visible.
 	require.Contains(t, parsed, "model_price")
 }
+
+// TestFormatUserLogsStripsChannelIdentity pins the channel identity fields to
+// admin views. channel_type is what the margin ledger reads to name the upstream
+// vendor, so leaking it would tell a customer which provider is behind the
+// gateway even though channel_name is already blanked.
+func TestFormatUserLogsStripsChannelIdentity(t *testing.T) {
+	logs := []*Log{{
+		ChannelId:   7,
+		ChannelName: "azure-eastus",
+		ChannelType: 3,
+		Other:       common.MapToJsonStr(map[string]interface{}{"model_price": 0.004}),
+	}}
+
+	formatUserLogs(logs, 0)
+
+	require.Empty(t, logs[0].ChannelName)
+	require.Zero(t, logs[0].ChannelType)
+}

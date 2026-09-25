@@ -321,8 +321,9 @@ export const channelFormSchema = z
     upstream_model_update_ignored_models: z.string().optional(),
     // Channel pricing (stored in settings JSON under cost). The operator types
     // a markup and per-model buy prices; sell price, discount and margin are
-    // derived for display and never stored. cost_json is the escape hatch for
-    // the token kinds the table does not show (cache/audio/image/per_call).
+    // derived for display and never stored. cost_json is now only an escape
+    // hatch for keys this table does not know about — every kind
+    // ModelCostPrice defines has a field here.
     cost_markup_percent: z
       .number()
       .min(0, 'Markup must be 0 or more')
@@ -334,6 +335,15 @@ export const channelFormSchema = z
           model: z.string().min(1, 'Model name is required'),
           input: z.number().min(0).optional(),
           output: z.number().min(0).optional(),
+          cache_read: z.number().min(0).optional(),
+          cache_write_5m: z.number().min(0).optional(),
+          cache_write_1h: z.number().min(0).optional(),
+          image_in: z.number().min(0).optional(),
+          image_out: z.number().min(0).optional(),
+          audio_in: z.number().min(0).optional(),
+          audio_out: z.number().min(0).optional(),
+          reasoning: z.number().min(0).optional(),
+          per_call: z.number().min(0).optional(),
           markup_percent: z
             .number()
             .min(0, 'Markup must be 0 or more')
@@ -460,6 +470,16 @@ export const channelFormSchema = z
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
+
+/**
+ * One row of the buy-price table, named so build/expand can pass rows around
+ * without restating eleven optional numbers. Derived from the schema rather
+ * than hand-written: a kind added to `cost_models` has to reach this type, or
+ * `expandCostConfigToForm` would drop it on the way back into the form.
+ */
+export type ChannelCostModelRow = NonNullable<
+  ChannelFormValues['cost_models']
+>[number]
 
 // ============================================================================
 // Default Form Values
@@ -885,32 +905,74 @@ function parseOptionalOverrideJSON(
   }
 }
 
+/**
+ * Every buy-price kind, as the pair of names it is known by: the stored key in
+ * `cost.models[model]` and the form field on a `cost_models` row.
+ *
+ * One list rather than three parallel ones because build, expand and the
+ * round-trip guard all have to agree on the same set. They drifted once
+ * already: the table knew three kinds while ModelCostPrice defined eleven, and
+ * a model priced on any of the other eight was quietly exiled to the raw JSON
+ * box.
+ */
+const COST_PRICE_KINDS = [
+  { stored: 'input', field: 'input' },
+  { stored: 'output', field: 'output' },
+  { stored: 'cache_read', field: 'cache_read' },
+  { stored: 'cache_write_5m', field: 'cache_write_5m' },
+  { stored: 'cache_write_1h', field: 'cache_write_1h' },
+  { stored: 'image_in', field: 'image_in' },
+  { stored: 'image_out', field: 'image_out' },
+  { stored: 'audio_in', field: 'audio_in' },
+  { stored: 'audio_out', field: 'audio_out' },
+  { stored: 'reasoning', field: 'reasoning' },
+  { stored: 'per_call', field: 'per_call' },
+] as const
+
 // buildCostFromStructuredFields assembles the cost object from the everyday
 // form fields. Returns null when nothing is configured so the stored `cost`
 // key is removed and the channel falls back to default tiers.
 function buildCostFromStructuredFields(
   formData: ChannelFormValues
 ): Record<string, unknown> | null {
-  const markup = formData.cost_markup_percent ?? 0
+  const rawMarkup = formData.cost_markup_percent
+  const markup =
+    rawMarkup != null && Number.isFinite(rawMarkup) && rawMarkup >= 0
+      ? rawMarkup
+      : null
   const models = (formData.cost_models ?? []).filter((row) => row.model?.trim())
 
-  const hasMarkup = markup > 0
   const hasModels = models.length > 0
-  if (!hasMarkup && !hasModels) {
+  // 0 is a configured markup ("sell at cost"), not an absent one, so the test is
+  // "is there a number" — but a bare 0 with no priced model is indistinguishable
+  // from the untouched form default, and writing `cost` for it would park an
+  // empty config on every channel anyone opened the drawer on.
+  if (!hasModels && !(markup != null && markup > 0)) {
     return null
   }
 
   const cost: Record<string, unknown> = {}
-  if (hasMarkup) {
-    // Form holds percent (30 = 30%); storage is a fraction (0.3).
+  if (markup != null) {
+    // Form holds percent (30 = 30%); storage is a fraction (0.3). 0% must reach
+    // the backend as `default_markup: 0`: without the key sellPriceMarkup finds
+    // no markup, ResolveSellPrice reports not-configured, and the whole channel
+    // silently drops back to legacy modelRatio × group_ratio billing — the
+    // operator asked to sell at cost and got the old price instead.
     cost.default_markup = markupPercentToFraction(markup)
   }
   if (hasModels) {
     const modelMap: Record<string, Record<string, number>> = {}
     for (const row of models) {
       const entry: Record<string, number> = {}
-      if (row.input != null && row.input >= 0) entry.input = row.input
-      if (row.output != null && row.output >= 0) entry.output = row.output
+      for (const kind of COST_PRICE_KINDS) {
+        const value = row[kind.field]
+        // `>= 0`, not truthiness: 0 is a legal buy price (a free model), and a
+        // falsy check would drop it, which reads to the backend as "this kind
+        // was never priced" and derives a price from the official ratio instead.
+        if (value != null && Number.isFinite(value) && value >= 0) {
+          entry[kind.stored] = value
+        }
+      }
       // 0 is a legal per-model markup ("sell this one at cost"), so the guard
       // is `>= 0`, not truthiness: a falsy check would drop it and silently
       // reprice the model at the channel markup instead.
@@ -941,7 +1003,13 @@ const STRUCTURED_COST_KEYS = new Set([
   'expr',
 ])
 
-const STRUCTURED_COST_MODEL_KEYS = new Set(['input', 'output', 'markup'])
+// Every kind ModelCostPrice defines, plus the per-model markup. The table now
+// edits all of them, so the raw JSON box is reached only by a key this build
+// does not know — a config written by a newer version, not an ordinary price.
+const STRUCTURED_COST_MODEL_KEYS = new Set<string>([
+  ...COST_PRICE_KINDS.map((kind) => kind.stored),
+  'markup',
+])
 
 // expandCostConfigToForm flattens a stored cost object into the structured
 // form fields (percent round-trip: 0.3 → 30).
@@ -959,18 +1027,24 @@ function expandCostConfigToForm(
     }
   }
   const markup =
-    typeof cost.default_markup === 'number' && cost.default_markup > 0
+    typeof cost.default_markup === 'number' && cost.default_markup >= 0
       ? markupFractionToPercent(cost.default_markup)
       : 0
-  const models = Object.entries(cost.models ?? {}).map(([model, price]) => ({
-    model,
-    input: typeof price?.input === 'number' ? price.input : undefined,
-    output: typeof price?.output === 'number' ? price.output : undefined,
-    markup_percent:
-      typeof price?.markup === 'number' && price.markup >= 0
-        ? markupFractionToPercent(price.markup)
-        : undefined,
-  }))
+  const models = Object.entries(cost.models ?? {}).map(([model, price]) => {
+    const row: ChannelCostModelRow = { model }
+    for (const kind of COST_PRICE_KINDS) {
+      const stored = (price as Record<string, unknown> | null | undefined)?.[
+        kind.stored
+      ]
+      if (typeof stored === 'number' && Number.isFinite(stored)) {
+        row[kind.field] = stored
+      }
+    }
+    if (typeof price?.markup === 'number' && price.markup >= 0) {
+      row.markup_percent = markupFractionToPercent(price.markup)
+    }
+    return row
+  })
   const usesOnlyStructuredFields =
     Object.keys(cost).every((key) => STRUCTURED_COST_KEYS.has(key)) &&
     (cost.default_markup == null || typeof cost.default_markup === 'number') &&

@@ -1,9 +1,7 @@
 package model
 
 import (
-	"errors"
 	"fmt"
-	"math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -14,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
-	"github.com/QuantumNous/new-api/setting/route_setting"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
@@ -25,14 +22,25 @@ var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
+	// Before the cache switch: line-code pinning is a routing feature, not a
+	// caching optimization, and must behave the same with the cache off.
+	RefreshKnownLineCodes()
+
 	if !common.MemoryCacheEnabled {
+		// The database selection path reads the price rank table too, so it has to
+		// be built even when there is no channel cache. Without this the table
+		// stayed empty whenever the cache was off and price-first routing became a
+		// silent no-op.
+		RefreshChannelPriceRanks()
 		InvalidatePricingCache()
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
 	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
 	newChannel2priceSettings := make(map[int]*dto.ChannelPriceSettings)
+	newChannel2costSettings := make(map[int]*dto.ChannelCostSettings)
 	newChannel2modelMapping := make(map[int]map[string]string)
+	newChannelPriceMetadata := make(map[int]channelPriceMetadata)
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
@@ -45,12 +53,16 @@ func InitChannelCache() {
 		// Sell-price metadata for every channel, not only type 58: the public
 		// per-channel pricing endpoint and the price-ranked router both need it
 		// per request, and neither may parse `settings` JSON on the hot path.
-		if price, mapping := parseChannelPriceMetadata(channel); price != nil || mapping != nil {
-			if price != nil {
-				newChannel2priceSettings[channel.Id] = price
+		if meta := parseChannelPriceMetadata(channel); !meta.empty() {
+			newChannelPriceMetadata[channel.Id] = meta
+			if meta.price != nil {
+				newChannel2priceSettings[channel.Id] = meta.price
 			}
-			if mapping != nil {
-				newChannel2modelMapping[channel.Id] = mapping
+			if meta.cost != nil {
+				newChannel2costSettings[channel.Id] = meta.cost
+			}
+			if meta.mapping != nil {
+				newChannel2modelMapping[channel.Id] = meta.mapping
 			}
 		}
 	}
@@ -94,20 +106,7 @@ func InitChannelCache() {
 	// The switch is a runtime option: building the ranks lazily would leave the
 	// first requests after it is flipped with an empty map, which collapses every
 	// priority tier into one and turns failover into a single weighted pool.
-	newModel2channelPriceRank := buildChannelPriceRanks(channels, newChannel2priceSettings, newChannel2modelMapping)
-
-	// Only enabled channels publish a code: a disabled channel's line must not
-	// make `<model>/<code>` parse as a pin, or the request resolves to a line that
-	// cannot serve it and fails instead of falling back to the bare model.
-	newKnownLineCodes := make(map[string]bool)
-	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
-			continue
-		}
-		if code := channel.GetLineCode(); code != "" {
-			newKnownLineCodes[code] = true
-		}
-	}
+	newModel2channelPriceRank := buildChannelPriceRanks(channels, newChannelPriceMetadata)
 
 	channelSyncLock.Lock()
 	group2model2channels = newGroup2model2channels
@@ -128,9 +127,9 @@ func InitChannelCache() {
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channel2priceSettings = newChannel2priceSettings
+	channel2costSettings = newChannel2costSettings
 	channel2modelMapping = newChannel2modelMapping
 	model2channelPriceRank = newModel2channelPriceRank
-	knownLineCodes = newKnownLineCodes
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -159,7 +158,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 func GetRandomSatisfiedChannelOnLine(group string, model string, retry int, requestPath string, lineCode string) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannel(group, model, retry, requestPath, lineCode)
 	}
 
 	channelSyncLock.RLock()
@@ -193,100 +192,30 @@ func GetRandomSatisfiedChannelOnLine(group string, model string, retry int, requ
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
 	}
 
-	// Which number tiers the candidates. Resolved once, before the loops, so the
-	// switch-off path executes exactly the comparisons it always did.
-	priorityOf := func(channel *Channel) int64 { return channel.GetPriority() }
-	if route_setting.AutoRouteEnabled() {
-		// Only models with a real price spread are ranked (see
-		// buildChannelPriceRanks); everything else keeps the manual priority, so
-		// an unconfigured install behaves identically with the switch on.
-		if _, ranked := model2channelPriceRank[model]; ranked {
-			priorityOf = func(channel *Channel) int64 {
-				rank, ok := channelPriceRankFor(model, channel.Id)
-				if !ok {
-					return channel.GetPriority()
-				}
-				return rank
-			}
-		} else if normalizedModel := ratio_setting.FormatMatchingModelName(model); normalizedModel != model {
-			if _, ranked := model2channelPriceRank[normalizedModel]; ranked {
-				priorityOf = func(channel *Channel) int64 {
-					rank, ok := channelPriceRankFor(normalizedModel, channel.Id)
-					if !ok {
-						return channel.GetPriority()
-					}
-					return rank
-				}
-			}
-		}
-	}
-
-	uniquePriorities := make(map[int]bool)
+	// Ranking lives in channel_route_strategy.go, shared with the database path in
+	// GetChannel. Candidate assembly is all that remains path-specific.
+	strategy := resolveStrategy(model)
+	candidates := make([]Candidate, 0, len(channels))
 	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			uniquePriorities[int(priorityOf(channel))] = true
-		} else {
+		channel, ok := channelsIDM[channelId]
+		if !ok {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
-	}
-	var sortedUniquePriorities []int
-	for priority := range uniquePriorities {
-		sortedUniquePriorities = append(sortedUniquePriorities, priority)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
-
-	if retry >= len(uniquePriorities) {
-		retry = len(uniquePriorities) - 1
-	}
-	targetPriority := int64(sortedUniquePriorities[retry])
-
-	// get the priority for the given retry number
-	var sumWeight = 0
-	var targetChannels []*Channel
-	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			if priorityOf(channel) == targetPriority {
-				sumWeight += channel.GetWeight()
-				targetChannels = append(targetChannels, channel)
-			}
-		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
-		}
+		candidates = append(candidates, Candidate{
+			ChannelID: channel.Id,
+			Priority:  channel.GetPriority(),
+			Weight:    channel.GetWeight(),
+		})
 	}
 
-	if len(targetChannels) == 0 {
-		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
+	selectedID, err := selectCandidate(candidates, strategy, retry)
+	if err != nil {
+		return nil, err
 	}
-
-	// smoothing factor and adjustment
-	smoothingFactor := 1
-	smoothingAdjustment := 0
-
-	if sumWeight == 0 {
-		// when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
-		// each channel's effective weight = 100
-		sumWeight = len(targetChannels) * 100
-		smoothingAdjustment = 100
-	} else if sumWeight/len(targetChannels) < 10 {
-		// when the average weight is less than 10, set smoothing factor to 100
-		smoothingFactor = 100
+	if channel, ok := channelsIDM[selectedID]; ok {
+		return channel, nil
 	}
-
-	// Calculate the total weight of all channels up to endIdx
-	totalWeight := sumWeight * smoothingFactor
-
-	// Generate a random value in the range [0, totalWeight)
-	randomWeight := rand.Intn(totalWeight)
-
-	// Find a channel based on its weight
-	for _, channel := range targetChannels {
-		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
-		if randomWeight < 0 {
-			return channel, nil
-		}
-	}
-	// return null if no channel is not found
-	return nil, errors.New("channel not found")
+	return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", selectedID)
 }
 
 // filterChannelsByRequestPathAndModel restricts candidates by request path and
@@ -407,17 +336,24 @@ func CacheUpdateChannel(channel *Channel) {
 	if channel2priceSettings == nil {
 		channel2priceSettings = make(map[int]*dto.ChannelPriceSettings)
 	}
+	if channel2costSettings == nil {
+		channel2costSettings = make(map[int]*dto.ChannelCostSettings)
+	}
 	if channel2modelMapping == nil {
 		channel2modelMapping = make(map[int]map[string]string)
 	}
 	delete(channel2priceSettings, channel.Id)
+	delete(channel2costSettings, channel.Id)
 	delete(channel2modelMapping, channel.Id)
-	if price, mapping := parseChannelPriceMetadata(channel); price != nil || mapping != nil {
-		if price != nil {
-			channel2priceSettings[channel.Id] = price
+	if meta := parseChannelPriceMetadata(channel); !meta.empty() {
+		if meta.price != nil {
+			channel2priceSettings[channel.Id] = meta.price
 		}
-		if mapping != nil {
-			channel2modelMapping[channel.Id] = mapping
+		if meta.cost != nil {
+			channel2costSettings[channel.Id] = meta.cost
+		}
+		if meta.mapping != nil {
+			channel2modelMapping[channel.Id] = meta.mapping
 		}
 	}
 	// Price ranks are cross-channel by construction — one channel's new discount

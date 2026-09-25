@@ -143,7 +143,10 @@ func DeleteCostDailyRange(startTs, endTs int64) error {
 func GetLogsForCostRecalc(startTs, endTs int64, offset, limit int) ([]*Log, int64, error) {
 	var logs []*Log
 	err := LOG_DB.Model(&Log{}).
-		Where("created_at >= ? AND created_at <= ? AND type = ? AND channel > 0",
+		// channel_id, not channel: the column is named after the struct field, and
+		// `channel > 0` is not a filter that matches nothing — it is a SQL error
+		// ("no such column"), which failed every RecalculateCostDaily run.
+		Where("created_at >= ? AND created_at <= ? AND type = ? AND channel_id > 0",
 			startTs, endTs, LogTypeConsume).
 		Order("id ASC").
 		Offset(offset).Limit(limit).

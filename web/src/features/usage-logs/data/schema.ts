@@ -39,6 +39,22 @@ export const usageLogSchema = z.object({
   is_stream: z.boolean().default(false),
   channel: z.number().default(0),
   channel_name: z.string().nullish().default(''),
+  // Upstream vendor of the serving channel, resolved server-side from the
+  // channel's type. Admin-only: blanked to 0 for non-admin log views alongside
+  // channel_name. 0 also means "channel deleted since", so treat it as unknown
+  // rather than as a real vendor id.
+  channel_type: z.number().default(0),
+  // Margin columns, denormalized server-side so the ledger can sort and filter
+  // by profit in SQL. cost_source is what separates an unpriced row from a free
+  // one: cost_quota 0 with an empty or 'unknown' source means the cost is not
+  // known, and reading that 0 as a cost reports 100% margin. margin_quota is
+  // always quota - cost_quota for priced rows, so the three columns sum
+  // consistently. All admin-only — blanked for non-admin log views.
+  cost_quota: z.number().default(0),
+  cost_source: z.string().default(''),
+  margin_quota: z.number().default(0),
+  line_code: z.string().default(''),
+  traffic_source: z.string().default(''),
   token_id: z.number().default(0),
   group: z.string().default(''),
   ip: z.string().default(''),

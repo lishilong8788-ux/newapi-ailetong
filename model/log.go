@@ -2,14 +2,15 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 
@@ -72,12 +73,73 @@ type Log struct {
 	IsStream          bool   `json:"is_stream"`
 	ChannelId         int    `json:"channel" gorm:"index"`
 	ChannelName       string `json:"channel_name" gorm:"->"`
+	ChannelType       int    `json:"channel_type" gorm:"-"`
 	TokenId           int    `json:"token_id" gorm:"default:0;index"`
 	Group             string `json:"group" gorm:"index"`
 	Ip                string `json:"ip" gorm:"index;default:''"`
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+
+	// Margin columns. Denormalized out of Other.admin_info.cost at write time so
+	// the database can order and filter by profit: the ledger's core questions
+	// ("today's biggest losses", "which requests are unpriced") cannot be
+	// answered by a JSON text column at all.
+	//
+	// CostSource is what distinguishes an unpriced row from a genuinely free
+	// one. A bare CostQuota of 0 is ambiguous, and reading it as a cost reports
+	// 100% margin on a request nobody priced — so every consumer must gate on
+	// the source, not on the number. Kept as a string rather than a nullable int
+	// because nullable integer defaults behave inconsistently across SQLite,
+	// MySQL and PostgreSQL under AutoMigrate.
+	CostQuota   int    `json:"cost_quota" gorm:"default:0;index:idx_logs_created_cost,priority:2"`
+	CostSource  string `json:"cost_source" gorm:"type:varchar(16);default:'';index:idx_logs_created_cost,priority:1"`
+	MarginQuota int    `json:"margin_quota" gorm:"default:0"`
+	// Where the request came from: '' / 'api' is billable customer traffic,
+	// everything in OpsTrafficSources is our own. Stored so margin reports can
+	// exclude ops traffic in SQL — a channel test costs real upstream money and
+	// earns nothing, so counting it reports a loss that never happened. The
+	// daily rollup already excludes it (parseLogForCostRecalc); this keeps the
+	// per-request ledger consistent with it.
+	TrafficSource string `json:"traffic_source" gorm:"type:varchar(16);default:'';index"`
+	// Public route code of the serving channel, '' when it has none. Stored
+	// alongside the channel id because a channel can be deleted and its id
+	// reused, while the line code is the stable name of the route that earned
+	// this margin.
+	LineCode string `json:"line_code" gorm:"type:varchar(64);default:'';index"`
+}
+
+// Traffic sources that are our own doing rather than customer demand. Each costs
+// real upstream money and earns nothing, so margin reporting must exclude them.
+const (
+	TrafficSourcePlayground  = "playground"
+	TrafficSourceChannelTest = "channel_test"
+	// TrafficSourceCopilot is the ops copilot asking its own model questions.
+	TrafficSourceCopilot = "copilot"
+)
+
+// OpsTrafficSources is the single source of truth for that exclusion.
+//
+// It exists because the same list has to hold in two unrelated places — the SQL
+// ledger filter (applyLedgerScope) and the daily rollup's per-row check
+// (parseLogForCostRecalc) — and when they were two hand-written literals, adding
+// the copilot updated neither. The failure is silent and self-defeating: the
+// copilot's own token burn lands in the customer-traffic denominator of the very
+// margin numbers it reports.
+var OpsTrafficSources = []string{
+	TrafficSourcePlayground,
+	TrafficSourceChannelTest,
+	TrafficSourceCopilot,
+}
+
+// IsOpsTrafficSource reports whether a log's traffic_source is our own traffic.
+func IsOpsTrafficSource(source string) bool {
+	for _, ops := range OpsTrafficSources {
+		if source == ops {
+			return true
+		}
+	}
+	return false
 }
 
 // don't use iota, avoid change log type value
@@ -98,6 +160,124 @@ func ensureLogRequestId(log *Log) {
 	}
 }
 
+// costSourceUnknown mirrors service.CostSourceUnknown. Duplicated rather than
+// imported because service imports model, and the column write has to happen
+// here, at the one point every billing path funnels through.
+const costSourceUnknown = "unknown"
+
+// maxLogCostSourceLen guards the varchar(16) column: a source string is written
+// by our own billing code, but a truncated insert fails the whole log write on
+// strict-mode MySQL, and losing the log is worse than losing the grade.
+const maxLogCostSourceLen = 16
+
+// otherNumberField reads a numeric field out of an `other` map.
+//
+// Accepts both int and float64: the map is built in-process by the billing
+// paths (ints), but the same shape also arrives parsed from stored JSON during
+// backfill (float64), and a type switch that handled only one would silently
+// zero every value on the other path.
+func otherNumberField(source map[string]interface{}, key string) (int, bool) {
+	raw, ok := source[key]
+	if !ok {
+		return 0, false
+	}
+	switch v := raw.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0, false
+		}
+		return int(v), true
+	case json.Number:
+		parsed, err := v.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(parsed), true
+	default:
+		return 0, false
+	}
+}
+
+// applyMarginColumns denormalizes the cost/price snapshot in `other` onto the
+// log's own columns, so profit is sortable and filterable in SQL.
+//
+// The snapshot stays in `other` as well: it carries breakdown fields (reported
+// cost, markup, list price) the columns deliberately do not, and logs written
+// before these columns existed still have to render.
+//
+// Two invariants the columns must hold that the snapshot does not:
+//
+//  1. cost_quota is on the same scale as this row's own quota. Task differential
+//     settlement writes a snapshot describing the task TOTAL while the row's
+//     quota is only the delta, and the submission row already carried the full
+//     cost — copying both would count one task's cost twice. Those snapshots are
+//     marked row_scoped=false and leave the columns unpriced; the cost stays
+//     readable in `other` for the detail view.
+//
+//  2. margin_quota == quota - cost_quota, exactly. Derived here rather than
+//     copied from the snapshot (whose margin is computed against the revenue it
+//     was given) so that SUM(margin) == SUM(quota) - SUM(cost) holds for every
+//     filter. A summary where the three totals disagree is not a summary.
+func applyMarginColumns(log *Log, other map[string]interface{}) {
+	if log == nil || other == nil {
+		return
+	}
+
+	// Ops traffic is tagged on every row, priced or not: the filter has to be
+	// able to exclude a channel test before it looks at cost at all.
+	if source, ok := other["traffic_source"].(string); ok && len(source) <= 16 {
+		log.TrafficSource = source
+	}
+
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		return
+	}
+
+	if price, ok := adminInfo["price"].(map[string]interface{}); ok && price != nil {
+		if lineCode, ok := price["line_code"].(string); ok && len(lineCode) <= 64 {
+			log.LineCode = lineCode
+		}
+	}
+
+	cost, ok := adminInfo["cost"].(map[string]interface{})
+	if !ok || cost == nil {
+		return
+	}
+
+	// Absent means row-scoped: every billing path except task settlement writes
+	// a snapshot for this row's own charge, and defaulting to true keeps them
+	// from having to opt in one by one.
+	if rowScoped, ok := cost["row_scoped"].(bool); ok && !rowScoped {
+		return
+	}
+
+	source, _ := cost["cost_source"].(string)
+	if len(source) > maxLogCostSourceLen {
+		source = source[:maxLogCostSourceLen]
+	}
+	log.CostSource = source
+	// An unpriced row keeps cost and margin at 0 and lets the source say so.
+	// Storing the snapshot's 0 as if it were a cost is exactly the reading that
+	// reports 100% margin on a request nobody priced.
+	if source == "" || source == costSourceUnknown {
+		return
+	}
+	quota, ok := otherNumberField(cost, "cost_quota")
+	if !ok {
+		// A priced source with no number is a snapshot we cannot honour. Drop the
+		// grade too, so the row reads as unpriced rather than as costing zero.
+		log.CostSource = ""
+		return
+	}
+	log.CostQuota = quota
+	log.MarginQuota = log.Quota - quota
+}
+
 func createLog(log *Log) error {
 	ensureLogRequestId(log)
 	return LOG_DB.Create(log).Error
@@ -116,6 +296,16 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
+		// Which vendor served the request is upstream topology: same reason the
+		// channel name is hidden from its own customer.
+		logs[i].ChannelType = 0
+		// Margin columns are the purchase price and the markup taken on it — the
+		// one thing a customer must never read off their own usage. They live in
+		// real columns now, so blanking admin_info is no longer enough.
+		logs[i].CostQuota = 0
+		logs[i].CostSource = ""
+		logs[i].MarginQuota = 0
+		logs[i].LineCode = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
@@ -383,6 +573,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
+	applyMarginColumns(log, params.Other)
 	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
@@ -442,6 +633,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		Group:     params.Group,
 		Other:     common.MapToJsonStr(params.Other),
 	}
+	applyMarginColumns(log, params.Other)
 	err := createLog(log)
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
@@ -516,45 +708,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 		assignDisplayLogIds(logs, startIdx)
 	}
 
-	channelIds := types.NewSet[int]()
-	for _, log := range logs {
-		if log.ChannelId != 0 {
-			channelIds.Add(log.ChannelId)
-		}
-	}
-
-	if channelIds.Len() > 0 {
-		var channels []struct {
-			Id   int    `gorm:"column:id"`
-			Name string `gorm:"column:name"`
-		}
-		if common.MemoryCacheEnabled {
-			// Cache get channel
-			for _, channelId := range channelIds.Items() {
-				if cacheChannel, err := CacheGetChannel(channelId); err == nil {
-					channels = append(channels, struct {
-						Id   int    `gorm:"column:id"`
-						Name string `gorm:"column:name"`
-					}{
-						Id:   channelId,
-						Name: cacheChannel.Name,
-					})
-				}
-			}
-		} else {
-			// Bulk query channels from DB
-			if err = DB.Table("channels").Select("id, name").Where("id IN ?", channelIds.Items()).Find(&channels).Error; err != nil {
-				return logs, total, err
-			}
-		}
-		channelMap := make(map[int]string, len(channels))
-		for _, channel := range channels {
-			channelMap[channel.Id] = channel.Name
-		}
-		for i := range logs {
-			logs[i].ChannelName = channelMap[logs[i].ChannelId]
-		}
-	}
+	attachLogChannelIdentity(logs)
 
 	return logs, total, err
 }

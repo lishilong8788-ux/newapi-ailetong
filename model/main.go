@@ -302,6 +302,8 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&CopilotSession{},
+		&CopilotMessage{},
 	)
 	if err != nil {
 		return err
@@ -380,6 +382,8 @@ func migrateDBFast() error {
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
+		{&CopilotSession{}, "CopilotSession"},
+		{&CopilotMessage{}, "CopilotMessage"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -443,7 +447,33 @@ func migrateClickHouseLogDB() error {
 	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
 		return err
 	}
+	if err := addClickHouseLogColumns(); err != nil {
+		return err
+	}
 	return syncClickHouseLogTTL(ttlDays)
+}
+
+// addClickHouseLogColumns brings an existing logs table up to the current
+// schema. CREATE TABLE IF NOT EXISTS is a no-op on a table that already exists,
+// so columns added after a deployment's first start would otherwise never
+// appear — every margin query against that table would fail with an unknown
+// identifier.
+func addClickHouseLogColumns() error {
+	// IF NOT EXISTS makes each statement idempotent, which is what lets this run
+	// unconditionally on every start instead of tracking a schema version.
+	columns := []string{
+		"cost_quota Int32 DEFAULT 0",
+		"cost_source String DEFAULT ''",
+		"margin_quota Int32 DEFAULT 0",
+		"line_code String DEFAULT ''",
+		"traffic_source String DEFAULT ''",
+	}
+	for _, column := range columns {
+		if err := LOG_DB.Exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS " + column).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func clickHouseLogTTLDays() int {
@@ -491,7 +521,12 @@ CREATE TABLE IF NOT EXISTS logs (
 	ip String DEFAULT '',
 	request_id String DEFAULT '',
 	upstream_request_id String DEFAULT '',
-	other String DEFAULT ''
+	other String DEFAULT '',
+	cost_quota Int32 DEFAULT 0,
+	cost_source String DEFAULT '',
+	margin_quota Int32 DEFAULT 0,
+	line_code String DEFAULT '',
+	traffic_source String DEFAULT ''
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(toDateTime(created_at))

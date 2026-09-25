@@ -21,6 +21,11 @@ import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { ClaudeSettingsCard } from './claude-settings-card'
+import {
+  COPILOT_SETTINGS_DEFAULTS,
+  type CopilotSettingsOptions,
+} from './copilot-settings-form'
+import { CopilotSettingsSection } from './copilot-settings-section'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
@@ -36,6 +41,13 @@ function formatJsonForEditor(value: string, fallback: string) {
     return fallback
   }
 }
+
+/**
+ * `copilot_setting.*` is not part of the shared `ModelSettings` contract, so the
+ * models page carries it alongside: the copilot is configured here because its
+ * model and channel are model/routing decisions, not billing or content ones.
+ */
+export type ModelsPageSettings = ModelSettings & CopilotSettingsOptions
 
 const MODELS_SECTIONS = [
   {
@@ -103,6 +115,28 @@ const MODELS_SECTIONS = [
             settings['monitor_setting.channel_test_concurrency'],
           'monitor_setting.channel_test_mode':
             settings['monitor_setting.channel_test_mode'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'copilot',
+    titleKey: 'Ops Copilot',
+    build: (settings: ModelsPageSettings) => (
+      <CopilotSettingsSection
+        defaultValues={{
+          'copilot_setting.enabled':
+            settings['copilot_setting.enabled'] ??
+            COPILOT_SETTINGS_DEFAULTS['copilot_setting.enabled'],
+          'copilot_setting.model':
+            settings['copilot_setting.model'] ??
+            COPILOT_SETTINGS_DEFAULTS['copilot_setting.model'],
+          'copilot_setting.channel_id':
+            settings['copilot_setting.channel_id'] ??
+            COPILOT_SETTINGS_DEFAULTS['copilot_setting.channel_id'],
+          'copilot_setting.max_rounds':
+            settings['copilot_setting.max_rounds'] ??
+            COPILOT_SETTINGS_DEFAULTS['copilot_setting.max_rounds'],
         }}
       />
     ),
@@ -201,7 +235,10 @@ const MODELS_SECTIONS = [
 
 export type ModelSectionId = (typeof MODELS_SECTIONS)[number]['id']
 
-const modelsRegistry = createSectionRegistry<ModelSectionId, ModelSettings>({
+const modelsRegistry = createSectionRegistry<
+  ModelSectionId,
+  ModelsPageSettings
+>({
   sections: MODELS_SECTIONS,
   defaultSection: 'global',
   basePath: '/system-settings/models',

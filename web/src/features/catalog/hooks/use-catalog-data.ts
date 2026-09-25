@@ -20,7 +20,11 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
 import { getChannels } from '@/features/channels/api'
+import { channelsQueryKeys } from '@/features/channels/lib'
 import type { Channel } from '@/features/channels/types'
+import { getModels } from '@/features/models/api'
+import { modelsQueryKeys } from '@/features/models/lib'
+import type { Model } from '@/features/models/types'
 import { usePricingData } from '@/features/pricing/hooks'
 
 import {
@@ -67,6 +71,33 @@ async function fetchAllChannels(): Promise<ChannelFetchResult> {
 }
 
 /**
+ * Every model metadata row, across pages.
+ *
+ * Needed for its `id`: `/api/pricing` identifies a model only by name, and the
+ * editor writes by id. Paged the same way and for the same reason as the channel
+ * list — the page size is clamped server-side.
+ */
+async function fetchAllModelRows(): Promise<Model[]> {
+  const first = await getModels({ p: 1, page_size: CHANNEL_PAGE_SIZE })
+  const rows = [...(first.data?.items ?? [])]
+  const total = first.data?.total ?? rows.length
+
+  const pageCount = Math.ceil(total / CHANNEL_PAGE_SIZE)
+  const fetchable = Math.min(pageCount, MAX_CHANNEL_PAGES)
+
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(fetchable - 1, 0) }, (_, index) =>
+      getModels({ p: index + 2, page_size: CHANNEL_PAGE_SIZE })
+    )
+  )
+  for (const page of rest) {
+    rows.push(...(page.data?.items ?? []))
+  }
+
+  return rows
+}
+
+/**
  * The catalog: what is on sale, joined with what the channels are configured to
  * serve.
  *
@@ -78,18 +109,31 @@ async function fetchAllChannels(): Promise<ChannelFetchResult> {
 export function useCatalogData() {
   const pricing = usePricingData()
 
+  // Keyed under the channels feature's own list namespace so a save from the
+  // channel drawer — which invalidates `channelsQueryKeys.lists()` — refreshes
+  // this page too. A private key would leave the supply table showing the state
+  // from before the edit the operator just made.
   const channelsQuery = useQuery({
-    queryKey: ['catalog-channels'],
+    queryKey: [...channelsQueryKeys.lists(), 'catalog'],
     queryFn: fetchAllChannels,
     staleTime: 60 * 1000,
   })
 
+  // Same reasoning for the models namespace: the model drawer invalidates
+  // `modelsQueryKeys.lists()` on save.
+  const modelRowsQuery = useQuery({
+    queryKey: [...modelsQueryKeys.lists(), 'catalog'],
+    queryFn: fetchAllModelRows,
+    staleTime: 60 * 1000,
+  })
+
   const channels = channelsQuery.data?.channels ?? []
+  const modelRows = modelRowsQuery.data ?? []
 
   const items = useMemo(
-    () => buildCatalog(pricing.models, channels),
+    () => buildCatalog(pricing.models, channels, modelRows, pricing.vendors),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pricing.models, channelsQuery.data]
+    [pricing.models, pricing.vendors, channelsQuery.data, modelRowsQuery.data]
   )
 
   const vendorGroups = useMemo(() => groupCatalogByVendor(items), [items])
@@ -100,6 +144,7 @@ export function useCatalogData() {
     vendorGroups,
     statusCounts,
     channels,
+    modelRows,
     /** True when the install has more channels than this view is willing to page. */
     channelsTruncated: channelsQuery.data?.truncated ?? false,
     groupRatio: pricing.groupRatio,
@@ -107,7 +152,8 @@ export function useCatalogData() {
     endpointMap: pricing.endpointMap,
     priceRate: pricing.priceRate,
     usdExchangeRate: pricing.usdExchangeRate,
-    isLoading: pricing.isLoading || channelsQuery.isLoading,
-    error: pricing.error ?? channelsQuery.error,
+    isLoading:
+      pricing.isLoading || channelsQuery.isLoading || modelRowsQuery.isLoading,
+    error: pricing.error ?? channelsQuery.error ?? modelRowsQuery.error,
   }
 }

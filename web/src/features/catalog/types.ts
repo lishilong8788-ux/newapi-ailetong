@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { PricingModel } from '@/features/pricing/types'
+import type { Channel } from '@/features/channels/types'
+import type { Model } from '@/features/models/types'
+import type { ChannelRoute, PricingModel } from '@/features/pricing/types'
 
 /**
  * What state one catalog entry is in, from an operator's point of view.
@@ -55,6 +57,15 @@ export type CatalogItem = {
   channelCount: number
   /** Of those, the ones currently enabled. Zero means out of stock. */
   enabledChannelCount: number
+  /**
+   * The `model` metadata row this entry is named by, when one exists.
+   *
+   * Absent for a name that only ever appeared in a channel's model list: those
+   * relay fine but carry no vendor, description or tags, and an operator who
+   * wants any of that has to create the row. Editing needs the row's `id`, which
+   * `/api/pricing` does not carry, so it is joined in here from `/api/models`.
+   */
+  model?: Model
 }
 
 /** Left-rail grouping: one vendor and the models under it. */
@@ -65,3 +76,26 @@ export type CatalogVendorGroup = {
 }
 
 export type CatalogStatusCounts = Record<CatalogStatus, number>
+
+/**
+ * One supplier line for one model: the channel, and what it costs there.
+ *
+ * Built from raw channel config rather than from `/api/pricing/channels` alone,
+ * because a channel that is disabled or whose ability row is missing is absent
+ * from that endpoint while still being the thing the operator has to fix. The
+ * route is joined on when it exists and simply missing when it does not, which
+ * is exactly the `serving` distinction.
+ */
+export type CatalogSupplyRow = {
+  channel: Channel
+  /** Present when this channel currently serves the model through the relay. */
+  route?: ChannelRoute
+  /**
+   * The name this channel sends upstream, after walking `model_mapping`. Cost is
+   * keyed by this name, not by the client-facing one, so it is resolved once
+   * here and reused by both the price columns and the cost editor.
+   */
+  upstreamModel: string
+  /** True when an enabled channel serves the model — i.e. a route exists. */
+  serving: boolean
+}

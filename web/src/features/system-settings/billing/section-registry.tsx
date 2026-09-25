@@ -235,7 +235,6 @@ const BILLING_SECTIONS = [
     build: (settings: BillingSettings) => (
       <CostSettingsSection
         defaultValues={{
-          'cost_setting.enabled': settings['cost_setting.enabled'] ?? false,
           'cost_setting.guard_enabled':
             settings['cost_setting.guard_enabled'] ?? false,
           'cost_setting.warn_rate': settings['cost_setting.warn_rate'] ?? 0.2,

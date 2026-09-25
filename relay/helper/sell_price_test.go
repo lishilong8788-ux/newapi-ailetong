@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -73,6 +74,40 @@ func TestModelPriceHelper_SellPriceOverridesPlatformRatio(t *testing.T) {
 	assert.InDelta(t, 2.0, priceData.CompletionRatio, 1e-9, "output/input = 40/20")
 	assert.InDelta(t, 0.1, priceData.CacheRatio, 1e-9, "cache_read/input = 2/20")
 	assert.Equal(t, 1.0, priceData.GroupRatioInfo.GroupRatio, "卖价是绝对价，分组倍率不再参与")
+}
+
+// TestModelPriceHelper_BilledRatioMatchesPublishedRatio 把账单和广场钉在一起。
+//
+// 展示侧（model.resolveChannelPrice）和计费侧（applyChannelSellPrice）现在读的是
+// 同一段算术，这条断言锁住的就是"同一段"：客户在定价页看到的倍率，必须正好是这
+// 笔请求扣费用的倍率。两侧各算一遍是这个特性最贵的失败方式——广场报一个价、账单
+// 收另一个价，而且不会有任何报错。
+func TestModelPriceHelper_BilledRatioMatchesPublishedRatio(t *testing.T) {
+	cost := &dto.ChannelCostSettings{
+		DefaultMarkup: fptr(0.2),
+		Models: map[string]dto.ModelCostPrice{
+			// xy 线的真实进价：¥0.959999/M ÷ 7.3。
+			sellPriceTestModel: {Input: fptr(0.13150671), Output: fptr(0.52602726), CacheRead: fptr(0.00263)},
+		},
+	}
+	ctx, info := sellPriceFixture(t, cost, "")
+
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+
+	// 展示侧发布的倍率，取自 model 包——resolveChannelPrice 原样搬这两个返回值
+	// 填进 ChannelPrice（见 model.TestResolveChannelPrice_EachChannelPublishesItsOwnSellPrice）。
+	sell, ok := model.ResolveSellPrice(cost, sellPriceTestModel)
+	require.True(t, ok)
+	published, ok := model.SellPriceToRatios(sell)
+	require.True(t, ok)
+
+	assert.Equal(t, published.ModelRatio, priceData.ModelRatio,
+		"广场展示的模型倍率与计费用的必须是同一个数")
+	require.NotNil(t, published.CompletionRatio)
+	assert.Equal(t, *published.CompletionRatio, priceData.CompletionRatio)
+	require.NotNil(t, published.CacheRatio)
+	assert.Equal(t, *published.CacheRatio, priceData.CacheRatio)
 }
 
 // TestModelPriceHelper_UnconfiguredChannelKeepsLegacyBilling 锁住渐进上线的另一

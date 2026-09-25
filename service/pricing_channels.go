@@ -246,11 +246,14 @@ func GetModelAutoRouteInfo(routes []*model.ChannelRoute) AutoRouteInfo {
 	}
 
 	// Two distinct tiers is the same test buildChannelPriceRanks applies, for the
-	// same reason: with one tier there is no cheapest channel to prefer.
+	// same reason: with one tier there is no cheapest channel to prefer. The
+	// per-row predicate is shared rather than restated, so a price kind that
+	// becomes rankable (buy-price-derived sell prices, most recently) cannot start
+	// ranking in the router while this card still reports the model unranked.
 	unpriced := false
 	var seen []float64
 	for _, route := range routes {
-		if route.Price.Discount == nil || route.Price.ModelRatio <= 0 {
+		if !route.Price.Comparable() {
 			unpriced = true
 			continue
 		}

@@ -21,7 +21,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
-	costsetting "github.com/QuantumNous/new-api/setting/cost_setting"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -172,9 +171,8 @@ func GetAllChannels(c *gin.Context) {
 		clearChannelInfo(datum)
 	}
 
-	// 成本毛利三列：一次批量查询渠道在近 30 天的聚合，避免 N+1。核算开关
-	// 关闭时跳过（返回空字段）。
-	if costsetting.GetSetting().Enabled {
+	// 成本毛利三列：一次批量查询渠道在近 30 天的聚合，避免 N+1。
+	{
 		channelIds := make([]int, 0, len(channelData))
 		for _, datum := range channelData {
 			channelIds = append(channelIds, datum.Id)

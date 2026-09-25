@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -60,90 +61,232 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func getPriority(group string, model string, retry int) (int, error) {
-
-	var priorities []int
-	err := DB.Model(&Ability{}).
-		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("priority DESC").              // 按优先级降序排序
-		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
-
-	if err != nil {
-		// 处理错误
-		return 0, err
-	}
-
-	if len(priorities) == 0 {
-		// 如果没有查询到优先级，则返回错误
-		return 0, errors.New("数据库一致性被破坏")
-	}
-
-	// 确定要使用的优先级
-	var priorityToUse int
-	if retry >= len(priorities) {
-		// 如果重试次数大于优先级数，则使用最小的优先级
-		priorityToUse = priorities[len(priorities)-1]
-	} else {
-		priorityToUse = priorities[retry]
-	}
-	return priorityToUse, nil
+// ModelChannelOption is one routable model together with the channels that can
+// serve it, for an operator picking both at once (the ops copilot's own model).
+//
+// Derived from abilities rather than from the configured model list, so the
+// options are exactly what the router would consider: a model whose only channel
+// is disabled never shows up, and picking a pair from this list cannot produce a
+// request that has nowhere to go.
+type ModelChannelOption struct {
+	Model    string               `json:"model"`
+	Channels []ModelChannelChoice `json:"channels"`
 }
 
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
-	if retry != 0 {
-		priority, err := getPriority(group, model, retry)
-		if err != nil {
-			return nil, err
-		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
+// ModelChannelChoice is one channel serving a model. Deliberately minimal: a
+// picker needs to name the line, not to price or diagnose it.
+type ModelChannelChoice struct {
+	ChannelId int    `json:"channel_id"`
+	Name      string `json:"name"`
+	// Code is the channel's public line code, absent when the operator set none.
+	Code string `json:"code,omitempty"`
+	Type int    `json:"type"`
+}
+
+// GetModelChannelOptions lists every model the given groups can route, each with
+// its enabled channels — models ascending, channels by id.
+//
+// Groups are the caller's own reachable set. Passing every group would offer a
+// model that the copilot's own group cannot actually reach, which fails only at
+// the first message.
+func GetModelChannelOptions(groups []string) []*ModelChannelOption {
+	if len(groups) == 0 {
+		return nil
+	}
+
+	channelsByModel := make(map[string]map[int]struct{})
+	choices := make(map[int]ModelChannelChoice)
+	record := func(modelName string, choice ModelChannelChoice) {
+		if _, ok := channelsByModel[modelName]; !ok {
+			channelsByModel[modelName] = make(map[int]struct{})
+		}
+		// A model reachable in several groups yields one row per group; the picker
+		// wants one entry per channel.
+		channelsByModel[modelName][choice.ChannelId] = struct{}{}
+		choices[choice.ChannelId] = choice
+	}
+
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		for _, group := range groups {
+			for modelName, channelIds := range group2model2channels[group] {
+				for _, channelId := range channelIds {
+					channel, ok := channelsIDM[channelId]
+					if !ok || channel.Status != common.ChannelStatusEnabled {
+						continue
+					}
+					record(modelName, ModelChannelChoice{
+						ChannelId: channel.Id,
+						Name:      channel.Name,
+						Code:      channel.GetLineCode(),
+						Type:      channel.Type,
+					})
+				}
+			}
+		}
+		channelSyncLock.RUnlock()
+	} else {
+		for _, row := range modelChannelOptionRows(groups) {
+			choice := ModelChannelChoice{
+				ChannelId: row.ChannelId,
+				Name:      row.Name,
+				Type:      row.Type,
+			}
+			if row.LineCode != nil {
+				choice.Code = strings.TrimSpace(*row.LineCode)
+			}
+			record(row.Model, choice)
 		}
 	}
 
-	return channelQuery, nil
+	options := make([]*ModelChannelOption, 0, len(channelsByModel))
+	for modelName, channelIds := range channelsByModel {
+		option := &ModelChannelOption{Model: modelName, Channels: make([]ModelChannelChoice, 0, len(channelIds))}
+		for channelId := range channelIds {
+			option.Channels = append(option.Channels, choices[channelId])
+		}
+		sort.Slice(option.Channels, func(i, j int) bool {
+			return option.Channels[i].ChannelId < option.Channels[j].ChannelId
+		})
+		options = append(options, option)
+	}
+	sort.Slice(options, func(i, j int) bool { return options[i].Model < options[j].Model })
+	return options
 }
 
-func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+type modelChannelOptionRow struct {
+	Model     string
+	ChannelId int
+	Name      string
+	LineCode  *string
+	Type      int
+}
+
+// modelChannelOptionRows serves installations running with the memory cache off.
+func modelChannelOptionRows(groups []string) []modelChannelOptionRow {
+	var rows []modelChannelOptionRow
+	err := DB.Table("abilities").
+		Select("abilities.model as model, abilities.channel_id as channel_id, channels.name as name, channels.line_code as line_code, channels.type as type").
+		Joins("join channels on channels.id = abilities.channel_id").
+		Where("abilities."+commonGroupCol+" IN ? AND abilities.enabled = ?", groups, true).
+		Where("channels.status = ?", common.ChannelStatusEnabled).
+		Scan(&rows).Error
+	if err != nil {
+		common.SysError("failed to list model channel options: " + err.Error())
+		return nil
+	}
+	return rows
+}
+
+// Tier walking used to live here as getPriorityOnLine: a second query that
+// resolved which priority tier a retry should land on. selectCandidate now does
+// that in Go over the candidate set, for both selection paths at once, so the
+// query is gone.
+
+// getChannelQuery builds the candidate-ability query for the DB selection path.
+//
+// It deliberately does NOT rank: no priority filter, no ordering. Ranking is
+// selectCandidate's job, shared with the cached path. This split is the fix for a
+// structural problem — priority used to be resolved inside SQL via
+// MAX(priority), which left nowhere to inject a Go-side ranking input like the
+// price rank table, so auto-route could not work on this path at all.
+//
+// The cost is fetching every candidate row for the model instead of just the top
+// tier. That is a handful of rows per model in practice, and the alternative is
+// keeping routing policy split across SQL and Go.
+//
+// onLineChannelIds, when non-empty, restricts candidates to those channels. The
+// pin has to narrow before ranking so the pinned line's channels tier among
+// themselves, matching the cached path.
+func getChannelQuery(group string, model string, onLineChannelIds []int) *gorm.DB {
+	scope := func() *gorm.DB {
+		query := DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
+		if len(onLineChannelIds) > 0 {
+			query = query.Where("channel_id in (?)", onLineChannelIds)
+		}
+		return query
+	}
+
+	return scope()
+}
+
+// GetChannel is the DB (non-memory-cache) channel selection path. A non-empty
+// lineCode narrows candidates to that line, keeping the full set when the line has
+// nothing usable — the same preference-not-restriction semantics as the cached
+// path's filterChannelsByLineCode, so a pinned line that is down still falls back
+// instead of failing the request.
+func GetChannel(group string, model string, retry int, requestPath string, lineCode string) (*Channel, error) {
 	var abilities []Ability
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
-	if err != nil {
-		return nil, err
-	}
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	}
+	// Resolved before the query so the pinned line narrows candidates ahead of
+	// ranking; an unusable line yields nil and the full set is queried instead.
+	onLineChannelIds := channelIdsOnLine(group, model, lineCode)
+	err := getChannelQuery(group, model, onLineChannelIds).Find(&abilities).Error
 	if err != nil {
 		return nil, err
 	}
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
-	channel := Channel{}
-	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
-		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
-				break
-			}
-		}
-	} else {
+	if len(abilities) == 0 {
 		return nil, nil
 	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
+
+	candidates := make([]Candidate, 0, len(abilities))
+	for _, ability := range abilities {
+		// Priority is nullable on abilities; absent means 0, the same default
+		// Channel.GetPriority applies on the cached path.
+		var priority int64
+		if ability.Priority != nil {
+			priority = *ability.Priority
+		}
+		candidates = append(candidates, Candidate{
+			ChannelID: ability.ChannelId,
+			Priority:  priority,
+			Weight:    int(ability.Weight),
+		})
+	}
+
+	// resolveStrategy reads the price rank table, which is swapped under
+	// channelSyncLock's write lock. The cached path already holds the read lock by
+	// the time it resolves; this path has to take it itself.
+	channelSyncLock.RLock()
+	strategy := resolveStrategy(model)
+	channelSyncLock.RUnlock()
+
+	selectedID, err := selectCandidate(candidates, strategy, retry)
+	if err != nil {
+		return nil, err
+	}
+
+	channel := Channel{}
+	err = DB.First(&channel, "id = ?", selectedID).Error
 	return &channel, err
+}
+
+// channelIdsOnLine returns the enabled channels serving this group/model that
+// publish lineCode, or nil when the line has none usable — nil meaning "no
+// narrowing", so an unhonorable pin degrades to normal selection rather than
+// failing the request.
+//
+// The line code lives on channels while candidates come from abilities, so this is
+// a join expressed as one extra query. Only runs on the DB selection path when a
+// pin was actually requested.
+func channelIdsOnLine(group string, model string, lineCode string) []int {
+	if lineCode == "" {
+		return nil
+	}
+
+	var ids []int
+	err := DB.Model(&Ability{}).
+		Joins("join channels on channels.id = abilities.channel_id").
+		Where("abilities."+commonGroupCol+" = ? and abilities.model = ? and abilities.enabled = ?", group, model, true).
+		Where("channels.status = ? and channels.line_code = ?", common.ChannelStatusEnabled, lineCode).
+		Distinct().
+		Pluck("abilities.channel_id", &ids).Error
+	if err != nil {
+		common.SysError("failed to resolve channels on line " + lineCode + ": " + err.Error())
+		return nil
+	}
+	return ids
 }
 
 // filterAbilitiesByRequestPathAndModel restricts candidates by request path and

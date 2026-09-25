@@ -370,7 +370,6 @@ export type BillingSettings = {
   AgentSubscriptionCommission: boolean
   // Cost & margin accounting (rates as fractions, thresholds chained
   // disable_rate <= demote_rate <= alert_rate <= warn_rate).
-  'cost_setting.enabled': boolean
   'cost_setting.guard_enabled': boolean
   'cost_setting.warn_rate': number
   'cost_setting.alert_rate': number

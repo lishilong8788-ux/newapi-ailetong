@@ -40,6 +40,7 @@ import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedCatalogIndexRouteImport } from './routes/_authenticated/catalog/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
+import { Route as AuthenticatedCopilotIndexRouteImport } from './routes/_authenticated/copilot/index'
 import { Route as AuthenticatedCostAnalyticsIndexRouteImport } from './routes/_authenticated/cost-analytics/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
@@ -55,6 +56,7 @@ import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
 import { Route as AuthenticatedSystemInfoIndexRouteImport } from './routes/_authenticated/system-info/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
+import { Route as AuthenticatedTransactionLedgerIndexRouteImport } from './routes/_authenticated/transaction-ledger/index'
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
@@ -233,6 +235,12 @@ const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdRouteImport.update({
   path: '/chat/$chatId',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCopilotIndexRoute =
+  AuthenticatedCopilotIndexRouteImport.update({
+    id: '/copilot/',
+    path: '/copilot/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCostAnalyticsIndexRoute =
   AuthenticatedCostAnalyticsIndexRouteImport.update({
     id: '/cost-analytics/',
@@ -321,6 +329,12 @@ const AuthenticatedSystemSettingsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
+  } as any)
+const AuthenticatedTransactionLedgerIndexRoute =
+  AuthenticatedTransactionLedgerIndexRouteImport.update({
+    id: '/transaction-ledger/',
+    path: '/transaction-ledger/',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedUsageLogsIndexRoute =
   AuthenticatedUsageLogsIndexRouteImport.update({
@@ -469,6 +483,7 @@ export interface FileRoutesByFullPath {
   '/agent/': typeof AuthenticatedAgentIndexRoute
   '/catalog/': typeof AuthenticatedCatalogIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
+  '/copilot/': typeof AuthenticatedCopilotIndexRoute
   '/cost-analytics/': typeof AuthenticatedCostAnalyticsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/invoice-management/': typeof AuthenticatedInvoiceManagementIndexRoute
@@ -481,6 +496,7 @@ export interface FileRoutesByFullPath {
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
+  '/transaction-ledger/': typeof AuthenticatedTransactionLedgerIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/wallet/': typeof AuthenticatedWalletIndexRoute
@@ -533,6 +549,7 @@ export interface FileRoutesByTo {
   '/agent': typeof AuthenticatedAgentIndexRoute
   '/catalog': typeof AuthenticatedCatalogIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
+  '/copilot': typeof AuthenticatedCopilotIndexRoute
   '/cost-analytics': typeof AuthenticatedCostAnalyticsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/invoice-management': typeof AuthenticatedInvoiceManagementIndexRoute
@@ -545,6 +562,7 @@ export interface FileRoutesByTo {
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-info': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
+  '/transaction-ledger': typeof AuthenticatedTransactionLedgerIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/wallet': typeof AuthenticatedWalletIndexRoute
@@ -601,6 +619,7 @@ export interface FileRoutesById {
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
   '/_authenticated/catalog/': typeof AuthenticatedCatalogIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
+  '/_authenticated/copilot/': typeof AuthenticatedCopilotIndexRoute
   '/_authenticated/cost-analytics/': typeof AuthenticatedCostAnalyticsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/invoice-management/': typeof AuthenticatedInvoiceManagementIndexRoute
@@ -613,6 +632,7 @@ export interface FileRoutesById {
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
+  '/_authenticated/transaction-ledger/': typeof AuthenticatedTransactionLedgerIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
@@ -668,6 +688,7 @@ export interface FileRouteTypes {
     | '/agent/'
     | '/catalog/'
     | '/channels/'
+    | '/copilot/'
     | '/cost-analytics/'
     | '/dashboard/'
     | '/invoice-management/'
@@ -680,6 +701,7 @@ export interface FileRouteTypes {
     | '/subscriptions/'
     | '/system-info/'
     | '/system-settings/'
+    | '/transaction-ledger/'
     | '/usage-logs/'
     | '/users/'
     | '/wallet/'
@@ -732,6 +754,7 @@ export interface FileRouteTypes {
     | '/agent'
     | '/catalog'
     | '/channels'
+    | '/copilot'
     | '/cost-analytics'
     | '/dashboard'
     | '/invoice-management'
@@ -744,6 +767,7 @@ export interface FileRouteTypes {
     | '/subscriptions'
     | '/system-info'
     | '/system-settings'
+    | '/transaction-ledger'
     | '/usage-logs'
     | '/users'
     | '/wallet'
@@ -799,6 +823,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/'
     | '/_authenticated/catalog/'
     | '/_authenticated/channels/'
+    | '/_authenticated/copilot/'
     | '/_authenticated/cost-analytics/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/invoice-management/'
@@ -811,6 +836,7 @@ export interface FileRouteTypes {
     | '/_authenticated/subscriptions/'
     | '/_authenticated/system-info/'
     | '/_authenticated/system-settings/'
+    | '/_authenticated/transaction-ledger/'
     | '/_authenticated/usage-logs/'
     | '/_authenticated/users/'
     | '/_authenticated/wallet/'
@@ -1069,6 +1095,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatChatIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/copilot/': {
+      id: '/_authenticated/copilot/'
+      path: '/copilot'
+      fullPath: '/copilot/'
+      preLoaderRoute: typeof AuthenticatedCopilotIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/cost-analytics/': {
       id: '/_authenticated/cost-analytics/'
       path: '/cost-analytics'
@@ -1173,6 +1206,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/system-settings/'
       preLoaderRoute: typeof AuthenticatedSystemSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
+    }
+    '/_authenticated/transaction-ledger/': {
+      id: '/_authenticated/transaction-ledger/'
+      path: '/transaction-ledger'
+      fullPath: '/transaction-ledger/'
+      preLoaderRoute: typeof AuthenticatedTransactionLedgerIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/usage-logs/': {
       id: '/_authenticated/usage-logs/'
@@ -1406,6 +1446,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
   AuthenticatedCatalogIndexRoute: typeof AuthenticatedCatalogIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
+  AuthenticatedCopilotIndexRoute: typeof AuthenticatedCopilotIndexRoute
   AuthenticatedCostAnalyticsIndexRoute: typeof AuthenticatedCostAnalyticsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedInvoiceManagementIndexRoute: typeof AuthenticatedInvoiceManagementIndexRoute
@@ -1417,6 +1458,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
   AuthenticatedSystemInfoIndexRoute: typeof AuthenticatedSystemInfoIndexRoute
+  AuthenticatedTransactionLedgerIndexRoute: typeof AuthenticatedTransactionLedgerIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
@@ -1437,6 +1479,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
   AuthenticatedCatalogIndexRoute: AuthenticatedCatalogIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
+  AuthenticatedCopilotIndexRoute: AuthenticatedCopilotIndexRoute,
   AuthenticatedCostAnalyticsIndexRoute: AuthenticatedCostAnalyticsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedInvoiceManagementIndexRoute:
@@ -1450,6 +1493,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedRedemptionCodesIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
   AuthenticatedSystemInfoIndexRoute: AuthenticatedSystemInfoIndexRoute,
+  AuthenticatedTransactionLedgerIndexRoute:
+    AuthenticatedTransactionLedgerIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,

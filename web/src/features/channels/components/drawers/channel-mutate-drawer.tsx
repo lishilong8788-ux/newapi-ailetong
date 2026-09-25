@@ -203,6 +203,13 @@ type ChannelMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow?: Channel | null
+  /**
+   * Models the create form should start with. Set when the drawer is opened from
+   * a model-shaped view (the catalog), where the operator is creating a channel
+   * *for* a model they already have on screen and would otherwise have to type
+   * its name again. Ignored when editing: the channel's own list wins.
+   */
+  prefillModels?: string[]
 }
 
 type ModelMappingGuardrail = {
@@ -483,6 +490,7 @@ export function ChannelMutateDrawer({
   open,
   onOpenChange,
   currentRow,
+  prefillModels,
 }: ChannelMutateDrawerProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -1082,13 +1090,21 @@ export function ChannelMutateDrawer({
       initialStatusCodeMappingRef.current =
         channelData.data.status_code_mapping || ''
     } else if (!isEditing) {
-      form.reset(CHANNEL_FORM_DEFAULT_VALUES)
+      const seeded = (prefillModels ?? []).filter(Boolean)
+      form.reset({
+        ...CHANNEL_FORM_DEFAULT_VALUES,
+        models: seeded.join(','),
+      })
       initialModelsRef.current = []
       initialModelMappingRef.current = ''
       initialStatusCodeMappingRef.current = ''
       setActiveEditorTab(CHANNEL_EDITOR_TAB_IDS.basics)
       setClipboardConnectionInfo(null)
     }
+    // `prefillModels` is intentionally not a dependency: it is a seed read once
+    // per open, and a new array identity from the parent must not reset a form
+    // the operator is already filling in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEditing, channelData, form])
 
   // Handle type change - set default values for specific types

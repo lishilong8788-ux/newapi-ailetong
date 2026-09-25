@@ -17,14 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { SettingsPage } from '../components/settings-page'
-import type { ModelSettings } from '../types'
+import { COPILOT_SETTINGS_DEFAULTS } from './copilot-settings-form'
 import {
   MODELS_DEFAULT_SECTION,
   getModelsSectionContent,
   getModelsSectionMeta,
+  type ModelsPageSettings,
 } from './section-registry.tsx'
 
-const defaultModelSettings: ModelSettings = {
+const defaultModelSettings: ModelsPageSettings = {
+  ...COPILOT_SETTINGS_DEFAULTS,
   'global.pass_through_request_enabled': false,
   'global.thinking_model_blacklist': '[]',
   'global.chat_completions_to_responses_policy': '{}',

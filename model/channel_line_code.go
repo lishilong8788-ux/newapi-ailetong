@@ -2,6 +2,8 @@ package model
 
 import (
 	"strings"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 // knownLineCodes is the set of line codes any enabled channel publishes, rebuilt
@@ -13,6 +15,41 @@ import (
 // only read as a line when some channel actually publishes that code, so an
 // install with no line codes configured parses model names exactly as before.
 var knownLineCodes map[string]bool
+
+// RefreshKnownLineCodes rebuilds the published line-code set from the database.
+//
+// Deliberately independent of MemoryCacheEnabled: the set is what makes a
+// `<model>/<code>` suffix parse as a pin at all, so gating it on the cache switch
+// turned line pinning into a silent no-op whenever the cache was off — the suffix
+// stayed glued to the model name, matched no registered model, and surfaced as an
+// unrelated "no available channel" 503. Routing correctness must not depend on a
+// performance switch.
+//
+// Only enabled channels publish a code, matching the pinned-line filter: a
+// disabled channel's line must not make a pin parse and then resolve to a channel
+// that cannot serve it.
+func RefreshKnownLineCodes() {
+	var codes []string
+	err := DB.Model(&Channel{}).
+		Where("status = ? and line_code is not null and line_code != ''", common.ChannelStatusEnabled).
+		Distinct().
+		Pluck("line_code", &codes).Error
+	if err != nil {
+		common.SysError("failed to refresh known line codes: " + err.Error())
+		return
+	}
+
+	newCodes := make(map[string]bool, len(codes))
+	for _, code := range codes {
+		if trimmed := strings.TrimSpace(code); trimmed != "" {
+			newCodes[trimmed] = true
+		}
+	}
+
+	channelSyncLock.Lock()
+	knownLineCodes = newCodes
+	channelSyncLock.Unlock()
+}
 
 // SplitModelLineCode splits a client-supplied model name into the bare model and
 // the line code it pins, reporting whether a line was named at all.
