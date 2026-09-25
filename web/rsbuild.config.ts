@@ -13,7 +13,7 @@ export default defineConfig(({ envMode }) => {
   const serverUrl =
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
-    'http://localhost:3000'
+    'http://localhost:3020'
 
   const isProd = envMode === 'production'
   const devProxy = Object.fromEntries(
@@ -67,6 +67,10 @@ export default defineConfig(({ envMode }) => {
     },
     server: {
       host: '0.0.0.0',
+      // Pinned here (not only in the `--port` CLI flag) so the dev server never falls back to
+      // Rsbuild's default 3000, which collides with other local projects. `strictPort: false`
+      // would make such a fallback silent.
+      port: 5220,
       strictPort: false,
       proxy: devProxy,
     },

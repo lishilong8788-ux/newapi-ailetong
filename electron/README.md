@@ -26,8 +26,8 @@ npm install
 
 Start the backend, the frontend, and Electron in separate terminals:
 ```bash
-# Repository root
-go run main.go
+# Repository root (PORT=3020 is applied by the make target)
+make start-api
 
 # Repository root
 make dev-web
@@ -37,8 +37,8 @@ npm run dev-app
 ```
 
 This will:
-- Use the Go backend on port 3000
-- Use the Rsbuild frontend development server on port 5173
+- Use the Go backend on port 3020
+- Use the Rsbuild frontend development server on port 5220
 - Open an Electron window with DevTools enabled
 - Create a system tray icon (menu bar on macOS)
 - Store database in `../data/new-api.db`
@@ -68,10 +68,12 @@ npm run build:linux  # Creates .AppImage and .deb
 ## Configuration
 
 ### Port
-Default port is 3000. To change, edit `main.js`:
+The packaged app starts its own bundled backend on port 3000. To change, edit `main.js`:
 ```javascript
 const PORT = 3000; // Change to desired port
 ```
+In development mode the Electron window loads `DEV_FRONTEND_PORT` (5220) instead, which must
+match `server.port` in `web/rsbuild.config.ts`.
 
 ### Database Location
 - **Development**: `../data/new-api.db` (project directory)

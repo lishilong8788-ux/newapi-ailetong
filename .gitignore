@@ -27,7 +27,10 @@ tiktoken_cache
 .gomodcache/
 .cache
 plans
-.claude
+# 排除 .claude 的内容而不是 .claude 本身：目录一旦被排除，git 就不再下降进去，
+# 里面的 !example 例外会全部失效。用 .claude/* 才能给 skills 开口子。
+.claude/*
+!.claude/skills/
 .cursor
 
 electron/node_modules

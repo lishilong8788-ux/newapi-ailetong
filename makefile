@@ -1,6 +1,7 @@
 WEB_DIR = ./web
 API_DIR = .
-DEV_WEB_PORT ?= 5173
+DEV_WEB_PORT ?= 5220
+DEV_API_PORT ?= 3020
 DEV_COMPOSE_FILE = docker-compose.dev.yml
 DEV_POSTGRES_SERVICE = postgres
 DEV_API_SERVICE = new-api
@@ -20,8 +21,8 @@ build-web:
 build-all-web: build-web
 
 start-api:
-	@echo "Starting api dev server..."
-	@cd $(API_DIR) && go run main.go &
+	@echo "Starting api dev server on port $(DEV_API_PORT)..."
+	@cd $(API_DIR) && PORT=$(DEV_API_PORT) go run main.go &
 
 dev-api:
 	@echo "Starting api services (docker)..."

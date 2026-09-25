@@ -1,19 +1,34 @@
 # 本地开发环境启动手册
 
-> 用法：对话里 `@docs/dev-startup.md` 然后说「启动」即可。
+> **已有 skill 版**：`.claude/skills/qidong-newapi/`。直接说「启动 newapi」会自动触发，
+> 不用再 @ 本文。本文保留作背景与原因的完整记录；两者**端口必须一致，改一处就改另一处**。
+> 状态检查脚本：`bash .claude/skills/qidong-newapi/scripts/check-services.sh`。
+>
+> 用法：对话里 `@docs/dev-startup.md` 然后说「启动」也仍然有效。
 > 本文是给 AI 执行的操作规程，每条约束后面都附了原因，别删原因 —— 那是踩过的坑。
 
-**端口约定**：后端 `3001`，前端 `5173`。
-**为什么后端不用 3000**：New API 后端自己的默认口就是 3000，前端 proxy 的兜底值也是
-`http://localhost:3000`（`web/rsbuild.config.ts:16`）。用 3001 能让「漏传
-`VITE_REACT_APP_SERVER_URL`」立刻暴露成连接失败，而不是静默连上一个错的后端。
+**端口约定**：后端 `3020`，前端 `5220`（2026-09-25 起，原先是 3001 / 5173）。
+**为什么这两个口**：隔壁 `E:\ailetong`（乐童）占着 website `5173`、mobile `3000`、
+admin `3006`、server `9001`，且那边的启动清场脚本一旦检测到 5173 被外部进程占用就
+`exit 1` 中止整条任务链。所以本项目让位，后端挪到 3020、前端挪到 5220。
+
+**这两个口现在写在配置里，不再靠启动命令外挂**：
+- 前端 `web/rsbuild.config.ts` 的 `server.port = 5220`。这一条必须留着 —— 该文件里
+  `strictPort: false`，删掉 `port` 会退回 Rsbuild 默认的 3000（撞乐童 mobile），而且
+  换口是静默的、不报错。
+- 后端 `makefile` 的 `DEV_API_PORT ?= 3020`（`make start-api` 会带上 `PORT=`）。
+  Go 侧编译进去的默认值仍是 3000（`common/init.go:19`），Docker 容器内也仍听 3000，
+  没动 —— 只有宿主侧映射改成了 `3020:3000`。
+- 前端 proxy 的兜底值同步改成 `http://localhost:3020`（`web/rsbuild.config.ts:16`）。
+  **代价**：兜底值现在等于真实后端口，于是「漏传 `VITE_REACT_APP_SERVER_URL`」不再
+  暴露成连接失败，而是静默走通。改端口时这两处必须一起改，否则是 502。
 
 ---
 
 ## 0. 先查是否已在跑
 
 ```bash
-netstat -ano | grep -i LISTENING | grep -E ":(3001|5173)\s"
+netstat -ano | grep -i LISTENING | grep -E ":(3020|5220)\s"
 tasklist | grep -iE "new-api|bun|node"
 ```
 
@@ -21,7 +36,7 @@ tasklist | grep -iE "new-api|bun|node"
 
 - **必须 `grep LISTENING`**。`ESTABLISHED` 的出站连接（例如 `->103.212.12.45:3000`）
   是本机去连别人，不是本地端口被占，别误判。
-- **正则里的 `\s` 必须留**。否则 `:30010`、`:51730` 之类会误匹配。
+- **正则里的 `\s` 必须留**。否则 `:30201`、`:52200` 之类会误匹配。
 - **两个常驻 node 进程不要杀**：`openclaw gateway --port 18789` 和 `cc-connect run.js`，
   与本项目无关。注意 `tasklist | grep node` 只给得出 `node.exe <pid>`，**看不到命令行**，
   没法直接对上这两个名字。要确认哪个是 gateway，用端口反查：
@@ -30,7 +45,7 @@ tasklist | grep -iE "new-api|bun|node"
   netstat -ano | grep -i LISTENING | grep -E ":18789\s"   # 这行的 pid 就是 openclaw
   ```
 
-  剩下那个 node 即 cc-connect。本项目的前端进程只会出现在 5173 上，不在这两个之列。
+  剩下那个 node 即 cc-connect。本项目的前端进程只会出现在 5220 上，不在这两个之列。
 
 端口已被本项目自己占着 → **先问我复用还是杀掉重起**，别直接 taskkill。
 
@@ -45,21 +60,21 @@ export PATH="/c/Program Files/Go/bin:$PATH"          # Go 1.26.5 不在 PATH
 ```
 
 `web/dist` 那行是关键：`main.go:42` 有 `//go:embed web/dist`，目录不存在时
-`go build` 第一秒就失败。dev 模式前端跑在 5173，这个 embed 产物根本不会被访问，
+`go build` 第一秒就失败。dev 模式前端跑在 5220，这个 embed 产物根本不会被访问，
 所以占位文件足够。**只有要让后端单独提供 UI 时**，才需要真跑 `bun run build` 覆盖它。
 
 但这个 `-f` 判断只保证 `go build` 不炸，**不保证 dist 是占位还是真构建**，也不保证
 二进制里 embed 的是哪一版。2026-08-25 的实际状态就是：`web/dist/` 已有真实产物
 （含 `static/`），而 `bin/new-api.exe` 是更早编的，里面 embed 的仍是 45 字节占位符。
-想知道当前二进制 embed 了什么，直接问后端根路径（不经 5173 代理）：
+想知道当前二进制 embed 了什么，直接问后端根路径（不经 5220 代理）：
 
 ```bash
-curl -s http://localhost:3001/ | head -c 120
+curl -s http://localhost:3020/ | head -c 120
 # 占位 → <!doctype html><title>dev placeholder</title>（45 bytes）
 # 真构建 → 完整 HTML，带 /static/ 里的 hash 资源引用
 ```
 
-dev 下拿到占位符是正常的、不用修。只有要让 3001 单独提供 UI 时，才需要
+dev 下拿到占位符是正常的、不用修。只有要让 3020 单独提供 UI 时，才需要
 `cd web && bun run build` 后重编后端 —— 注意第 2 节的时间戳检查只看 `*.go`，
 **dist 变新不会触发重编**，这一步得手动判断。
 
@@ -92,9 +107,13 @@ find . -name '*.go' -newer bin/new-api.exe -not -path './web/*' | head
 ```bash
 cd bin
 mkdir -p logs
-SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" PORT=3001 \
+SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" PORT=3020 \
   nohup ./new-api.exe > logs/dev-backend.log 2>&1 &
 ```
+
+**`PORT=3020` 必须显式传**。二进制里编译进去的默认值是 3000（`common/init.go:19`），
+`main.go:219` 优先读环境变量 `PORT`。直接跑 `./new-api.exe` 会听 3000、撞乐童 mobile。
+（`makefile` 的 `make start-api` 已内置 `PORT=$(DEV_API_PORT)`，走 make 就不用手传。）
 
 **为什么显式传 `SQLITE_PATH`**：`common/database.go:44` 里默认是相对路径 `one-api.db`，
 从项目根启动就会在根目录另建一个空库、弹初始化向导。真实数据在 `bin/one-api.db`。
@@ -104,7 +123,7 @@ SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" PORT=3001 \
 
 ```bash
 for i in $(seq 1 40); do
-  netstat -ano | grep -i LISTENING | grep -E ":3001\s" && break
+  netstat -ano | grep -i LISTENING | grep -E ":3020\s" && break
   sleep 2
 done
 ```
@@ -118,12 +137,16 @@ done
 
 ```bash
 cd web
-VITE_REACT_APP_SERVER_URL=http://localhost:3001 \
-  nohup bun run dev --port 5173 > ../bin/logs/dev-frontend.log 2>&1 &
+VITE_REACT_APP_SERVER_URL=http://localhost:3020 \
+  nohup bun run dev > ../bin/logs/dev-frontend.log 2>&1 &
 ```
 
+端口不用传了 —— `web/rsbuild.config.ts` 里写死了 `server.port = 5220`。要临时换口才加
+`--port <n>`（CLI 优先于配置）。
+
 变量名确实是这个 Vite 风格的名字（`web/rsbuild.config.ts:14` 读它），项目用 Rsbuild
-并不矛盾，照传。不传会兜底到 `http://localhost:3000`（同文件 `:16`），静默连错后端。
+并不矛盾，照传。不传会兜底到 `http://localhost:3020`（同文件 `:16`）—— 现在兜底值与
+真实后端口一致，所以漏传也能跑通，**别把「跑通了」当成变量传对了**。
 
 **就绪判定不能用 netstat** —— 端口 10 秒就进 LISTENING 了，但首次构建还要几十秒
 （2026-08-25 实测 `built in 25.6s`，冷缓存会更久），这中间打 `/` 拿不到 200。
@@ -131,7 +154,7 @@ VITE_REACT_APP_SERVER_URL=http://localhost:3001 \
 
 ```bash
 for i in $(seq 1 40); do
-  C=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 http://localhost:5173/)
+  C=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 http://localhost:5220/)
   [ "$C" = "200" ] && echo "frontend ready" && break
   sleep 3
 done
@@ -141,7 +164,7 @@ done
 
 ---
 
-## 5. 验证（全部走 5173，顺带验代理）
+## 5. 验证（全部走 5220，顺带验代理）
 
 | 检查 | 期望 |
 |---|---|
@@ -152,7 +175,7 @@ done
 `/api/status` 的 JSON 有几十个字段，`head -c` 截出来大概率看不到 `setup`。直接取：
 
 ```bash
-curl -s --max-time 8 http://localhost:5173/api/status > E:/tmp/status.json
+curl -s --max-time 8 http://localhost:5220/api/status > E:/tmp/status.json
 py -c "
 import json
 d=json.load(open('E:/tmp/status.json'))['data']
@@ -179,7 +202,7 @@ for k in ['setup','system_name','version','server_address']: print(k,'=',repr(d.
 最后给出两个 PID —— **从 `netstat -ano` 的 LISTENING 行末尾读**：
 
 ```bash
-netstat -ano | grep -i LISTENING | grep -E ":(3001|5173)\s"
+netstat -ano | grep -i LISTENING | grep -E ":(3020|5220)\s"
 ```
 
 **不要用 `$!`**。Git Bash 里 `nohup` 启动 Windows 原生 exe，`$!` 返回的是 bash 的
@@ -192,7 +215,7 @@ job id（例如 1382），不是 Windows 进程 pid（例如 16372）。拿 job 
 
 ```bash
 # 先从 netstat 拿真实 pid，再杀
-netstat -ano | grep -i LISTENING | grep -E ":(3001|5173)\s"
+netstat -ano | grep -i LISTENING | grep -E ":(3020|5220)\s"
 taskkill //PID <pid> //F      # Git Bash 里选项要用双斜杠
 ```
 
@@ -200,8 +223,9 @@ taskkill //PID <pid> //F      # Git Bash 里选项要用双斜杠
 
 ## 已知项 —— 不用当 bug 查
 
-- **`server_address` 和 `passkey_rp_id` 停留在 `localhost:3000`**。这是后端默认值，
-  不随 `PORT` 变。不影响 dev 使用，但 passkey 登录在 5173 上会因 rp_id 不匹配而失败。
+- **`server_address` 和 `passkey_rp_id` 停留在 `localhost:3000`**。这是后端默认值
+  （`setting/system_setting/system_setting_old.go:3`），不随 `PORT` 变。不影响 dev 使用，
+  但 passkey 登录在 5220 上会因 rp_id 不匹配而失败。
   要用 passkey 得去系统设置里改这两项。
 - **Node 是 v26.1.0**，不会出现「Rspack 需要 Node 22.12+」的警告。
 - 后端日志里的 `Warning: Refresh cookie is not secure` 是 dev 环境正常提示，
@@ -222,6 +246,12 @@ taskkill //PID <pid> //F      # Git Bash 里选项要用双斜杠
 
 ## 与 ailetong 项目的关系
 
-无端口冲突。`ailetong/server` 用 9001，`ailetong/admin` 用 3006，都与本项目无交集。
-`ailetong/mobile` 曾用 3000（`vite.config.js:84`），但该端已停用；即便如此本项目后端
-仍保持 3001，理由见开头。
+乐童（`E:\ailetong`）的端口是固定的、不让：website `5173`、mobile `3000`、
+admin `3006`、server `9001`。**本项目让位**：前端 5220、后端 3020。
+
+这不只是「撞了会起不来」—— 乐童的启动清场脚本检测到 5173 上有外部进程就 `exit 1`，
+整条启动链中止。所以本项目绝不能再占 5173，也不能落回 Rsbuild 默认的 3000。
+
+历史：2026-08-11 在旧目录 `E:\01ai\01newapi` 就调过一次，但当时只改在启动命令里，
+换目录到 `E:\newapi-ailetong` 后没跟着改，于是 2026-09-25 又撞了一次。这次改在
+配置文件里（`web/rsbuild.config.ts` + `makefile`），换目录、换人启动都不复发。
