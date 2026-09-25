@@ -93,11 +93,15 @@
 
 ## 操作步骤
 
+> **这一节已于 2026-09-25 执行完毕**，保留作留痕。真要重跑的话注意两点：`cmd/recalc-cost`
+> 是一次性工具、已删除（源码见下文第 2 步，照抄即可重建）；端口已从 3001 改到 3020
+> （2026-09-25 的端口迁移，见 `docs/dev-startup.md`），下面的命令已同步。
+
 ```bash
 export PATH="/c/Program Files/Go/bin:$PATH"
 
 # 1. 停旧后端（pid 从 netstat 的 LISTENING 行末尾读，不要用 $!）
-netstat -ano | grep -i LISTENING | grep -E ":3001\s"
+netstat -ano | grep -i LISTENING | grep -E ":3020\s"
 taskkill //PID <pid> //F
 
 # 2. 编重算工具
@@ -114,7 +118,7 @@ SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" \
 
 # 5. 起修好的后端
 mkdir -p logs
-SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" PORT=3001 \
+SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" PORT=3020 \
   nohup ./new-api.recalc.exe > logs/dev-backend.log 2>&1 &
 
 # 6. 验收：09-23 应为 31 笔

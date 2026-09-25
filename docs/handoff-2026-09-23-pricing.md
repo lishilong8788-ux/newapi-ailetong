@@ -217,7 +217,7 @@ for(const r of db.prepare('SELECT id,name,settings FROM channels').all()){
   console.log('#'+r.id,r.name,JSON.stringify(s.cost||null));}"
 
 # 看渠道卖价。倍率 → 人民币：ratio × 2 × 7.3
-curl -s "http://127.0.0.1:3001/api/pricing/channels?model=deepseek-v4-flash-0731"
+curl -s "http://127.0.0.1:3020/api/pricing/channels?model=deepseek-v4-flash-0731"
 ```
 
 **改了 Go 代码一定要重编后端。** `settings.cost` 是新字段，旧二进制读不到它，
@@ -226,10 +226,10 @@ curl 出来会是一片 `fallback`，很容易误判成「代码没生效」（�
 ```bash
 export PATH="/c/Program Files/Go/bin:$PATH"       # Go 不在 PATH
 go build -o bin/new-api.new.exe .                 # 先编到新文件，别覆盖正在跑的
-netstat -ano | grep -i LISTENING | grep -E ":3001\s"   # 行尾是真 pid，不要用 $!
+netstat -ano | grep -i LISTENING | grep -E ":3020\s"   # 行尾是真 pid，不要用 $!
 taskkill //PID <pid> //F
 cp bin/new-api.new.exe bin/new-api.exe
-cd bin && SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" PORT=3001 \
+cd bin && SQLITE_PATH="E:/newapi-ailetong/bin/one-api.db?_busy_timeout=30000" PORT=3020 \
   nohup ./new-api.exe > logs/dev-backend.log 2>&1 &
 ```
 
