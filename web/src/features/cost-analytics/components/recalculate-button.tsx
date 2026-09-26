@@ -16,11 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQueryClient } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { useQueryClient } from '@tanstack/react-query'
+import { RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import {
   AlertDialog,
@@ -31,19 +31,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { ROLE } from "@/lib/roles";
-import { useAuthStore } from "@/stores/auth-store";
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
-import { recalculateCostDaily } from "../api";
+import { recalculateCostDaily } from '../api'
 import {
   QUERY_KEY_COST_CHANNELS,
   QUERY_KEY_COST_CHANNEL_MODELS,
   QUERY_KEY_COST_OVERVIEW,
   QUERY_KEY_COST_TREND,
-} from "../constants";
-import { formatDayLabel } from "../lib";
+} from '../constants'
+import { formatDayLabel } from '../lib'
 
 /**
  * Rebuilds the visible window's daily rollup from the `logs` detail.
@@ -60,87 +60,87 @@ import { formatDayLabel } from "../lib";
  * 403s is worse than no button.
  */
 export function RecalculateButton(props: {
-  windowStart: number;
-  windowEnd: number;
+  windowStart: number
+  windowEnd: number
 }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [isOpen, setIsOpen] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
-  const userRole = useAuthStore((state) => state.auth.user?.role ?? ROLE.GUEST);
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [isOpen, setIsOpen] = useState(false)
+  const [isRunning, setIsRunning] = useState(false)
+  const userRole = useAuthStore((state) => state.auth.user?.role ?? ROLE.GUEST)
 
-  if (userRole < ROLE.SUPER_ADMIN) return null;
+  if (userRole < ROLE.SUPER_ADMIN) return null
 
   const handleConfirm = async () => {
-    setIsRunning(true);
+    setIsRunning(true)
     try {
       const result = await recalculateCostDaily({
         start_timestamp: props.windowStart,
         end_timestamp: props.windowEnd,
-      });
-      toast.success(result.message);
+      })
+      toast.success(result.message)
       await Promise.all(
         [
           QUERY_KEY_COST_OVERVIEW,
           QUERY_KEY_COST_TREND,
           QUERY_KEY_COST_CHANNELS,
           QUERY_KEY_COST_CHANNEL_MODELS,
-        ].map((key) => queryClient.invalidateQueries({ queryKey: [key] })),
-      );
-      setIsOpen(false);
+        ].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))
+      )
+      setIsOpen(false)
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : t("Recalculation failed"),
-      );
+        error instanceof Error ? error.message : t('Recalculation failed')
+      )
     } finally {
-      setIsRunning(false);
+      setIsRunning(false)
     }
-  };
+  }
 
   return (
     <>
       <Button
-        variant="outline"
-        size="sm"
-        className="h-8 gap-1.5 px-2.5 text-xs font-normal"
+        variant='outline'
+        size='sm'
+        className='h-8 gap-1.5 px-2.5 text-xs font-normal'
         onClick={() => setIsOpen(true)}
       >
-        <RefreshCw className="h-3.5 w-3.5 opacity-60" aria-hidden="true" />
-        {t("Rebuild from logs")}
+        <RefreshCw className='h-3.5 w-3.5 opacity-60' aria-hidden='true' />
+        {t('Rebuild from logs')}
       </Button>
       <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("Rebuild from logs")}</AlertDialogTitle>
+            <AlertDialogTitle>{t('Rebuild from logs')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "Discards the stored daily totals for {{from}} to {{to}} and recomputes them from the request logs. Use this when the totals look inflated or a buy price was corrected after the fact. Two caveats: the rebuild prices every request with the current cost configuration, not the price in force at the time, and any day whose logs have already been deleted rebuilds to zero.",
+                'Discards the stored daily totals for {{from}} to {{to}} and recomputes them from the request logs. Use this when the totals look inflated or a buy price was corrected after the fact. Two caveats: the rebuild prices every request with the current cost configuration, not the price in force at the time, and any day whose logs have already been deleted rebuilds to zero.',
                 {
                   from: formatDayLabel(props.windowStart),
                   to: formatDayLabel(props.windowEnd),
-                },
+                }
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isRunning}>
-              {t("Cancel")}
+              {t('Cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 // Keep the dialog mounted while the request is in flight: the
                 // default action closes it, which would unmount the pending
                 // state and lose both the spinner and the result toast.
-                event.preventDefault();
-                void handleConfirm();
+                event.preventDefault()
+                void handleConfirm()
               }}
               disabled={isRunning}
             >
-              {isRunning ? t("Rebuilding...") : t("Rebuild")}
+              {isRunning ? t('Rebuilding...') : t('Rebuild')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
+  )
 }
