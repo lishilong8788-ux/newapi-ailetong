@@ -28,21 +28,57 @@
 2. **一期只读问答** — 已完成。
 3. **每一次写改动都要人工点确认**。不是"危险操作才确认"，是每次。
 
-## 二期的接缝在哪
+## 闸门与模式：已经落地（2026-09-26）
 
-一期已经为二期留好了位置，不需要你重新设计：
+一期留的接缝已经用掉了。下面是**现状**，不是待办：
 
-- `service/copilot/types.go:29` 有 `Tool.Mutates bool`，目前全部工具为 `false`。
-  注释（`types.go:26-28`）写明：**闸门要按这个字段判，不要按工具名前缀约定** ——
+- `Tool.Mutates` 是闸门的唯一判据（`service/copilot/types.go`）。不按工具名前缀 ——
   前缀约定一旦有人加个 `update_xxx` 就静默失守。
-- `service/copilot/loop.go:111-121`，`Registry.Get` 拿到工具、`runToolHandler` 执行
-  之前，就是闸门该插进去的地方。现在这中间没有任何检查。
-- 断言 `Mutates == false` 的两处测试在 `service/copilot/eval_test.go:212` 和
-  `tools_test.go:64`。你加写工具时这两处会红，那是预期的，改断言而不是改字段。
+- 闸门在 `service/copilot/loop.go` 那个 `switch` 里，`case tool.Mutates &&
+  opts.ApprovedTool != call.Name`，位置在 `Registry.Get` 之后、`runToolHandler` 之前。
+  命中就发 `EventConfirmRequired`（带工具名和**参数原值**）然后 `return`。
+- `RunOptions.ApprovedTool` 是**工具名**而不是 bool。一轮里模型可能调多个工具，而
+  管理员在弹窗里看到并点头的只是其中一个；用 bool 会让「同意改这个渠道的成本价」
+  顺带放行同一轮里另一个它自己决定的写操作。
+- **确认 = 带 `ApprovedTool` 重放整轮**，不是续跑。SSE 是单向的，流已经在
+  `confirm_required` 那里结束了。批准从请求体来，不落库、不进会话状态，下一轮不带
+  就要重新点头。
 
-SSE 事件类型在 `types.go:132-147`，注释写着"值一旦发布就不能改"。确认流程要新增
-事件（比如 `confirm_required`）就往这个枚举里加，前端 `web/src/features/copilot/`
-按字符串分发。
+模式（用户 2026-09-26 定的）：
+
+- `BuildRegistryForMode(mode)`：只有 `ModeAct` 才追加写工具。`ModeAsk`、空字符串、
+  任何其它值都按只读处理。**空字符串那条是给老客户端的** —— 它们不发 mode，升级
+  后台不该让它们凭空获得写能力。
+- 闸门和 mode 是**两层独立防线**：mode 让模型压根提不出写操作，闸门拦住万一提出来
+  的。少任何一层都不行 —— 只有 mode 等于把安全寄托在「模型看不见就不会用」，只有
+  闸门则意味着管理员想只读时仍要靠自觉不点同意。
+
+第一个写工具是 `set_channel_markup`（`service/copilot/tools_write.go`），改渠道默认
+利润率。选它是因为它只是记账字段：错了只影响毛利报表，不动真实流量，而且成本页有
+「从日志重建」可以兜底。它复用模拟工具那份 `validateSimulateMarkup`，不另造边界；
+并且在 handler 里**再校验一次** —— 批准只带工具名不带参数值，拿到批准不等于拿到了
+合法参数。
+
+`eval_test.go` 和 `tools_test.go` 里断言 `Mutates == false` 的两处**没有红**，因为
+`BuildRegistry()` 仍然只返回只读工具。那两条断言的含义因此变成了「写工具没有漏进
+默认工具表」，依然有效，不要删。
+
+前端已完成的部分：`confirm_required` 帧解析（`lib/parse-frame.ts`）→ 归约成
+`awaiting_confirmation` 状态和 `pendingWrite`（`lib/stream-reducer.ts`）→ 请求体带
+`mode` / `approved_tool`（`hooks/use-copilot-stream.ts`）。
+
+### 前端还差三件
+
+1. **确认弹窗**：逐条显示参数原值，不做摘要 —— 摘要会和实际写进库的东西产生偏差。
+   注意 `markup = 0` 是合法值（平进平出），按 falsy 处理会渲染成空白，让管理员对一个
+   看不见数值的改动点同意。
+2. **tab 解禁**并接上 mode 状态（`components/copilot-rail.tsx`，现在硬写成 `'qa'` +
+   `disabled`）。
+3. **七个语言的词条**。
+
+**这三件做完之前不要上线**：现在副驾在智能操作模式下要改利润率，后端会拦住并发
+`confirm_required`，前端能把它变成 `awaiting_confirmation`，但界面上没有弹窗呈现它，
+那一轮会停住而看不到原因。
 
 ## 开工前必须先处理的两件事
 
@@ -61,14 +97,14 @@ SSE 事件类型在 `types.go:132-147`，注释写着"值一旦发布就不能�
 删后重写）。跑之前先确认日志保留窗口覆盖到你要对账的日期，否则会把有数据的日子重算
 成 0。**这条要等用户点头再跑，它删历史行。**
 
-### 2. 切天口径不一致（未修，已知）
+### 2. 切天口径 —— 已修（2026-09-26 复核）
 
-日汇总按 UTC 零点切（`service/cost_flush.go` 的 `currentCostDayTs`），而交易账本/日志
-页按服务器本地时区渲染。UTC+8 下本地 00:00-08:00 的请求落进前一天，两个页面按"某一天"
-对账天然差一截。
+文档原先说这条未修，那是过时的。现在 `service/cost_flush.go` 的 `costDayTs` 按
+`time.Local` 零点切，不是 UTC；日期标签也由服务端下发（`model/cost_daily.go` 的
+`fillLocalDayLabels`），前端不再拿裸时间戳按浏览器时区反推 —— 那会在时区不一致时让
+整列日期错一天。
 
-没擅自改：口径一换所有历史行都得跟着重算。注释留在 `cost_flush.go:37-44`。如果二期要
-让副驾报"今天的毛利"，这件事就绕不过去了，先跟用户确认再动。
+副驾报「今天的毛利」这条路因此是通的，不用再绕。
 
 ## 这个代码库会绊你的地方
 
@@ -90,16 +126,31 @@ SSE 事件类型在 `types.go:132-147`，注释写着"值一旦发布就不能�
 - **看板是纯 Bearer 头鉴权**，没有 cookie 兜底。前端取图只能 blob 拉取再转 object URL，
   `<img src>` 认不了。
 
-## 仓库当前状态
+## 仓库当前状态（2026-09-26 更新）
 
-`main` 分支，最后一个提交是 `286dcdf2`，之后有 116 个文件未提交（74 改动 + 42 新增），
-一期副驾和定价那一摊都在里面。
+`main` 干净，与 origin 同步。闸门那两个提交是 `745e4a78`（后端）和 `baf3f688`
+（前端管道）。
 
 **两个 AI 同时改同一棵树、又没有提交边界，很容易互相冲掉对方的工作。** 开工前先把现有
-改动提交或分支隔离。另外 `web/` 不要跑 `format:check`，它会写盘并回滚并发的改动，在
-HEAD 上本来就是红的（约 24 个文件）。
+改动提交或分支隔离。
 
-验证命令：后端 `go build ./...` + `go vet ./...` + `go test ./service/... ./controller/ ./model/`；
-前端在 `web/` 下 `npm run typecheck` 和 `bun run build`。改到 `relaykit/` 要单独跑
-`cd relaykit && GOWORK=off go build ./...`。
+### 验证命令
+
+后端：`go build ./...`、`go vet ./...`、`go test ./service/... ./controller/ ./model/`、
+`gofmt -l`。改到 `relaykit/` 要单独跑 `cd relaykit && GOWORK=off go build ./...`。
+
+前端在 `web/` 下：`bun run typecheck`。单文件格式化用
+`./node_modules/.bin/oxfmt -c .oxfmtrc.json <file>`。
+
+**格式化工具是 `oxfmt` 不是 prettier**（配置在 `web/.oxfmtrc.json`，`semi: false` +
+`singleQuote: true`）。跑裸 `bunx prettier` 会按 prettier 自己的默认值把整个文件改成
+双引号加分号，一个几十行的新增会变成上百行的 diff，顺手重排掉别人的代码。
+
+`bun run format:check` **名字叫 check 但会写盘**，会回滚并发的改动，而且在 HEAD 上
+本来就是红的（约 24 个文件）。并行改前端时不要跑它。
+
+`bun run test` 跑全量（约 1190 条，4 分钟）。**HEAD 上本来就有约 5 条失败**，在
+`pricing`、`agent-management`、`keys`、`channels`，耗时 5-7 秒、像超时抖动。改副驾时
+只跑副驾那一片：`bunx vitest run --config vitest.config.ts src/features/copilot`
+（9 文件 59 条，约 38 秒）。不要把那 5 条当成自己改坏的。
 
