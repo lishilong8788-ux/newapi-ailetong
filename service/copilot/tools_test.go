@@ -59,8 +59,9 @@ func TestBuildRegistry_RegistersNineReadOnlyTools(t *testing.T) {
 		t.Run(tool.Name, func(t *testing.T) {
 			assert.NotEmpty(t, tool.Description, "描述是模型选工具的唯一依据")
 			require.NotNil(t, tool.Handler)
-			// 一期只读。任何一个工具变成 true 都意味着循环该走人工确认了，
-			// 而这一期没有那条路径。
+			// BuildRegistry 是只读那一侧，写工具只由 BuildRegistryForMode(ModeAct)
+			// 追加。这里变成 true 意味着某个写工具漏进了默认工具表 —— 那会让问答
+			// 模式凭空获得写能力。
 			assert.False(t, tool.Mutates)
 
 			require.NotNil(t, tool.Parameters)

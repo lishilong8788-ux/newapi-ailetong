@@ -408,6 +408,13 @@ func CopilotChat(c *gin.Context) {
 		// 独立的上传端点：那会产生「传了但没发」的孤儿文件，而这个项目没有定期
 		// 清理任务来收它们。
 		Images []string `json:"images"`
+		// Mode 决定写工具进不进这一轮的工具表。缺省（老客户端不发）按只读处理。
+		Mode string `json:"mode"`
+		// ApprovedTool 是管理员刚在确认框里点过头的工具名。
+		//
+		// 确认的语义是「带着这个字段重放整轮」而不是「续跑上一条 SSE」：SSE 是单向
+		// 的，流已经在 confirm_required 那里结束了。
+		ApprovedTool string `json:"approved_tool"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiErrorMsg(c, "invalid request body")
@@ -504,12 +511,15 @@ func CopilotChat(c *gin.Context) {
 
 	newMessages, runErr := copilot.Run(c.Request.Context(), copilot.RunOptions{
 		Completer: NewRelayCompleter(userId),
-		Registry:  copilot.BuildRegistry(),
+		Registry:  copilot.BuildRegistryForMode(req.Mode),
 		Model:     copilot_setting.GetModel(),
 		ChannelID: setting.ChannelId,
 		MaxRounds: copilot_setting.GetMaxRounds(),
 		History:   copilotHistory(historyRows),
 		UserInput: userInput,
+		// 批准只对这一轮有效：它从请求体来，不落库、不进会话状态。下一轮不带就
+		// 又要重新点头。
+		ApprovedTool: req.ApprovedTool,
 		// 图片一直留在上下文里（历史里的也会被 copilotHistory 带回来）：追问
 		// 「第三行那个为什么亏」时模型还得看得见图。代价是同一张图每轮重算一次
 		// vision token。

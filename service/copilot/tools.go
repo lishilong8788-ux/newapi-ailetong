@@ -23,7 +23,7 @@ import (
 // 返回值全是小结构体/map：工具输出会原样进 LLM 上下文，一次几十 KB 的毛利明细
 // 既烧钱又把有用的信息挤出窗口，所以列表类工具一律封顶。
 
-// BuildRegistry 注册一期全部工具，顺序即 prompt 里的出场顺序。
+// BuildRegistry 注册只读工具，顺序即 prompt 里的出场顺序。
 func BuildRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(searchModelsTool())
@@ -35,6 +35,22 @@ func BuildRegistry() *Registry {
 	r.Register(getOfficialPriceTool())
 	r.Register(simulateSellPriceTool())
 	r.Register(simulateMarginImpactTool())
+	return r
+}
+
+// BuildRegistryForMode 按模式给出这一轮该暴露的工具表。
+//
+// 只有 ModeAct 才追加写工具。任何其它值 —— 包括空字符串 —— 都按只读处理：
+// 老客户端不发 mode，默认必须是不能写的那一侧，否则升级后台会让它们凭空获得
+// 写能力。
+func BuildRegistryForMode(mode string) *Registry {
+	r := BuildRegistry()
+	if mode != ModeAct {
+		return r
+	}
+	for _, t := range writeTools() {
+		r.Register(t)
+	}
 	return r
 }
 

@@ -117,6 +117,21 @@ func Run(ctx context.Context, opts RunOptions, emit Emit) ([]Message, error) {
 				callErr = fmt.Errorf("unknown tool %q", call.Name)
 			case tool.Handler == nil:
 				callErr = fmt.Errorf("tool %q has no handler", call.Name)
+			case tool.Mutates && opts.ApprovedTool != call.Name:
+				// 没批准的写操作到此为止。判的是 Tool.Mutates 而不是工具名前缀：
+				// 前缀约定一旦有人加个 update_xxx 就静默失守。
+				//
+				// 参数原值一起发出去，管理员看到的必须是真的要写进库的东西，而不是
+				// 模型对自己意图的转述。
+				if emitErr := emit(Event{
+					Type:       EventConfirmRequired,
+					ToolName:   call.Name,
+					ToolArgs:   call.Arguments,
+					ToolCallID: call.ID,
+				}); emitErr != nil {
+					return added, emitErr
+				}
+				return added, nil
 			default:
 				result, callErr = runToolHandler(ctx, tool, call.Arguments)
 			}

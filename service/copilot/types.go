@@ -144,6 +144,12 @@ const (
 	EventDone = "done"
 	// EventError 出错终止。
 	EventError = "error"
+	// EventConfirmRequired 副驾要写库但还没拿到批准，本轮就停在这里。带工具名和
+	// 参数原值，前端据此弹确认框。
+	//
+	// 是「结束」而不是「暂停」：SSE 是单向的，这条流没有办法中途收一个批准再往下
+	// 走。批准的语义因此是带 RunOptions.ApprovedTool 重放整轮，而不是续跑。
+	EventConfirmRequired = "confirm_required"
 )
 
 // Event 是一条 SSE 事件。
@@ -168,6 +174,18 @@ type Event struct {
 // Emit 是循环向外推送事件的回调。返回 error 表示客户端已断开，循环应当停止。
 type Emit func(Event) error
 
+// 副驾模式。决定写工具进不进模型的工具表。
+//
+// 和闸门是两层独立的防线，不是一件事的两种写法：mode 让模型压根提不出写操作，
+// 闸门拦住万一提出来的。少任何一层都不行 —— 只有 mode 就等于把安全性寄托在
+// 「模型看不见就不会用」，只有闸门则意味着管理员想只读时仍要靠自觉不点同意。
+const (
+	// ModeAsk 只读问答。写工具不注册，模型看不见。
+	ModeAsk = "ask"
+	// ModeAct 智能操作。写工具可用，但每一次写都要管理员点确认。
+	ModeAct = "act"
+)
+
 // RunOptions 是跑一轮副驾对话需要的全部输入。
 type RunOptions struct {
 	Completer Completer
@@ -184,6 +202,13 @@ type RunOptions struct {
 	// UserImages 是这次贴的图片相对路径。可以在 UserInput 为空时非空：只贴一张
 	// 报表截图不说话是个合法的提问。
 	UserImages []string
+	// ApprovedTool 是管理员这一轮已经点过确认的那个工具名。空字符串表示什么都没
+	// 批准。
+	//
+	// 按名字而不是 bool：一轮里模型可能要调多个工具，而管理员在弹窗里看到并点头的
+	// 只是其中一个。用 bool 会让「我同意改这个渠道的成本价」顺带放行同一轮里另一个
+	// 它自己决定的写操作。
+	ApprovedTool string
 }
 
 // DefaultMaxRounds 是工具轮数的兜底上限。9 个只读工具里，最长的合理链路是
