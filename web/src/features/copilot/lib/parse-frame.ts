@@ -84,6 +84,17 @@ export function parseCopilotFrame(data: string): CopilotFrame | null {
       return { type: 'done' }
     case 'error':
       return { type: 'error', text: asString(frame.text) }
+    case 'confirm_required':
+      // `tool_args` is passed through unparsed, exactly as `tool_start` does:
+      // the dialog shows the operator the literal values headed for the
+      // database, and reformatting them here would put a rendering step between
+      // what they approve and what gets written.
+      return {
+        type: 'confirm_required',
+        tool_name: asString(frame.tool_name),
+        tool_args: frame.tool_args,
+        tool_call_id: asString(frame.tool_call_id),
+      }
     default:
       return null
   }

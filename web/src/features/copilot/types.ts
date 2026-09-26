@@ -130,6 +130,17 @@ export type CopilotFrame =
   | { type: 'error'; text: string }
   | { type: 'text'; text: string }
   | {
+      /**
+       * The copilot wants to write and the turn stopped to ask. Terminal, not a
+       * pause: SSE is one-way, so the stream ends here and approving means
+       * replaying the turn with `approved_tool` set.
+       */
+      type: 'confirm_required'
+      tool_name: string
+      tool_args?: unknown
+      tool_call_id: string
+    }
+  | {
       type: 'tool_end'
       tool_call_id: string
       duration_ms: number
@@ -175,7 +186,25 @@ export interface CopilotUsage {
   completionTokens: number
 }
 
-export type CopilotTurnStatus = 'done' | 'error' | 'streaming'
+/**
+ * `awaiting_confirmation` is its own outcome rather than a flavour of `done`:
+ * the turn stopped without finishing its work, and the difference is what the
+ * operator has to do next. Collapsing it into `done` would draw a completed
+ * turn over a write that never happened.
+ */
+export type CopilotTurnStatus =
+  | 'awaiting_confirmation'
+  | 'done'
+  | 'error'
+  | 'streaming'
+
+/** A write the copilot proposed, held until the operator approves or cancels. */
+export interface CopilotPendingWrite {
+  toolName: string
+  /** Parsed when the frame carried JSON, else the raw string, as tool blocks do. */
+  args: unknown
+  toolCallId: string
+}
 
 export interface CopilotAssistantTurn {
   role: 'assistant'
@@ -184,6 +213,8 @@ export interface CopilotAssistantTurn {
   status: CopilotTurnStatus
   errorText?: string
   usage?: CopilotUsage
+  /** Set only while `status` is `awaiting_confirmation`. */
+  pendingWrite?: CopilotPendingWrite
 }
 
 export interface CopilotUserTurn {

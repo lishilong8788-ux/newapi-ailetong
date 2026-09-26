@@ -81,7 +81,8 @@ export function useCopilotStream() {
       sessionId: number,
       message: string,
       images: string[],
-      callbacks: CopilotStreamCallbacks
+      callbacks: CopilotStreamCallbacks,
+      options?: { mode?: string; approvedTool?: string }
     ) => {
       const generation = generationRef.current + 1
       generationRef.current = generation
@@ -109,9 +110,16 @@ export function useCopilotStream() {
       const source = new SSE(getCopilotChatUrl(sessionId), {
         headers,
         method: 'POST',
-        payload: JSON.stringify(
-          images.length > 0 ? { message, images } : { message }
-        ),
+        payload: JSON.stringify({
+          message,
+          ...(images.length > 0 ? { images } : {}),
+          ...(options?.mode ? { mode: options.mode } : {}),
+          // Sent only on the replay that follows an approval. Omitted otherwise
+          // so an ordinary turn can never carry a stale approval forward.
+          ...(options?.approvedTool
+            ? { approved_tool: options.approvedTool }
+            : {}),
+        }),
       }) as CopilotEventSource
       sourceRef.current = source
 

@@ -88,6 +88,18 @@ export function reduceFrame(
       return turn.status === 'error' ? turn : { ...turn, status: 'done' }
     case 'error':
       return { ...turn, status: 'error', errorText: frame.text }
+    case 'confirm_required':
+      // No tool block is appended: nothing ran. Drawing a step here would put a
+      // row in the transcript for work the operator has not agreed to yet.
+      return {
+        ...turn,
+        status: 'awaiting_confirmation',
+        pendingWrite: {
+          toolName: frame.tool_name,
+          args: normalizeToolArgs(frame.tool_args),
+          toolCallId: frame.tool_call_id,
+        },
+      }
     default:
       return turn
   }
