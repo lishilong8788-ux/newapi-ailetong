@@ -45,6 +45,18 @@ export const COPILOT_SETTINGS_SECTION = 'copilot'
 /** Pin cleared: the copilot routes normally. Spelled as 0 on the wire. */
 export const COPILOT_AUTO_CHANNEL_ID = 0
 
+/**
+ * The two modes, spelled exactly as the backend's `ModeAsk` / `ModeAct`.
+ *
+ * The server treats any unrecognised value — including the empty string an older
+ * client sends — as read-only, so a typo here fails closed. That is the safe
+ * direction, but it fails *silently*: the tab would read "Smart actions" while
+ * the model never receives a write tool. Hence the shared constants rather than
+ * inline strings at the two call sites.
+ */
+export const COPILOT_MODE_ASK = 'ask'
+export const COPILOT_MODE_ACT = 'act'
+
 export const SESSION_PAGE_SIZE = 50
 
 /**
@@ -86,13 +98,14 @@ export const SUCCESS_MESSAGES = {
  * real function name than by a placeholder that hides it.
  */
 export const TOOL_LABEL_KEYS: Record<string, string> = {
+  query_margin: 'Read margin',
   query_cost_overview: 'Read cost overview',
-  query_cost_trend: 'Read profit trend',
-  query_channel_cost: 'Read channel cost and margin',
-  query_channel_models: 'Read margin by channel and model',
-  query_model_price: 'Read model pricing',
-  query_official_price: 'Read list price',
-  query_logs: 'Read usage logs',
-  query_channels: 'Read channel list',
-  query_users: 'Read user list',
+  search_models: 'Search models',
+  get_model_pricing: 'Read model pricing',
+  list_channels: 'Read channel list',
+  get_channel_cost: 'Read channel cost and margin',
+  get_official_price: 'Read list price',
+  simulate_sell_price: 'Simulate a sell price',
+  simulate_margin_impact: 'Simulate the margin impact',
+  set_channel_markup: 'Set the channel default markup',
 }

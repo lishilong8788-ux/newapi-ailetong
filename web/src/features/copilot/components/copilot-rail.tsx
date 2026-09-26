@@ -26,13 +26,19 @@ import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { COPILOT_EXAMPLE_PROMPTS } from '../constants'
-import type { CopilotSession } from '../types'
+import {
+  COPILOT_EXAMPLE_PROMPTS,
+  COPILOT_MODE_ACT,
+  COPILOT_MODE_ASK,
+} from '../constants'
+import type { CopilotMode, CopilotSession } from '../types'
 
 export interface CopilotRailProps {
   sessions: CopilotSession[]
   isLoading: boolean
   activeSessionId: number | null
+  mode: CopilotMode
+  onModeChange: (mode: CopilotMode) => void
   onSelectSession: (id: number) => void
   onDeleteSession: (session: CopilotSession) => void
   onNewSession: () => void
@@ -63,7 +69,7 @@ export function CopilotRail(props: CopilotRailProps) {
         {t('New conversation')}
       </Button>
 
-      <CopilotModeTabs />
+      <CopilotModeTabs mode={props.mode} onModeChange={props.onModeChange} />
 
       <div className='flex flex-col gap-1.5'>
         <p className='text-muted-foreground px-0.5 text-xs font-medium'>
@@ -157,31 +163,37 @@ export function CopilotRail(props: CopilotRailProps) {
 /**
  * Q&A / Smart actions.
  *
- * Smart actions is phase 2 and is rendered disabled rather than hidden: the shape
- * of the feature is the point — an admin should be able to see that asking and
- * acting are two different modes, and that only one of them is live.
+ * The two modes are a real capability boundary, not a filter over one behaviour:
+ * in Q&A the write tools are never registered, so the model cannot see them and
+ * cannot propose a write at all. Switching here changes what the copilot is able
+ * to do, which is why it sits above the composer rather than inside a settings
+ * menu — the operator should pick it before asking, not discover it afterwards.
  */
-function CopilotModeTabs() {
+function CopilotModeTabs(props: {
+  mode: CopilotMode
+  onModeChange: (mode: CopilotMode) => void
+}) {
   const { t } = useTranslation()
 
   return (
-    <Tabs value='qa' className='w-full'>
+    <Tabs
+      value={props.mode}
+      onValueChange={(value) => props.onModeChange(value as CopilotMode)}
+      className='w-full'
+    >
       <TabsList className='w-full' aria-label={t('Copilot mode')}>
-        <TabsTrigger value='qa' className='flex-1 text-xs'>
+        <TabsTrigger value={COPILOT_MODE_ASK} className='flex-1 text-xs'>
           {t('Q&A')}
         </TabsTrigger>
-        <TabsTrigger
-          value='actions'
-          disabled
-          title={t('Coming soon')}
-          className='flex-1 gap-1 text-xs'
-        >
+        <TabsTrigger value={COPILOT_MODE_ACT} className='flex-1 gap-1 text-xs'>
           <Sparkles aria-hidden='true' className='size-3' />
           {t('Smart actions')}
         </TabsTrigger>
       </TabsList>
       <p className='text-muted-foreground px-0.5 text-[11px]'>
-        {t('Smart actions are coming soon. Q&A is read-only.')}
+        {props.mode === COPILOT_MODE_ACT
+          ? t('The copilot may propose changes. Each one needs your approval.')
+          : t('Read-only. The copilot can look things up but not change them.')}
       </p>
     </Tabs>
   )

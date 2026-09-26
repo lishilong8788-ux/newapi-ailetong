@@ -82,7 +82,7 @@ export function useCopilotStream() {
       message: string,
       images: string[],
       callbacks: CopilotStreamCallbacks,
-      options?: { mode?: string; approvedTool?: string }
+      options?: { mode?: string; approvedTool?: string; approvedArgs?: unknown }
     ) => {
       const generation = generationRef.current + 1
       generationRef.current = generation
@@ -116,8 +116,16 @@ export function useCopilotStream() {
           ...(options?.mode ? { mode: options.mode } : {}),
           // Sent only on the replay that follows an approval. Omitted otherwise
           // so an ordinary turn can never carry a stale approval forward.
+          //
+          // The arguments go back with it: the replay asks the model again, and
+          // the gate only lets the call through if it matches what the operator
+          // actually saw. Sending the name alone would approve the *kind* of
+          // write rather than the write.
           ...(options?.approvedTool
-            ? { approved_tool: options.approvedTool }
+            ? {
+                approved_tool: options.approvedTool,
+                approved_args: options.approvedArgs,
+              }
             : {}),
         }),
       }) as CopilotEventSource

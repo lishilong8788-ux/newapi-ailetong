@@ -29,4 +29,6 @@ export {
   formatToolArgs,
   formatToolDuration,
   getToolLabelKey,
+  toToolArgEntries,
+  type ToolArgEntry,
 } from './tool-label'

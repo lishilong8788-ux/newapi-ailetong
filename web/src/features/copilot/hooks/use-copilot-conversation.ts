@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -31,6 +31,7 @@ import {
   updateCopilotConfig,
 } from '../api'
 import {
+  COPILOT_MODE_ASK,
   ERROR_MESSAGES,
   QUERY_KEY_COPILOT_MODELS,
   QUERY_KEY_COPILOT_SESSION,
@@ -47,6 +48,7 @@ import {
 import type {
   CopilotAssistantTurn,
   CopilotConfigUpdate,
+  CopilotMode,
   CopilotTurn,
 } from '../types'
 import { useCopilotStream } from './use-copilot-stream'
@@ -65,6 +67,10 @@ export function useCopilotConversation() {
   const queryClient = useQueryClient()
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [turns, setTurns] = useState<CopilotTurn[]>([])
+  // Not persisted across reloads, and deliberately so: act is the mode that can
+  // change this install, and a stored preference would silently re-arm it for a
+  // session the operator opened to ask one read-only question.
+  const [mode, setMode] = useState<CopilotMode>(COPILOT_MODE_ASK)
   const { send, stop, isStreaming } = useCopilotStream()
   // The turn frames are being folded into. A ref because the stream callbacks are
   // created per request and must not close over a stale turn id.
@@ -159,6 +165,31 @@ export function useCopilotConversation() {
     },
   })
 
+  // Shared by the first send and by an approval replay: both fold frames into the
+  // same turn and finish the same way, and two copies of this would let the replay
+  // drift out of step with the path it is replaying.
+  const streamCallbacks = useMemo(
+    () => ({
+      onFrame: (frame: Parameters<typeof reduceFrame>[1]) => {
+        updateActiveTurn((turn) => reduceFrame(turn, frame))
+      },
+      onError: (errorMessage: string) => {
+        updateActiveTurn((turn) => abandonTurn(turn, errorMessage))
+      },
+      onSettled: () => {
+        // Nothing is refetched into the thread here: the rendered turn is
+        // already complete, and replacing it with the stored copy would drop the
+        // per-step durations, which the contract does not persist.
+        updateActiveTurn((turn) => abandonTurn(turn))
+        activeTurnIdRef.current = null
+        void queryClient.invalidateQueries({
+          queryKey: [QUERY_KEY_COPILOT_SESSIONS],
+        })
+      },
+    }),
+    [queryClient, updateActiveTurn]
+  )
+
   const sendMessage = useCallback(
     async (message: string, images: string[] = []) => {
       const text = message.trim()
@@ -192,26 +223,9 @@ export function useCopilotConversation() {
         createPendingTurn(turnId),
       ])
 
-      await send(targetSessionId, text, images, {
-        onFrame: (frame) => {
-          updateActiveTurn((turn) => reduceFrame(turn, frame))
-        },
-        onError: (errorMessage) => {
-          updateActiveTurn((turn) => abandonTurn(turn, errorMessage))
-        },
-        onSettled: () => {
-          // Nothing is refetched into the thread here: the rendered turn is
-          // already complete, and replacing it with the stored copy would drop the
-          // per-step durations, which the contract does not persist.
-          updateActiveTurn((turn) => abandonTurn(turn))
-          activeTurnIdRef.current = null
-          void queryClient.invalidateQueries({
-            queryKey: [QUERY_KEY_COPILOT_SESSIONS],
-          })
-        },
-      })
+      await send(targetSessionId, text, images, streamCallbacks, { mode })
     },
-    [isStreaming, queryClient, send, sessionId, t, updateActiveTurn]
+    [isStreaming, mode, send, sessionId, streamCallbacks, t]
   )
 
   const stopStreaming = useCallback(() => {
@@ -219,6 +233,64 @@ export function useCopilotConversation() {
     updateActiveTurn((turn) => abandonTurn(turn))
     activeTurnIdRef.current = null
   }, [stop, updateActiveTurn])
+
+  const approvePendingWrite = useCallback(async () => {
+    if (isStreaming || sessionId === null) return
+    const target = findTurnAwaitingConfirmation(turns)
+    if (!target?.pendingWrite) return
+
+    const approvedTool = target.pendingWrite.toolName
+    const approvedArgs = target.pendingWrite.args
+    // The same turn is reset and re-streamed into rather than a new one appended.
+    // The server replays from the operator's question, so a second turn would draw
+    // the reasoning twice and leave the abandoned proposal above it as if the
+    // copilot had asked for two writes.
+    activeTurnIdRef.current = target.id
+    setTurns((previous) =>
+      previous.map((turn) =>
+        turn.role === 'assistant' && turn.id === target.id
+          ? {
+              ...turn,
+              blocks: [],
+              status: 'streaming' as const,
+              pendingWrite: undefined,
+              errorText: undefined,
+            }
+          : turn
+      )
+    )
+
+    // No message and no images: an approval replays the stored turn, and the
+    // backend rejects a replay that carries new input rather than silently
+    // dropping it.
+    await send(sessionId, '', [], streamCallbacks, {
+      mode,
+      approvedTool,
+      approvedArgs,
+    })
+  }, [isStreaming, mode, send, sessionId, streamCallbacks, turns])
+
+  /**
+   * Refusal. Terminal for this turn — the proposal is not held for later.
+   *
+   * `pendingWrite` stays on the turn so the transcript can keep naming what was
+   * refused; `declined` rather than `done` is what stops it from rendering as a
+   * turn that simply finished.
+   */
+  const declinePendingWrite = useCallback(() => {
+    setTurns((previous) =>
+      previous.map((turn) =>
+        turn.role === 'assistant' && turn.status === 'awaiting_confirmation'
+          ? { ...turn, status: 'declined' as const }
+          : turn
+      )
+    )
+  }, [])
+
+  // What the dialog renders. Read off the turns rather than held as its own state:
+  // a second copy could outlive the turn it came from and put a dialog on screen
+  // for a write whose turn had already been abandoned or replaced.
+  const pendingWrite = findTurnAwaitingConfirmation(turns)?.pendingWrite ?? null
 
   const saveConfig = useMutation({
     mutationFn: (update: CopilotConfigUpdate) => updateCopilotConfig(update),
@@ -265,10 +337,35 @@ export function useCopilotConversation() {
     isDeletingSession: deleteSession.isPending,
     sendMessage,
     stopStreaming,
+    mode,
+    setMode,
+    pendingWrite,
+    approvePendingWrite,
+    declinePendingWrite,
     models: modelsQuery.data?.data?.models ?? [],
     modelGroup: modelsQuery.data?.data?.group,
     isModelsLoading: modelsQuery.isLoading,
     saveConfig: saveConfig.mutate,
     isSavingConfig: saveConfig.isPending,
   }
+}
+
+/**
+ * The turn holding a write the operator has not answered yet, if any.
+ *
+ * Searched from the end because that is where it can only be: the gate stops the
+ * turn it fires in, so an unanswered proposal is always the newest turn. Scanning
+ * forward would find an older one first if a previous proposal were ever left
+ * unresolved, and act on a write the operator has already moved past.
+ */
+function findTurnAwaitingConfirmation(
+  turns: CopilotTurn[]
+): CopilotAssistantTurn | null {
+  for (let cursor = turns.length - 1; cursor >= 0; cursor -= 1) {
+    const turn = turns[cursor]
+    if (turn.role === 'assistant' && turn.status === 'awaiting_confirmation') {
+      return turn
+    }
+  }
+  return null
 }

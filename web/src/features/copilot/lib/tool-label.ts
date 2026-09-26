@@ -48,3 +48,54 @@ export function formatToolArgs(args: unknown): string {
     return String(args)
   }
 }
+
+export interface ToolArgEntry {
+  name: string
+  value: string
+}
+
+/**
+ * One row per argument, for the confirmation dialog.
+ *
+ * Returns `null` when the arguments are not a plain object — a string the backend
+ * could not parse, an array, a bare number. The caller then shows the raw text
+ * instead of inventing rows: an argument list that does not have the expected
+ * shape is exactly the case where the operator must see the literal payload.
+ *
+ * Insertion order is kept rather than sorted. The model emits arguments in the
+ * order the schema declares them, which reads as a sentence (`channel_id` then
+ * `markup`); alphabetising would put the value being set before the thing it is
+ * being set on.
+ */
+export function toToolArgEntries(args: unknown): ToolArgEntry[] | null {
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    return null
+  }
+
+  return Object.entries(args as Record<string, unknown>).map(
+    ([name, value]) => ({ name, value: formatToolArgValue(value) })
+  )
+}
+
+/**
+ * One argument value, rendered literally.
+ *
+ * Every branch is an explicit type test, never a truthiness check: `0`, `false`
+ * and `''` are all legal values here, and `markup: 0` in particular means
+ * break-even rather than "unset". Rendering it as blank would ask the operator to
+ * approve a change whose number they cannot see.
+ */
+function formatToolArgValue(value: unknown): string {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}

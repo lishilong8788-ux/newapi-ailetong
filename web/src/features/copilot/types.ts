@@ -191,12 +191,24 @@ export interface CopilotUsage {
  * the turn stopped without finishing its work, and the difference is what the
  * operator has to do next. Collapsing it into `done` would draw a completed
  * turn over a write that never happened.
+ *
+ * `declined` is the same turn after the operator refused. Also not `done`: the
+ * transcript has to keep saying that a write was proposed and turned down,
+ * otherwise the turn reads as having simply ended and the next reader cannot
+ * tell that the copilot asked for something.
  */
 export type CopilotTurnStatus =
   | 'awaiting_confirmation'
+  | 'declined'
   | 'done'
   | 'error'
   | 'streaming'
+
+/**
+ * Which tools the copilot may use this turn. Values match the backend's
+ * `ModeAsk` / `ModeAct`; see `COPILOT_MODE_ASK` / `COPILOT_MODE_ACT`.
+ */
+export type CopilotMode = 'act' | 'ask'
 
 /** A write the copilot proposed, held until the operator approves or cancels. */
 export interface CopilotPendingWrite {
@@ -213,7 +225,10 @@ export interface CopilotAssistantTurn {
   status: CopilotTurnStatus
   errorText?: string
   usage?: CopilotUsage
-  /** Set only while `status` is `awaiting_confirmation`. */
+  /**
+   * The write the copilot asked for. Kept through `declined` as well as
+   * `awaiting_confirmation` so a refused turn can still name what was refused.
+   */
   pendingWrite?: CopilotPendingWrite
 }
 

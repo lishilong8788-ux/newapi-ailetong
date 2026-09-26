@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 
 import { CopilotComposer } from './components/copilot-composer'
+import { CopilotConfirmWriteDialog } from './components/copilot-confirm-write-dialog'
 import { CopilotDeleteDialog } from './components/copilot-delete-dialog'
 import {
   CopilotHeader,
@@ -78,6 +79,8 @@ export function Copilot() {
             sessions={conversation.sessions}
             isLoading={conversation.isSessionsLoading}
             activeSessionId={conversation.sessionId}
+            mode={conversation.mode}
+            onModeChange={conversation.setMode}
             onSelectSession={(id) => void conversation.loadSession(id)}
             onDeleteSession={setPendingDelete}
             onNewSession={handleNewSession}
@@ -126,6 +129,12 @@ export function Copilot() {
             </div>
           </div>
         </div>
+
+        <CopilotConfirmWriteDialog
+          pendingWrite={conversation.pendingWrite}
+          onApprove={() => void conversation.approvePendingWrite()}
+          onDecline={conversation.declinePendingWrite}
+        />
 
         <CopilotDeleteDialog
           session={pendingDelete}

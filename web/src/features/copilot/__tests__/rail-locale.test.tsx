@@ -36,6 +36,8 @@ function renderRail() {
       sessions={[SESSION]}
       isLoading={false}
       activeSessionId={null}
+      mode='ask'
+      onModeChange={() => {}}
       onSelectSession={() => {}}
       onDeleteSession={() => {}}
       onNewSession={() => {}}

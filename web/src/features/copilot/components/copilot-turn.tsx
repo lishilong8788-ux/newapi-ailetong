@@ -16,12 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { TriangleAlert } from 'lucide-react'
+import { Ban, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Response } from '@/components/ai-elements/response'
 import { Spinner } from '@/components/ui/spinner'
 
+import { getToolLabelKey } from '../lib'
 import type {
   CopilotAssistantTurn,
   CopilotBlock,
@@ -98,6 +99,18 @@ function CopilotAssistantTurnView(props: { turn: CopilotAssistantTurn }) {
         <p className='text-muted-foreground flex items-center gap-2 text-xs'>
           <Spinner className='size-3.5' />
           {t('Working...')}
+        </p>
+      )}
+
+      {/* A refused write stays on the record. Without this line the turn ends
+          looking like any other answer, and a later reader cannot tell that the
+          copilot asked to change something and was told no. */}
+      {props.turn.status === 'declined' && props.turn.pendingWrite && (
+        <p className='text-muted-foreground flex items-start gap-1.5 text-xs'>
+          <Ban aria-hidden='true' className='mt-0.5 size-3.5 shrink-0' />
+          {t('Not approved: {{action}}', {
+            action: t(getToolLabelKey(props.turn.pendingWrite.toolName)),
+          })}
         </p>
       )}
 
