@@ -416,3 +416,245 @@ func TestRunRecoversFromPanickingTool(t *testing.T) {
 	}
 	assert.True(t, sawFailedEnd)
 }
+
+// writeRegistry 在只读工具之外加一个标了 Mutates 的写工具。
+func writeRegistry(t *testing.T, calls *int) *Registry {
+	t.Helper()
+	r := newTestRegistry(t)
+	r.Register(Tool{
+		Name:        "set_markup",
+		Description: "改渠道利润率",
+		Mutates:     true,
+		Handler: func(_ context.Context, _ json.RawMessage) (any, error) {
+			*calls++
+			return map[string]any{"ok": true}, nil
+		},
+	})
+	return r
+}
+
+// 闸门命中时这一轮一条消息都不能返回。
+//
+// 这是回归测试，不是覆盖率：原来返回的是已产出的 added，其末条是那条带 tool_calls 的
+// 助手消息，而配对的 tool 结果永远不会产生——工具就是在闸门这里被拦下的。调用方把它
+// 落库之后，每一轮都会把这条悬空消息带回 prompt，而 OpenAI 兼容上游对 tool_call 与
+// tool 结果的配对是硬校验，缺一个就是 400。于是那个会话彻底废掉：不只是这次批准失败，
+// 之后问任何无关的问题也一样 400。
+func TestRunGateReturnsNoMessagesSoNothingIsPersisted(t *testing.T) {
+	handlerCalls := 0
+	completer := &scriptedCompleter{script: []CompletionResponse{
+		{
+			Content: "我把渠道 7 的利润率调成 0.3。",
+			ToolCalls: []ToolCall{{
+				ID:        "call-write",
+				Name:      "set_markup",
+				Arguments: json.RawMessage(`{"channel_id":7,"markup":0.3}`),
+			}},
+			PromptTokens:     40,
+			CompletionTokens: 9,
+		},
+	}}
+
+	var events []Event
+	messages, err := Run(context.Background(), RunOptions{
+		Completer: completer,
+		Registry:  writeRegistry(t, &handlerCalls),
+		Model:     "gpt-5",
+	}, collectEvents(&events, 0, nil))
+
+	require.NoError(t, err)
+	assert.Empty(t, messages, "闸门拦下的这一轮不能有任何消息进落库路径")
+	assert.Zero(t, handlerCalls, "没批准就不能真的写")
+}
+
+// 闸门发出的事件里必须带参数原值，而且 usage 要在 confirm_required 之前发出去。
+func TestRunGateEmitsArgsAndUsageBeforeStopping(t *testing.T) {
+	handlerCalls := 0
+	completer := &scriptedCompleter{script: []CompletionResponse{
+		{
+			Content: "准备把渠道 7 调成平进平出。",
+			ToolCalls: []ToolCall{{
+				ID:        "call-write",
+				Name:      "set_markup",
+				Arguments: json.RawMessage(`{"channel_id":7,"markup":0}`),
+			}},
+			PromptTokens:     40,
+			CompletionTokens: 9,
+		},
+	}}
+
+	var events []Event
+	_, err := Run(context.Background(), RunOptions{
+		Completer: completer,
+		Registry:  writeRegistry(t, &handlerCalls),
+		Model:     "gpt-5",
+	}, collectEvents(&events, 0, nil))
+	require.NoError(t, err)
+
+	// 没有 tool_start：工具没跑，画一行步骤就等于说它跑了。
+	// 也没有 done：这一轮不是完成，是停下来等人。
+	assert.Equal(t, []string{EventText, EventUsage, EventConfirmRequired}, eventTypes(events))
+
+	confirm := events[2]
+	assert.Equal(t, "set_markup", confirm.ToolName)
+	assert.Equal(t, "call-write", confirm.ToolCallID)
+	// markup: 0 必须原样在事件里。管理员要看的是真的要写进库的值，而 0 是合法配置
+	// （平进平出），被当成"没传"而丢掉就会让他对一个看不见数值的改动点同意。
+	assert.JSONEq(t, `{"channel_id":7,"markup":0}`, string(confirm.ToolArgs))
+
+	// 这一轮的 token 是真花了的，中止不等于免费。
+	assert.Equal(t, 40, events[1].PromptTokens)
+	assert.Equal(t, 9, events[1].CompletionTokens)
+}
+
+// 带着批准重放，写工具就真的执行，并且这一轮正常收口落库。
+func TestRunApprovedToolExecutesAndPersists(t *testing.T) {
+	handlerCalls := 0
+	completer := &scriptedCompleter{script: []CompletionResponse{
+		{
+			ToolCalls: []ToolCall{{
+				ID:        "call-write",
+				Name:      "set_markup",
+				Arguments: json.RawMessage(`{"channel_id":7,"markup":0.3}`),
+			}},
+		},
+		{Content: "已经改好了，渠道 7 现在是 0.3。"},
+	}}
+
+	var events []Event
+	messages, err := Run(context.Background(), RunOptions{
+		Completer:    completer,
+		Registry:     writeRegistry(t, &handlerCalls),
+		Model:        "gpt-5",
+		ApprovedTool: "set_markup",
+	}, collectEvents(&events, 0, nil))
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, handlerCalls)
+	assert.Contains(t, eventTypes(events), EventToolEnd)
+	assert.Contains(t, eventTypes(events), EventDone)
+	assert.NotContains(t, eventTypes(events), EventConfirmRequired)
+
+	// 助手的两条消息加一条工具结果：配对完整，落库之后历史仍然合法。
+	var toolResults int
+	for _, msg := range messages {
+		if msg.Role == RoleTool {
+			toolResults++
+			assert.Equal(t, "call-write", msg.ToolCallID)
+		}
+	}
+	assert.Equal(t, 1, toolResults, "被批准的调用必须留下配对的 tool 结果")
+}
+
+// 批准是按工具名的，不是一张通行证：同一轮里另一个写工具照样被拦。
+//
+// 用 bool 表达批准就会在这里失守——管理员在弹窗里看到并点头的只是其中一个。
+func TestRunApprovalDoesNotCoverADifferentWriteTool(t *testing.T) {
+	handlerCalls := 0
+	registry := writeRegistry(t, &handlerCalls)
+	otherCalls := 0
+	registry.Register(Tool{
+		Name:    "delete_channel",
+		Mutates: true,
+		Handler: func(_ context.Context, _ json.RawMessage) (any, error) {
+			otherCalls++
+			return nil, nil
+		},
+	})
+
+	completer := &scriptedCompleter{script: []CompletionResponse{
+		{
+			ToolCalls: []ToolCall{
+				{ID: "call-a", Name: "set_markup", Arguments: json.RawMessage(`{"channel_id":7,"markup":0.3}`)},
+				{ID: "call-b", Name: "delete_channel", Arguments: json.RawMessage(`{"channel_id":7}`)},
+			},
+		},
+	}}
+
+	var events []Event
+	messages, err := Run(context.Background(), RunOptions{
+		Completer:    completer,
+		Registry:     registry,
+		Model:        "gpt-5",
+		ApprovedTool: "set_markup",
+	}, collectEvents(&events, 0, nil))
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, handlerCalls, "被点头的那个照常执行")
+	assert.Zero(t, otherCalls, "没被点头的那个必须停下来")
+	assert.Empty(t, messages, "这一轮又停在闸门上，同样不能落库")
+
+	confirmed := make([]string, 0, 1)
+	for _, e := range events {
+		if e.Type == EventConfirmRequired {
+			confirmed = append(confirmed, e.ToolName)
+		}
+	}
+	assert.Equal(t, []string{"delete_channel"}, confirmed)
+}
+
+// 批准连参数一起对。工具名对上但参数变了，仍然要停下来重新问。
+//
+// 这是回归测试：重放会重新问一次模型，而模型不确定。只对名字的话，管理员看着
+// markup=0.3 点的头，模型第二次给出 markup=3.0 也会被放行 —— handler 只兜边界，
+// 一个合法但他从没同意过的值会照写进库，而弹窗上写着"屏幕上的就是工具会收到的"。
+func TestRunApprovalRejectsChangedArguments(t *testing.T) {
+	handlerCalls := 0
+	completer := &scriptedCompleter{script: []CompletionResponse{
+		{
+			ToolCalls: []ToolCall{{
+				ID:   "call-write",
+				Name: "set_markup",
+				// 管理员点头时看到的是 0.3，模型这次给的是 3.0。
+				Arguments: json.RawMessage(`{"channel_id":7,"markup":3.0}`),
+			}},
+		},
+	}}
+
+	var events []Event
+	messages, err := Run(context.Background(), RunOptions{
+		Completer:    completer,
+		Registry:     writeRegistry(t, &handlerCalls),
+		Model:        "gpt-5",
+		ApprovedTool: "set_markup",
+		ApprovedArgs: json.RawMessage(`{"channel_id":7,"markup":0.3}`),
+	}, collectEvents(&events, 0, nil))
+
+	require.NoError(t, err)
+	assert.Zero(t, handlerCalls, "参数不是他同意过的那份，不能执行")
+	assert.Empty(t, messages)
+	assert.Contains(t, eventTypes(events), EventConfirmRequired)
+	// 新的提议要摆到他面前，而不是悄悄放行或悄悄丢掉。
+	assert.JSONEq(t, `{"channel_id":7,"markup":3.0}`, string(events[len(events)-1].ToolArgs))
+}
+
+// 语义相同但键顺序/空白不同，必须算同一份参数。
+//
+// 按字节比就会在这里失守：两次模型响应的键顺序本来就不保证一致，管理员会陷在
+// 「点了确认又弹出来」的循环里，永远点不动。
+func TestRunApprovalIgnoresKeyOrderAndWhitespace(t *testing.T) {
+	handlerCalls := 0
+	completer := &scriptedCompleter{script: []CompletionResponse{
+		{
+			ToolCalls: []ToolCall{{
+				ID:        "call-write",
+				Name:      "set_markup",
+				Arguments: json.RawMessage(`{"markup":0.3,"channel_id":7}`),
+			}},
+		},
+		{Content: "改好了。"},
+	}}
+
+	var events []Event
+	_, err := Run(context.Background(), RunOptions{
+		Completer:    completer,
+		Registry:     writeRegistry(t, &handlerCalls),
+		Model:        "gpt-5",
+		ApprovedTool: "set_markup",
+		ApprovedArgs: json.RawMessage("{\n  \"channel_id\": 7,\n  \"markup\": 0.3\n}"),
+	}, collectEvents(&events, 0, nil))
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, handlerCalls, "同一份参数换个写法仍然是同一份")
+	assert.NotContains(t, eventTypes(events), EventConfirmRequired)
+}

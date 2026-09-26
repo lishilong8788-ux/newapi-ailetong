@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +30,11 @@ const maxCopilotInputBytes = 32 * 1024
 // maxCopilotHistoryMessages 限制带进 prompt 的历史条数。取尾部而不是头部：管理员
 // 追问的上下文在最近几轮里。
 const maxCopilotHistoryMessages = 200
+
+// maxCopilotToolNameBytes 限制 approved_tool 的长度。它不参与任何查询、只和工具名
+// 做等值比较，所以超长的值本身是无害的（匹配不上任何工具，闸门照样拦）；设这道界是
+// 不让一段任意长的客户端输入进到日志和错误消息里。
+const maxCopilotToolNameBytes = 64
 
 // copilotAdminId 取当前管理员 id。AdminAuth 一定会设上它，这里再兜一次是防止
 // 将来有人把路由挂到没有鉴权的组里——那种错误不会有编译错误，只会静默放行。
@@ -415,15 +421,27 @@ func CopilotChat(c *gin.Context) {
 		// 确认的语义是「带着这个字段重放整轮」而不是「续跑上一条 SSE」：SSE 是单向
 		// 的，流已经在 confirm_required 那里结束了。
 		ApprovedTool string `json:"approved_tool"`
+		// ApprovedArgs 是弹窗里显示给管理员的那份参数原值，原样回传。
+		//
+		// 重放会重新问一次模型，而模型不确定：只比工具名的话，管理员看着一个数点的头，
+		// 写进库的可能是另一个数。闸门拿它和模型这次真实给出的参数比对。
+		ApprovedArgs json.RawMessage `json:"approved_args"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiErrorMsg(c, "invalid request body")
 		return
 	}
 	userInput := strings.TrimSpace(req.Message)
+	isApprovalReplay := strings.TrimSpace(req.ApprovedTool) != ""
+	// 批准重放的是上一轮，不带新问题。同时发消息说明客户端把「确认」理解成了
+	// 「追加一条消息」，那会让管理员刚打的字被静默丢掉，所以直接报错而不是忽略。
+	if isApprovalReplay && (userInput != "" || len(req.Images) > 0) {
+		common.ApiErrorMsg(c, "确认操作是重放上一轮，不能同时发送新消息")
+		return
+	}
 	// 只贴图不说话是合法的提问（「这张表看出什么问题」的最短形式），所以空的判定
 	// 是两者都空。
-	if userInput == "" && len(req.Images) == 0 {
+	if !isApprovalReplay && userInput == "" && len(req.Images) == 0 {
 		common.ApiErrorMsg(c, "消息不能为空")
 		return
 	}
@@ -433,6 +451,10 @@ func CopilotChat(c *gin.Context) {
 	}
 	if len(req.Images) > service.MaxCopilotImages {
 		common.ApiErrorMsg(c, fmt.Sprintf("一条消息最多 %d 张图片", service.MaxCopilotImages))
+		return
+	}
+	if len(req.ApprovedTool) > maxCopilotToolNameBytes {
+		common.ApiErrorMsg(c, "工具名过长")
 		return
 	}
 
@@ -447,38 +469,58 @@ func CopilotChat(c *gin.Context) {
 		return
 	}
 
-	// 图片先落盘，再落库。失败在这里还能回一个正常的 JSON 错误。
-	imagePaths, err := service.SaveCopilotImages(sessionId, req.Images)
-	if err != nil {
-		common.ApiErrorMsg(c, err.Error())
-		return
-	}
-	encodedImages, err := encodeCopilotImagePaths(imagePaths)
-	if err != nil {
-		service.RemoveCopilotImageFiles(imagePaths)
-		common.ApiErrorMsg(c, "保存图片失败")
-		return
-	}
-
-	// 用户消息先落库，再开流。顺序是故意的：这一步失败要能回一个正常的 JSON
-	// 错误，而响应头一旦变成 text/event-stream 就只能在流里报错了。而且管理员
-	// 说过的话不能因为后面的模型调用失败而消失。
-	userRow := &model.CopilotMessage{Role: copilot.RoleUser, Content: userInput, Images: encodedImages}
-	if err := model.AppendCopilotMessages(sessionId, userId, []*model.CopilotMessage{userRow}); err != nil {
-		// 库里没有这一行了，磁盘上的字节就成了永远不会被引用的孤儿。
-		service.RemoveCopilotImageFiles(imagePaths)
-		common.ApiError(c, err)
-		return
-	}
-	if strings.TrimSpace(session.Title) == "" {
-		// 只贴图的那次提问没有文字可做标题，留空会在会话列表里出现一行无名条目。
-		titleSource := userInput
-		if titleSource == "" {
-			titleSource = fmt.Sprintf("[%d 张图片]", len(imagePaths))
+	var imagePaths []string
+	if isApprovalReplay {
+		// 重放要还原出与被拦那一轮字节相同的上下文：把历史末尾那条用户消息摘下来
+		// 当本轮输入，剩下的才是历史。不这么做就得让前端把原文再发一遍，那条消息
+		// 会在会话里出现两次，prompt 也跟着翻一倍。
+		//
+		// 末条必须是用户消息 —— 闸门命中时 Run 返回 nil、这一轮一条都不落库，所以
+		// 正常情况下它就是。不是的话说明中间插进了别的请求，此时重放的上下文已经不是
+		// 管理员点头时看到的那一份，宁可报错也不能拿另一份上下文去执行一次写操作。
+		last := len(historyRows) - 1
+		if last < 0 || historyRows[last].Role != copilot.RoleUser {
+			common.ApiErrorMsg(c, "这一轮已经不在等待确认了，请重新提问")
+			return
 		}
-		if err := model.UpdateCopilotSessionTitle(sessionId, userId, titleSource); err != nil {
-			// 标题只是列表上的一行字，失败不该中断对话。
-			common.SysError("failed to set copilot session title: " + err.Error())
+		userInput = historyRows[last].Content
+		imagePaths = decodeCopilotImagePaths(historyRows[last].Images)
+		historyRows = historyRows[:last]
+	} else {
+		// 图片先落盘，再落库。失败在这里还能回一个正常的 JSON 错误。
+		savedPaths, saveErr := service.SaveCopilotImages(sessionId, req.Images)
+		if saveErr != nil {
+			common.ApiErrorMsg(c, saveErr.Error())
+			return
+		}
+		imagePaths = savedPaths
+		encodedImages, encodeErr := encodeCopilotImagePaths(imagePaths)
+		if encodeErr != nil {
+			service.RemoveCopilotImageFiles(imagePaths)
+			common.ApiErrorMsg(c, "保存图片失败")
+			return
+		}
+
+		// 用户消息先落库，再开流。顺序是故意的：这一步失败要能回一个正常的 JSON
+		// 错误，而响应头一旦变成 text/event-stream 就只能在流里报错了。而且管理员
+		// 说过的话不能因为后面的模型调用失败而消失。
+		userRow := &model.CopilotMessage{Role: copilot.RoleUser, Content: userInput, Images: encodedImages}
+		if err := model.AppendCopilotMessages(sessionId, userId, []*model.CopilotMessage{userRow}); err != nil {
+			// 库里没有这一行了，磁盘上的字节就成了永远不会被引用的孤儿。
+			service.RemoveCopilotImageFiles(imagePaths)
+			common.ApiError(c, err)
+			return
+		}
+		if strings.TrimSpace(session.Title) == "" {
+			// 只贴图的那次提问没有文字可做标题，留空会在会话列表里出现一行无名条目。
+			titleSource := userInput
+			if titleSource == "" {
+				titleSource = fmt.Sprintf("[%d 张图片]", len(imagePaths))
+			}
+			if err := model.UpdateCopilotSessionTitle(sessionId, userId, titleSource); err != nil {
+				// 标题只是列表上的一行字，失败不该中断对话。
+				common.SysError("failed to set copilot session title: " + err.Error())
+			}
 		}
 	}
 
@@ -520,6 +562,7 @@ func CopilotChat(c *gin.Context) {
 		// 批准只对这一轮有效：它从请求体来，不落库、不进会话状态。下一轮不带就
 		// 又要重新点头。
 		ApprovedTool: req.ApprovedTool,
+		ApprovedArgs: req.ApprovedArgs,
 		// 图片一直留在上下文里（历史里的也会被 copilotHistory 带回来）：追问
 		// 「第三行那个为什么亏」时模型还得看得见图。代价是同一张图每轮重算一次
 		// vision token。
