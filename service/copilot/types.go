@@ -195,6 +195,13 @@ type RunOptions struct {
 	// MaxRounds 是工具调用的轮数上限，防止模型陷在「查了又查」里烧 token。
 	// 0 表示用 DefaultMaxRounds。
 	MaxRounds int
+	// Mode 是这一轮的副驾模式（ModeAsk / ModeAct）。空串按问答处理。
+	//
+	// 循环本身不用它做任何判断——能不能写完全由 Registry 里有没有写工具、以及闸门
+	// 认不认这次批准决定。它在这里只为了拼对应模式的 system prompt：提示词里那段
+	// 写权限说明必须和实际发下去的工具表说同一件事，不然模型会在「我没有写权限」和
+	// 手里真有一个写工具之间自相矛盾。
+	Mode string
 	// History 是本会话此前的消息（不含 system prompt，循环自己加）。
 	History []Message
 	// UserInput 是管理员这次说的话。

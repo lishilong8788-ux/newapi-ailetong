@@ -29,7 +29,7 @@ func Run(ctx context.Context, opts RunOptions, emit Emit) ([]Message, error) {
 
 	// conversation 是喂给模型的全量上下文。
 	conversation := make([]Message, 0, len(opts.History)+2)
-	conversation = append(conversation, Message{Role: RoleSystem, Content: SystemPrompt()})
+	conversation = append(conversation, Message{Role: RoleSystem, Content: SystemPrompt(opts.Mode)})
 	conversation = append(conversation, opts.History...)
 	conversation = append(conversation, Message{Role: RoleUser, Content: opts.UserInput, Images: opts.UserImages})
 

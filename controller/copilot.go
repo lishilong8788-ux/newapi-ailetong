@@ -554,6 +554,9 @@ func CopilotChat(c *gin.Context) {
 	newMessages, runErr := copilot.Run(c.Request.Context(), copilot.RunOptions{
 		Completer: NewRelayCompleter(userId),
 		Registry:  copilot.BuildRegistryForMode(req.Mode),
+		// 同一个 mode 同时决定工具表和 system prompt 里那段写权限说明。两处分别取值
+		// 就会漂：模型手里有写工具，提示词却说它没有写权限。
+		Mode:      req.Mode,
 		Model:     copilot_setting.GetModel(),
 		ChannelID: setting.ChannelId,
 		MaxRounds: copilot_setting.GetMaxRounds(),
