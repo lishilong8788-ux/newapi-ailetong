@@ -59,6 +59,7 @@ import { InventoryTable } from './components/inventory-table'
 import { ModelChannelTable } from './components/model-channel-table'
 import { OverviewCards } from './components/overview-cards'
 import { ProfitTrendChart } from './components/profit-trend-chart'
+import { RecalculateButton } from './components/recalculate-button'
 import {
   ALL_MODELS_FILTER,
   DEFAULT_WINDOW_DAYS,
@@ -420,6 +421,12 @@ export function CostAnalytics() {
           {viewTabs}
           {activeTab !== 'inventory' && rangeTabs}
           {activeTab !== 'inventory' && rangePicker}
+          {activeTab !== 'inventory' && (
+            <RecalculateButton
+              windowStart={window.startTimestamp}
+              windowEnd={window.endTimestamp}
+            />
+          )}
         </div>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>

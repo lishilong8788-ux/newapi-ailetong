@@ -89,3 +89,25 @@ export async function getCostInventory(): Promise<
   )
   return res.data
 }
+
+/**
+ * Rebuilds the daily rollup for a window from the `logs` detail (delete then
+ * write), returning the server's own count of log rows it read.
+ *
+ * Root-only server-side. Two properties of the rebuild leak into the UI and are
+ * why the caller confirms first: it recomputes with the *current* cost
+ * configuration rather than the price in force at the time, and a window whose
+ * logs have aged out rebuilds to zero instead of failing.
+ */
+export async function recalculateCostDaily(
+  params: CostWindow
+): Promise<{ message: string }> {
+  const res = await api.post<{ success: boolean; message: string }>(
+    '/api/cost/recalculate',
+    params
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'Recalculation failed')
+  }
+  return { message: res.data.message }
+}
